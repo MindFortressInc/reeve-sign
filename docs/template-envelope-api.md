@@ -177,7 +177,7 @@ Response (truncated to what you care about):
       "role": "SIGNER",
       "email": "jane@example.com",
       "name": "Jane Buyer",
-      "token": "aHqQ3YJxgF9MyAlL2wKzI"
+      "token": "<RECIPIENT_SIGNING_TOKEN>"
     }
   ]
 }
