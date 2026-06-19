@@ -25,7 +25,7 @@ export const TemplateDocumentSelfSigned = ({ documentName, assetBaseUrl }: Templ
       <Section className="flex-row items-center justify-center">
         <Section>
           <Column align="center">
-            <Text className="font-semibold text-[#7AC455] text-base">
+            <Text className="font-semibold text-[#2A6F7C] text-base">
               <Img src={getAssetUrl('/static/completed.png')} className="-mt-0.5 mr-2 inline h-7 w-7 align-middle" />
               <Trans>Completed</Trans>
             </Text>
@@ -61,7 +61,7 @@ export const TemplateDocumentSelfSigned = ({ documentName, assetBaseUrl }: Templ
 
           <Button
             className="rounded-lg border border-slate-200 border-solid px-4 py-2 text-center font-medium text-black text-sm no-underline"
-            href="https://documenso.com/pricing"
+            href="https://meetreeve.com"
           >
             <Img src={getAssetUrl('/static/review.png')} className="mr-2 mb-0.5 inline h-5 w-5 align-middle" />
             <Trans>View plans</Trans>

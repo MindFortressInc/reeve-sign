@@ -8,7 +8,7 @@ import { z } from 'zod';
  */
 export const ZClaimFlagsSchema = z.object({
   /**
-   * Allows disabling of Documenso branding for:
+   * Allows disabling of Reeve.Sign branding for:
    * - Certificates
    * - Emails
    * - Other?
@@ -58,7 +58,7 @@ export const SUBSCRIPTION_CLAIM_FEATURE_FLAGS: Record<
   },
   hidePoweredBy: {
     key: 'hidePoweredBy',
-    label: 'Hide Documenso branding by',
+    label: 'Hide Reeve.Sign branding by',
   },
   emailDomains: {
     key: 'emailDomains',

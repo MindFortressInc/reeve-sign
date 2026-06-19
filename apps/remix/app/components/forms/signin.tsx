@@ -308,6 +308,27 @@ export const SignInForm = ({
     setIsEmbeddedRedirect(params.get('embedded') === 'true');
   }, [form]);
 
+  // Reeve.Sign: Reeve (OIDC) SSO is the ONLY login method — email/password, passkey, and
+  // the other providers are never exposed. Upstream's full form is left intact below
+  // (reachable only if OIDC is disabled) to keep our diff against Documenso minimal for rebases.
+  if (isOIDCSSOEnabled) {
+    return (
+      <div className={cn('flex w-full flex-col gap-y-4', className)}>
+        <Button
+          type="button"
+          size="lg"
+          loading={isSubmitting}
+          className="bg-documenso hover:opacity-90"
+          onClick={onSignInWithOIDCClick}
+        >
+          <FaIdCardClip className="mr-2 h-5 w-5" />
+          <Trans>Continue with</Trans>
+          <span className="ml-1">{oidcProviderLabel || 'Reeve'}</span>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <Form {...form}>
       <form className={cn('flex w-full flex-col gap-y-4', className)} onSubmit={form.handleSubmit(onFormSubmit)}>
