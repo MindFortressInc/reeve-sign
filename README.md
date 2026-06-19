@@ -1,3 +1,11 @@
+<!--
+  Reeve.Sign — a fork of Documenso (AGPL-3.0), reskinned for the Reeve platform and
+  deployed at sign.meetreeve.com. Upstream pinned at documenso v2.11.0.
+  Fork notes, license/source offer, and the upstream-rebase procedure: ./REEVE_FORK.md
+-->
+
+> **Reeve.Sign** is a fork of Documenso (AGPL-3.0). See [`REEVE_FORK.md`](./REEVE_FORK.md) for the upstream pin, source offer, and rebase procedure. Everything below is upstream Documenso's README.
+
 <img src="https://github.com/documenso/documenso/assets/13398220/a643571f-0239-46a6-a73e-6bef38d1228b" alt="Documenso Logo">
 
 <p align="center" style="margin-top: 20px">
