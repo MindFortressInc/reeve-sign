@@ -302,7 +302,7 @@ export const DocumentSigningPageViewV2 = () => {
                 rel="noopener"
                 className="fixed bottom-0 left-0 z-40 hidden rounded-tr bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-30 hover:opacity-70 lg:block"
               >
-                <Trans>Credits</Trans>
+                Credits
               </a>
             </div>
           </div>
