@@ -192,6 +192,39 @@ export const SignUpForm = ({
     }
   }, [form]);
 
+  // Reeve.Sign: Reeve (OIDC) SSO is the ONLY sign-up method — email/password and the
+  // other providers are never exposed. Sign-up and sign-in are the same Auth0 flow
+  // (first login JIT-provisions the account). Upstream's full form is left intact
+  // below (reachable only if OIDC is disabled) to keep our diff against Documenso
+  // minimal for rebases.
+  if (isOidcSignupEnabled) {
+    return (
+      <div className={cn('mx-auto flex w-full max-w-md flex-col', className)}>
+        <div className="w-full rounded-xl border border-border bg-neutral-100 p-6 dark:bg-background">
+          <h1 className="font-semibold text-xl md:text-2xl">
+            <Trans>Create your account</Trans>
+          </h1>
+
+          <p className="mt-2 text-muted-foreground text-xs md:text-sm">
+            <Trans>Continue with your Reeve account to start signing documents.</Trans>
+          </p>
+
+          <Button
+            type="button"
+            size="lg"
+            loading={isSubmitting}
+            className="bg-documenso mt-6 w-full hover:opacity-90"
+            onClick={onSignUpWithOIDCClick}
+          >
+            <FaIdCardClip className="mr-2 h-5 w-5" />
+            <Trans>Continue with</Trans>
+            <span className="ml-1">Reeve</span>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn('flex justify-center gap-x-12', className)}>
       <div className="relative hidden flex-1 overflow-hidden rounded-xl border border-border xl:flex">
