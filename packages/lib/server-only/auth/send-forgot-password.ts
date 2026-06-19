@@ -6,7 +6,7 @@ import { createElement } from 'react';
 
 import { getI18nInstance } from '../../client-only/providers/i18n-server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
-import { env } from '../../utils/env';
+import { FROM_ADDRESS, FROM_NAME } from '../../constants/email';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 
 export interface SendForgotPasswordOptions {
@@ -54,8 +54,8 @@ export const sendForgotPassword = async ({ userId }: SendForgotPasswordOptions) 
       name: user.name || '',
     },
     from: {
-      name: env('NEXT_PRIVATE_SMTP_FROM_NAME') || 'Reeve.Sign',
-      address: env('NEXT_PRIVATE_SMTP_FROM_ADDRESS') || 'noreply@documenso.com',
+      name: FROM_NAME,
+      address: FROM_ADDRESS,
     },
     subject: i18n._(msg`Forgot Password?`),
     html,

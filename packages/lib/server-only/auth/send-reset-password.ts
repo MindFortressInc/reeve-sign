@@ -4,7 +4,7 @@ import { prisma } from '@documenso/prisma';
 import { createElement } from 'react';
 
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
-import { env } from '../../utils/env';
+import { FROM_ADDRESS, FROM_NAME } from '../../constants/email';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 
 export interface SendResetPasswordOptions {
@@ -37,8 +37,8 @@ export const sendResetPassword = async ({ userId }: SendResetPasswordOptions) =>
       name: user.name || '',
     },
     from: {
-      name: env('NEXT_PRIVATE_SMTP_FROM_NAME') || 'Reeve.Sign',
-      address: env('NEXT_PRIVATE_SMTP_FROM_ADDRESS') || 'noreply@documenso.com',
+      name: FROM_NAME,
+      address: FROM_ADDRESS,
     },
     subject: 'Password Reset Success!',
     html,

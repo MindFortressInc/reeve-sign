@@ -7,7 +7,8 @@ name: Publish Reeve.Sign image (GHCR)
 # - authenticates with the built-in GITHUB_TOKEN.
 # Trigger manually: `gh workflow run publish.yml --ref <branch> -f tag=<tag>`.
 #
-# The GHCR package is private; the reeve-ec2 host has no read:packages credential.
+# The GHCR package visibility is private (configured separately from the public repo);
+# the reeve-ec2 host has no read:packages credential.
 # The `export_tarball` mode pulls the already-published image inside CI (where
 # GITHUB_TOKEN can read same-org packages) and uploads it as a downloadable
 # artifact, so the image can be `docker load`ed onto the host without a registry
@@ -29,18 +30,21 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build_and_publish:
     name: Build and publish reeve-sign image (arm64)
     if: ${{ ! inputs.export_tarball }}
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3

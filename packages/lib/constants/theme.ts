@@ -29,7 +29,7 @@ export const DEFAULT_BRAND_COLORS = {
   card: '#ffffff', //                    0 0% 100%
   cardBorder: '#e2e8f0', //              214.3 31.8% 91.4%
   cardForeground: '#0f172a', //          222.2 47.4% 11.2%
-  fieldCard: '#e3f2f4', //               95 74% 90%
+  fieldCard: '#e3f2f4', //               189 49% 92%
   fieldCardBorder: '#3a9aab', //         189.5 49.4% 45%
   fieldCardForeground: '#0f172a', //     222.2 47.4% 11.2%
   widget: '#f7f7f7', //                  0 0% 97%

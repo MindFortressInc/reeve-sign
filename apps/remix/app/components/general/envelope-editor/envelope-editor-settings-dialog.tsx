@@ -759,7 +759,7 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
                                       </SelectItem>
                                     ))}
 
-                                    <SelectItem value={'-1'}>Reeve.Sign</SelectItem>
+                                    <SelectItem value={'-1'}><Trans>Reeve.Sign</Trans></SelectItem>
                                   </SelectContent>
                                 </Select>
                               </FormControl>
