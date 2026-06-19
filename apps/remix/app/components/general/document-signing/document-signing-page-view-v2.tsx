@@ -294,6 +294,16 @@ export const DocumentSigningPageViewV2 = () => {
                   <BrandingLogo className="ml-2 inline-block h-[14px]" />
                 </a>
               )}
+
+              {/* AGPL-3.0 source offer (Reeve.Sign fork) — always present, not gated by hidePoweredBy */}
+              <a
+                href="https://github.com/MindFortressInc/reeve-sign"
+                target="_blank"
+                rel="noopener"
+                className="fixed bottom-0 left-0 z-40 hidden rounded-tr bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-30 hover:opacity-70 lg:block"
+              >
+                <Trans>Credits</Trans>
+              </a>
             </div>
           </div>
         </div>
