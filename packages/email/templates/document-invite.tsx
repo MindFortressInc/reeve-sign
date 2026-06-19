@@ -26,7 +26,7 @@ export const DocumentInviteEmailTemplate = ({
   inviterName = 'Lucas Smith',
   inviterEmail = 'lucas@documenso.com',
   documentName = 'Open Source Pledge.pdf',
-  signDocumentLink = 'https://documenso.com',
+  signDocumentLink = 'https://sign.meetreeve.com',
   assetBaseUrl = 'http://localhost:3002',
   customBody,
   role,
@@ -68,7 +68,7 @@ export const DocumentInviteEmailTemplate = ({
               {branding.brandingEnabled && branding.brandingLogo ? (
                 <Img src={branding.brandingLogo} alt="Branding Logo" className="mb-4 h-6" />
               ) : (
-                <Img src={getAssetUrl('/static/logo.png')} alt="Documenso Logo" className="mb-4 h-6" />
+                <Img src={getAssetUrl('/static/logo.png')} alt="Reeve.Sign Logo" className="mb-4 h-6" />
               )}
 
               <TemplateDocumentInvite

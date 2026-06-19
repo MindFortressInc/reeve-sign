@@ -61,7 +61,7 @@ export const TemplateDocumentSelfSigned = ({ documentName, assetBaseUrl }: Templ
 
           <Button
             className="rounded-lg border border-slate-200 border-solid px-4 py-2 text-center font-medium text-black text-sm no-underline"
-            href="https://documenso.com/pricing"
+            href="https://meetreeve.com"
           >
             <Img src={getAssetUrl('/static/review.png')} className="mr-2 mb-0.5 inline h-5 w-5 align-middle" />
             <Trans>View plans</Trans>
