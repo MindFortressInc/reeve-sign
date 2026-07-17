@@ -20,6 +20,34 @@ export const env = <K extends EnvKey>(variable: K): EnvValue<K> => {
   return (typeof process !== 'undefined' ? process?.env?.[variable] : undefined) as EnvValue<K>;
 };
 
+/**
+ * Guards a localhost fallback so it can never silently apply in production.
+ *
+ * These fallbacks exist so local dev runs with zero configuration, but in
+ * production a missing variable is a misconfiguration that fails *invisibly*:
+ * mail is dialled into a non-existent local relay and disappears, or every
+ * email link is minted against localhost:3000. Both look like success at the
+ * call site, so fail loudly here instead.
+ *
+ * Deliberately a no-op in the browser. NODE_ENV is not part of the public env
+ * payload (see `createPublicEnv`), so the client cannot tell production from
+ * dev and would throw on every render.
+ *
+ * @param variable The environment variable that should have been set.
+ * @param fallback The localhost value that would otherwise be used.
+ */
+export const assertLocalhostFallbackAllowed = (variable: string, fallback: string): void => {
+  if (typeof window !== 'undefined') {
+    return;
+  }
+
+  if (env('NODE_ENV') === 'production') {
+    throw new Error(
+      `${variable} is not set. Refusing to fall back to "${fallback}" in production, which would fail silently.`,
+    );
+  }
+};
+
 export const createPublicEnv = () => ({
   ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('NEXT_PUBLIC_'))),
   // Derived from the private URL so the public flag cannot drift from the

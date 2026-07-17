@@ -1,8 +1,20 @@
-import { env } from '@documenso/lib/utils/env';
+import { assertLocalhostFallbackAllowed, env } from '@documenso/lib/utils/env';
 
 export const APP_DOCUMENT_UPLOAD_SIZE_LIMIT = Number(env('NEXT_PUBLIC_DOCUMENT_SIZE_UPLOAD_LIMIT')) || 50;
 
-export const NEXT_PUBLIC_WEBAPP_URL = () => env('NEXT_PUBLIC_WEBAPP_URL') ?? 'http://localhost:3000';
+const LOCAL_WEBAPP_URL = 'http://localhost:3000';
+
+export const NEXT_PUBLIC_WEBAPP_URL = () => {
+  const webAppUrl = env('NEXT_PUBLIC_WEBAPP_URL');
+
+  if (webAppUrl) {
+    return webAppUrl;
+  }
+
+  assertLocalhostFallbackAllowed('NEXT_PUBLIC_WEBAPP_URL', LOCAL_WEBAPP_URL);
+
+  return LOCAL_WEBAPP_URL;
+};
 
 export const NEXT_PUBLIC_SIGNING_CONTACT_INFO = () =>
   env('NEXT_PUBLIC_SIGNING_CONTACT_INFO') ?? NEXT_PUBLIC_WEBAPP_URL();
