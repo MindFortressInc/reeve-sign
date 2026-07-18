@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError, AppErrorCode } from '../errors/app-error';
 import { assertLocalhostFallbackAllowed } from './env';
 
 afterEach(() => {
@@ -8,12 +9,20 @@ afterEach(() => {
 });
 
 describe('assertLocalhostFallbackAllowed', () => {
-  it('throws in production, naming the variable and the refused fallback', () => {
+  it('throws an AppError in production, naming the variable and the refused fallback', () => {
     vi.stubEnv('NODE_ENV', 'production');
 
     expect(() => assertLocalhostFallbackAllowed('NEXT_PRIVATE_SMTP_HOST', '127.0.0.1:2500')).toThrowError(
       /NEXT_PRIVATE_SMTP_HOST.*127\.0\.0\.1:2500/s,
     );
+
+    try {
+      assertLocalhostFallbackAllowed('NEXT_PRIVATE_SMTP_HOST', '127.0.0.1:2500');
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe(AppErrorCode.NOT_SETUP);
+    }
   });
 
   it('allows the fallback in development', () => {

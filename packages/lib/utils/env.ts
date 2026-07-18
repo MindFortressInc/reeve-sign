@@ -1,5 +1,7 @@
 /// <reference types="@documenso/tsconfig/process-env.d.ts" />
 
+import { AppError, AppErrorCode } from '../errors/app-error';
+
 declare global {
   interface Window {
     __ENV__?: Record<string, string | undefined>;
@@ -42,9 +44,9 @@ export const assertLocalhostFallbackAllowed = (variable: string, fallback: strin
   }
 
   if (env('NODE_ENV') === 'production') {
-    throw new Error(
-      `${variable} is not set. Refusing to fall back to "${fallback}" in production, which would fail silently.`,
-    );
+    throw new AppError(AppErrorCode.NOT_SETUP, {
+      message: `${variable} is not set. Refusing to fall back to "${fallback}" in production, which would fail silently.`,
+    });
   }
 };
 
