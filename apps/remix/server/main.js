@@ -11,17 +11,14 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import handle from 'hono-react-router-adapter/node';
 import { getLoadContext } from './hono/server/load-context.js';
 import server from './hono/server/router.js';
-import { initServerSentry } from './hono/server/sentry.js';
 import * as build from './index.js';
 
-// Sentry (DEV-2839): no-op when SENTRY_DSN is unset. Also called from
-// `server/router.ts` (idempotent -- see `initServerSentry`'s double-init
-// guard in `./hono/server/sentry.js`, compiled from
-// `apps/remix/server/sentry.ts`, which has the SDK-choice rationale).
-// Whichever of the two import chains resolves `./sentry.js` first actually
-// runs the init; either way it completes before `serve()` below starts
-// accepting connections, which is what request-time error capture needs.
-initServerSentry();
+// Sentry (DEV-2839) is initialized inside `server/router.ts` (no-op when
+// SENTRY_DSN is unset -- see `./hono/server/sentry.js`, compiled from
+// apps/remix/server/sentry.ts, for the SDK-choice rationale). The `import
+// server from './hono/server/router.js'` above already evaluates that
+// module -- and its module-top-level `initServerSentry()` call -- before
+// any code below runs, so a second call here would be redundant.
 
 server.use(
   serveStatic({

@@ -52,14 +52,19 @@ function SentryInit() {
         Sentry.init({
           dsn,
           environment: import.meta.env.MODE,
-          tracesSampleRate: 0.1,
+          // Deliberately no tracesSampleRate / browserTracingIntegration:
+          // this ticket (DEV-2839) scopes to error monitoring only. See the
+          // matching comment in apps/remix/server/sentry.ts -- `beforeSend`
+          // below never fires for transaction/span events, so enabling
+          // tracing here without a `beforeSendTransaction` scrubber would
+          // ship unscrubbed page URLs (including query-string tokens, e.g.
+          // the embed-authoring routes' presigned tokens) to Sentry.
           sendDefaultPii: false,
           // See the matching comment in apps/remix/server/sentry.ts -- same
           // narrow adapter cast, same reason (scrub.ts has zero Sentry SDK
           // dependency on purpose).
           beforeSend: (event) =>
             scrubBeforeSend(event as unknown as ScrubbableSentryEvent) as unknown as SentryErrorEvent,
-          integrations: [Sentry.browserTracingIntegration()],
         });
 
         Sentry.setTag('service_name', 'reeve-sign');

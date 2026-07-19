@@ -104,6 +104,10 @@ export function buildSentryBeforeSend(
         request.data = scrubValue(request.data, compiled);
       }
 
+      // `request.extra` isn't a field the real Sentry SDKs populate (there's
+      // no `RequestEventData.extra`) -- scrubbed anyway for parity with the
+      // Python reference's equivalent branch and as a defensive no-op in
+      // case a future SDK version or a custom integration adds one.
       if ('extra' in request) {
         request.extra = scrubValue(request.extra, compiled);
       }

@@ -53,7 +53,14 @@ export function initServerSentry(dsn: string | undefined = process.env.SENTRY_DS
   Sentry.init({
     dsn,
     environment: process.env.NODE_ENV ?? 'development',
-    tracesSampleRate: 0.1,
+    // Deliberately no tracesSampleRate / performance tracing: this ticket
+    // (DEV-2839) scopes to error monitoring only. `beforeSend` below (the
+    // PII scrubber) only fires for error events -- Sentry has a *separate*
+    // `beforeSendTransaction` hook for spans, which this diff does not
+    // configure. Enabling tracing without that hook would ship unscrubbed
+    // request URLs (query strings, potentially including tokens) as span
+    // attributes. Add `beforeSendTransaction` alongside tracesSampleRate in
+    // a follow-up if performance tracing is wanted later.
     sendDefaultPii: false,
     // `scrubBeforeSend` is typed against the shared, SDK-agnostic
     // `ScrubbableSentryEvent` (see packages/lib/universal/sentry/scrub.ts)
