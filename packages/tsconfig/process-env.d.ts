@@ -118,5 +118,13 @@ declare namespace NodeJS {
     GOOGLE_VERTEX_PROJECT_ID?: string;
     GOOGLE_VERTEX_LOCATION?: string;
     GOOGLE_VERTEX_API_KEY?: string;
+
+    /**
+     * Reeve.Sign fork-local: service-token org-provisioning endpoint
+     * (POST /api/reeve-admin/organisations). Fail-closed when unset. See
+     * packages/lib/server-only/reeve-admin/ and DEV-4873.
+     */
+    REEVE_SIGN_ADMIN_TOKEN?: string;
+    REEVE_SIGN_SYSTEM_USER_EMAIL?: string;
   }
 }
