@@ -7,7 +7,7 @@ import { cn } from '@documenso/ui/lib/utils';
 import { Button } from '@documenso/ui/primitives/button';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { Link, Outlet, redirect } from 'react-router';
+import { data, Link, Outlet, redirect } from 'react-router';
 
 import { AppBanner } from '~/components/general/app-banner';
 import { Header } from '~/components/general/app-header';
@@ -15,6 +15,7 @@ import { GenericErrorLayout } from '~/components/general/generic-error-layout';
 import { OrganisationBillingBanner } from '~/components/general/organisations/organisation-billing-banner';
 import { VerifyEmailBanner } from '~/components/general/verify-email-banner';
 import { TeamProvider } from '~/providers/team';
+import { checkConsentGate } from '~/utils/consent-gate.server';
 
 import type { Route } from './+types/_layout';
 
@@ -35,9 +36,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw redirect('/signin');
   }
 
-  return {
-    banner,
-  };
+  // DEV-2837: ToS/Privacy consent gate via Reeve.Compliance. No-ops entirely
+  // when unconfigured, and fails open (logs + lets the user through) on any
+  // API error — see `checkConsentGate` for the full policy.
+  const consentGate = await checkConsentGate({ request, user: session.user });
+
+  if (consentGate.redirectTo) {
+    throw redirect(consentGate.redirectTo, {
+      headers: consentGate.setCookieHeader ? { 'Set-Cookie': consentGate.setCookieHeader } : undefined,
+    });
+  }
+
+  return data(
+    { banner },
+    consentGate.setCookieHeader ? { headers: { 'Set-Cookie': consentGate.setCookieHeader } } : undefined,
+  );
 }
 
 export default function Layout({ loaderData, params, matches }: Route.ComponentProps) {

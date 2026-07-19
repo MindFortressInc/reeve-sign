@@ -1,0 +1,92 @@
+import type { SessionUser } from '@documenso/auth/server/lib/session/session';
+import {
+  getConsentStatus,
+  IS_REEVE_COMPLIANCE_ENABLED,
+  REEVE_COMPLIANCE_DOC_TYPES,
+} from '@documenso/lib/server-only/compliance';
+import { logger } from '@documenso/lib/utils/logger';
+
+import { consentCheckCookie, getCachedConsentSubjectId } from '~/storage/consent-check-cookie.server';
+
+/** Route the consent gate never redirects away from — avoids a redirect loop. */
+export const CONSENT_GATE_ROUTE_PATH = '/legal-consent';
+
+export type ConsentGateResult = {
+  /** Where to redirect the user, or `null` if they can proceed as-is. */
+  redirectTo: string | null;
+  /** `Set-Cookie` value caching a positive result, or `null` if nothing to cache. */
+  setCookieHeader: string | null;
+};
+
+const NO_ACTION: ConsentGateResult = { redirectTo: null, setCookieHeader: null };
+
+/**
+ * DEV-2837: gates authenticated access on ToS/Privacy acceptance via the
+ * Reeve.Compliance API (`GET /api/compliance/v1/consent/status`,
+ * host_app=`reeve`, doc_types=`tos,privacy`).
+ *
+ * Env-gated fail-open, mirroring the `IS_DOCUMENT_CONVERSION_ENABLED` idiom
+ * (`packages/lib/constants/document-conversion.ts`): if the compliance env
+ * vars are unset (self-host/dev), this is a permanent no-op. If they ARE
+ * configured but the status check errors or times out, this still doesn't
+ * block — it logs and lets the request through. A consent gate should never
+ * be the reason the whole app goes down; availability wins over strictness
+ * here (an outage means a delayed re-prompt, not a lockout).
+ *
+ * A positive result is cached in a session-scoped cookie keyed to the
+ * subject_id, so the status endpoint is called at most once per browser
+ * session per user (not on every single navigation).
+ */
+export const checkConsentGate = async ({
+  request,
+  user,
+}: {
+  request: Request;
+  user: Pick<SessionUser, 'email'>;
+}): Promise<ConsentGateResult> => {
+  if (!IS_REEVE_COMPLIANCE_ENABLED()) {
+    return NO_ACTION;
+  }
+
+  const url = new URL(request.url);
+
+  // Never gate the consent page itself — otherwise a still-pending
+  // acceptance would bounce the user right back to the page they're on.
+  if (url.pathname === CONSENT_GATE_ROUTE_PATH) {
+    return NO_ACTION;
+  }
+
+  const subjectId = user.email;
+
+  const cachedSubjectId = await getCachedConsentSubjectId(request);
+
+  if (cachedSubjectId && cachedSubjectId === subjectId) {
+    return NO_ACTION;
+  }
+
+  const status = await getConsentStatus({ subjectId, docTypes: REEVE_COMPLIANCE_DOC_TYPES });
+
+  if (status === null) {
+    // Fail-open: compliance API errored, timed out, or is unreachable.
+    // Deliberately NOT cached as a positive result — we want the next
+    // request to re-check rather than remember a failure as a success.
+    logger.warn({ event: 'reeve_compliance_consent_status_check_failed', subjectId });
+
+    return NO_ACTION;
+  }
+
+  const needsAcceptance = status.some((item) => item.needsAcceptance);
+
+  if (needsAcceptance) {
+    const returnTo = `${url.pathname}${url.search}`;
+    const redirectTo = `${CONSENT_GATE_ROUTE_PATH}?returnTo=${encodeURIComponent(returnTo)}`;
+
+    return { redirectTo, setCookieHeader: null };
+  }
+
+  // Positive result — cache it for the rest of this browser session so we
+  // don't hit the compliance API on every request.
+  const setCookieHeader = await consentCheckCookie.serialize(subjectId);
+
+  return { redirectTo: null, setCookieHeader };
+};
