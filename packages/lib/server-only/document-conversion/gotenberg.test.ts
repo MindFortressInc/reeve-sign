@@ -6,6 +6,17 @@ import {
 } from '../../constants/document-conversion';
 import { convertDocxToPdfViaGotenberg } from './gotenberg';
 
+// Assigning `undefined` back to `process.env.KEY` stringifies to the literal
+// "undefined" rather than deleting the key, so an absent original must be
+// restored via `delete` instead.
+const restoreEnv = (key: string, value: string | undefined) => {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+};
+
 describe('convertDocxToPdfViaGotenberg', () => {
   const originalUrl = process.env.NEXT_PRIVATE_DOCUMENT_CONVERSION_URL;
   const originalUsername = process.env.NEXT_PRIVATE_DOCUMENT_CONVERSION_USERNAME;
@@ -29,9 +40,9 @@ describe('convertDocxToPdfViaGotenberg', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
 
-    process.env.NEXT_PRIVATE_DOCUMENT_CONVERSION_URL = originalUrl;
-    process.env.NEXT_PRIVATE_DOCUMENT_CONVERSION_USERNAME = originalUsername;
-    process.env.NEXT_PRIVATE_DOCUMENT_CONVERSION_PASSWORD = originalPassword;
+    restoreEnv('NEXT_PRIVATE_DOCUMENT_CONVERSION_URL', originalUrl);
+    restoreEnv('NEXT_PRIVATE_DOCUMENT_CONVERSION_USERNAME', originalUsername);
+    restoreEnv('NEXT_PRIVATE_DOCUMENT_CONVERSION_PASSWORD', originalPassword);
   });
 
   const getSentFile = () => {
