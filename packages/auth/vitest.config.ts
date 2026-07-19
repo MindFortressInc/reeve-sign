@@ -17,9 +17,10 @@ export default defineConfig({
     // (`../../translations/${lang}/web.mjs`). That variable dynamic import
     // only resolves under apps/remix's full Vite build graph, not a
     // package-local Vitest run, so it rejects here as an unrelated
-    // background unhandled rejection - it is unrelated to and does not
-    // affect the guard behaviour under test (assertions still run and pass;
-    // this only silences the async rejection noise/exit-code impact).
-    dangerouslyIgnoreUnhandledErrors: true,
+    // background unhandled rejection. Rather than blanket-silencing all
+    // unhandled rejections (which would also hide genuine failures in future
+    // tests), vitest.setup.ts mocks that module so the eager catalog load
+    // never runs, keeping real unhandled rejections visible.
+    setupFiles: ['./vitest.setup.ts'],
   },
 });
