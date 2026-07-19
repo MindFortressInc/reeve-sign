@@ -41,15 +41,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // API error — see `checkConsentGate` for the full policy.
   const consentGate = await checkConsentGate({ request, user: session.user });
 
-  if (consentGate.redirectTo) {
-    throw redirect(consentGate.redirectTo, {
-      headers: consentGate.setCookieHeader ? { 'Set-Cookie': consentGate.setCookieHeader } : undefined,
-    });
+  if (consentGate.type === 'redirect') {
+    throw redirect(consentGate.to);
   }
 
   return data(
     { banner },
-    consentGate.setCookieHeader ? { headers: { 'Set-Cookie': consentGate.setCookieHeader } } : undefined,
+    consentGate.type === 'cache' ? { headers: { 'Set-Cookie': consentGate.setCookieHeader } } : undefined,
   );
 }
 

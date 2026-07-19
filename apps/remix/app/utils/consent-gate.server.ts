@@ -11,14 +11,19 @@ import { consentCheckCookie, getCachedConsentSubjectId } from '~/storage/consent
 /** Route the consent gate never redirects away from — avoids a redirect loop. */
 export const CONSENT_GATE_ROUTE_PATH = '/legal-consent';
 
-export type ConsentGateResult = {
-  /** Where to redirect the user, or `null` if they can proceed as-is. */
-  redirectTo: string | null;
-  /** `Set-Cookie` value caching a positive result, or `null` if nothing to cache. */
-  setCookieHeader: string | null;
-};
+/**
+ * Discriminated union (deep-review finding, DEV-2837): a redirect and a
+ * cache-write are mutually exclusive outcomes — the plain
+ * `{ redirectTo: string | null; setCookieHeader: string | null }` shape
+ * couldn't express that, leaving a "both set" case TypeScript wouldn't flag
+ * even though no code path produces it.
+ */
+export type ConsentGateResult =
+  | { type: 'noop' }
+  | { type: 'redirect'; to: string }
+  | { type: 'cache'; setCookieHeader: string };
 
-const NO_ACTION: ConsentGateResult = { redirectTo: null, setCookieHeader: null };
+const NO_ACTION: ConsentGateResult = { type: 'noop' };
 
 /**
  * DEV-2837: gates authenticated access on ToS/Privacy acceptance via the
@@ -79,14 +84,14 @@ export const checkConsentGate = async ({
 
   if (needsAcceptance) {
     const returnTo = `${url.pathname}${url.search}`;
-    const redirectTo = `${CONSENT_GATE_ROUTE_PATH}?returnTo=${encodeURIComponent(returnTo)}`;
+    const to = `${CONSENT_GATE_ROUTE_PATH}?returnTo=${encodeURIComponent(returnTo)}`;
 
-    return { redirectTo, setCookieHeader: null };
+    return { type: 'redirect', to };
   }
 
   // Positive result — cache it for the rest of this browser session so we
   // don't hit the compliance API on every request.
   const setCookieHeader = await consentCheckCookie.serialize(subjectId);
 
-  return { redirectTo: null, setCookieHeader };
+  return { type: 'cache', setCookieHeader };
 };

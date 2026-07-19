@@ -24,6 +24,28 @@ const resolveReturnTo = (raw: string | null): string => {
   return raw && isValidReturnTo(raw) ? (normalizeReturnTo(raw) ?? '/') : '/';
 };
 
+const FALLBACK_LEGAL_LINK = '/articles/signature-disclosure';
+
+/**
+ * Defense-in-depth (deep-review finding, DEV-2837): `contentUrl` is
+ * server-authored on reeve-services, not attacker-reachable through this
+ * app — but this page renders it as a raw `<a href>`, so a non-http(s)
+ * scheme (e.g. `javascript:`) is rejected rather than trusted blindly.
+ */
+const safeLegalLink = (contentUrl: string | null): string => {
+  if (!contentUrl) {
+    return FALLBACK_LEGAL_LINK;
+  }
+
+  try {
+    const parsed = new URL(contentUrl);
+
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? contentUrl : FALLBACK_LEGAL_LINK;
+  } catch {
+    return FALLBACK_LEGAL_LINK;
+  }
+};
+
 export function meta() {
   return appMetaTags(msg`Terms & Privacy`);
 }
@@ -138,7 +160,7 @@ export default function LegalConsentPage({ loaderData }: Route.ComponentProps) {
               <span>
                 <Trans>I have read and agree to the</Trans>{' '}
                 <a
-                  href={tos?.contentUrl ?? '/articles/signature-disclosure'}
+                  href={safeLegalLink(tos?.contentUrl ?? null)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-documenso-700 underline"
@@ -147,7 +169,7 @@ export default function LegalConsentPage({ loaderData }: Route.ComponentProps) {
                 </a>{' '}
                 <Trans>and</Trans>{' '}
                 <a
-                  href={privacy?.contentUrl ?? '/articles/signature-disclosure'}
+                  href={safeLegalLink(privacy?.contentUrl ?? null)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-documenso-700 underline"

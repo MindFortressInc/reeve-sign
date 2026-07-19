@@ -13,13 +13,28 @@ import { createCookie } from 'react-router';
  * No `maxAge`/`expires` is set: this is a session cookie, matching "at most
  * once per session" literally (it's gone once the browser session ends).
  *
- * Pattern mirrors the existing `lang-cookie.server.ts`.
+ * `secrets` is REQUIRED here (deep-review finding, DEV-2837): without it,
+ * `createCookie` falls back to plain reversible base64 encoding, which
+ * would let a user forge `reeve-consent-ok=<base64 of their own email>` and
+ * permanently skip both the redirect to `/legal-consent` and the remote
+ * status check — this cookie is the sole gate enforcement point, so an
+ * unsigned value is a full, self-service bypass. Signed with the same
+ * `NEXTAUTH_SECRET` the session cookie itself uses (`packages/auth/server/lib/session/session-cookies.ts`),
+ * matching that existing precedent. `checkConsentGate` is only reached
+ * after `session.isAuthenticated`, which already required a valid
+ * `NEXTAUTH_SECRET` to verify the session cookie — so this never runs with
+ * an unset secret in a working deployment.
+ *
+ * Pattern otherwise mirrors the existing `lang-cookie.server.ts`.
  */
+const authSecret = env('NEXTAUTH_SECRET');
+
 export const consentCheckCookie = createCookie('reeve-consent-ok', {
   path: '/',
   httpOnly: true,
   sameSite: 'lax',
   secure: env('NODE_ENV') === 'production',
+  secrets: authSecret ? [authSecret] : [],
 });
 
 /**
