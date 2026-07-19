@@ -8,6 +8,7 @@ import { deriveOrganisationUrlFromExternalReference } from './derive-organisatio
 const {
   findUniqueMock,
   findUniqueOrThrowMock,
+  findFirstMock,
   findFirstOrThrowMock,
   createOrganisationMock,
   createTeamMock,
@@ -16,6 +17,7 @@ const {
 } = vi.hoisted(() => ({
   findUniqueMock: vi.fn(),
   findUniqueOrThrowMock: vi.fn(),
+  findFirstMock: vi.fn(),
   findFirstOrThrowMock: vi.fn(),
   createOrganisationMock: vi.fn(),
   createTeamMock: vi.fn(),
@@ -30,6 +32,7 @@ vi.mock('@documenso/prisma', () => ({
       findUniqueOrThrow: findUniqueOrThrowMock,
     },
     team: {
+      findFirst: findFirstMock,
       findFirstOrThrow: findFirstOrThrowMock,
     },
   },
@@ -60,6 +63,7 @@ describe('provisionOrganisation', () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
     findUniqueOrThrowMock.mockReset();
+    findFirstMock.mockReset();
     findFirstOrThrowMock.mockReset();
     createOrganisationMock.mockReset();
     createTeamMock.mockReset();
@@ -68,10 +72,11 @@ describe('provisionOrganisation', () => {
     getReeveAdminSystemUserMock.mockResolvedValue(SYSTEM_USER);
   });
 
-  it('idempotent hit: returns the existing org and does not create anything', async () => {
+  it('idempotent hit: org + team both already exist -> returns the existing org, creates nothing', async () => {
     const url = deriveOrganisationUrlFromExternalReference('host_app:tenant-123');
 
     findUniqueMock.mockResolvedValue({ id: 'org_existing', url });
+    findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_existing' });
 
     const result = await provisionOrganisation({ name: 'Tenant 123', externalReference: 'host_app:tenant-123' });
 
@@ -88,6 +93,7 @@ describe('provisionOrganisation', () => {
     // First call: nothing exists yet.
     findUniqueMock.mockResolvedValueOnce(null);
     createOrganisationMock.mockResolvedValueOnce({ id: 'org_new', url });
+    findFirstMock.mockResolvedValueOnce(null); // no team yet
     createTeamMock.mockResolvedValueOnce(undefined);
     findFirstOrThrowMock.mockResolvedValueOnce({ id: 7, organisationId: 'org_new' });
     createApiTokenMock.mockResolvedValueOnce({ id: 1, token: 'api_first_token' });
@@ -97,15 +103,17 @@ describe('provisionOrganisation', () => {
     expect(first).toEqual({ organisationId: 'org_new', apiToken: 'api_first_token', created: true });
     expect(createOrganisationMock).toHaveBeenCalledTimes(1);
 
-    // Second call: the org now exists (persistent, DB-backed lookup by the
-    // deterministically-derived url — not in-memory).
+    // Second call: the org (and its team) now exist (persistent, DB-backed
+    // lookup by the deterministically-derived url — not in-memory).
     findUniqueMock.mockResolvedValueOnce({ id: 'org_new', url });
+    findFirstMock.mockResolvedValueOnce({ id: 7, organisationId: 'org_new' });
 
     const second = await provisionOrganisation({ name: 'Tenant 123', externalReference });
 
     expect(second).toEqual({ organisationId: 'org_new', apiToken: null, created: false });
     // Still only ever called once across both requests -> no duplicate org.
     expect(createOrganisationMock).toHaveBeenCalledTimes(1);
+    expect(createTeamMock).toHaveBeenCalledTimes(1);
   });
 
   it('creates a fresh organisation, team, and org-scoped api token when none exists', async () => {
@@ -114,6 +122,7 @@ describe('provisionOrganisation', () => {
 
     findUniqueMock.mockResolvedValue(null);
     createOrganisationMock.mockResolvedValue({ id: 'org_456', url });
+    findFirstMock.mockResolvedValue(null);
     createTeamMock.mockResolvedValue(undefined);
     findFirstOrThrowMock.mockResolvedValue({ id: 42, organisationId: 'org_456' });
     createApiTokenMock.mockResolvedValue({ id: 2, token: 'api_scoped_token' });
@@ -149,6 +158,7 @@ describe('provisionOrganisation', () => {
 
   it('billing-bypass: provisions organisation N+1 for the system user without any free-org limit check', async () => {
     findUniqueMock.mockResolvedValue(null);
+    findFirstMock.mockResolvedValue(null);
     findFirstOrThrowMock.mockResolvedValue({ id: 1, organisationId: 'org_x' });
     createApiTokenMock.mockResolvedValue({ id: 1, token: 'api_token' });
 
@@ -168,7 +178,7 @@ describe('provisionOrganisation', () => {
     expect(createOrganisationMock).toHaveBeenCalledTimes(5);
   });
 
-  it('handles a create race safely: ALREADY_EXISTS from createOrganisation resolves to the winner, not an error', async () => {
+  it('handles a create race safely: ALREADY_EXISTS from createOrganisation resolves to the (already-complete) winner', async () => {
     const externalReference = 'host_app:tenant-race';
     const url = deriveOrganisationUrlFromExternalReference(externalReference);
 
@@ -177,12 +187,38 @@ describe('provisionOrganisation', () => {
       new AppError(AppErrorCode.ALREADY_EXISTS, { message: 'Organisation URL already exists' }),
     );
     findUniqueOrThrowMock.mockResolvedValueOnce({ id: 'org_race_winner', url });
+    // The concurrent winner request finished its own team/token setup
+    // before we observed ALREADY_EXISTS, so this is a true idempotent hit.
+    findFirstMock.mockResolvedValueOnce({ id: 9, organisationId: 'org_race_winner' });
 
     const result = await provisionOrganisation({ name: 'Tenant Race', externalReference });
 
     expect(result).toEqual({ organisationId: 'org_race_winner', apiToken: null, created: false });
     expect(createTeamMock).not.toHaveBeenCalled();
     expect(createApiTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('self-heals a partial prior failure: org exists but its team/token step never completed', async () => {
+    const externalReference = 'host_app:tenant-partial';
+    const url = deriveOrganisationUrlFromExternalReference(externalReference);
+
+    // The organisation row survives from a prior call whose createTeam or
+    // createApiToken step failed (e.g. a transient DB error) after
+    // createOrganisation had already committed.
+    findUniqueMock.mockResolvedValue({ id: 'org_partial', url });
+    findFirstMock.mockResolvedValueOnce(null); // no team yet -> incomplete
+    createTeamMock.mockResolvedValueOnce(undefined);
+    findFirstOrThrowMock.mockResolvedValueOnce({ id: 11, organisationId: 'org_partial' });
+    createApiTokenMock.mockResolvedValueOnce({ id: 3, token: 'api_healed_token' });
+
+    const result = await provisionOrganisation({ name: 'Tenant Partial', externalReference });
+
+    // A real, non-null token is delivered — the caller is not permanently
+    // stranded just because the organisation row already existed.
+    expect(result).toEqual({ organisationId: 'org_partial', apiToken: 'api_healed_token', created: true });
+    expect(createOrganisationMock).not.toHaveBeenCalled();
+    expect(createTeamMock).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'org_partial' }));
+    expect(createApiTokenMock).toHaveBeenCalledWith(expect.objectContaining({ userId: SYSTEM_USER.id, teamId: 11 }));
   });
 
   it('fails loud when the system user cannot be resolved, without creating anything', async () => {

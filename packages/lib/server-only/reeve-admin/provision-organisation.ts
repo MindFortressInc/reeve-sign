@@ -32,7 +32,13 @@ const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
  * organisation's `url` (see `derive-organisation-url.ts`). `url` is a
  * persistent, unique, DB-backed column, so a lookup by the derived url is
  * enough to detect "already provisioned" across restarts without any new
- * schema/migration.
+ * schema/migration. A completed provision is defined as "organisation AND
+ * team both exist" rather than just "organisation exists": if a prior call
+ * created the organisation but then failed before minting the team/token
+ * (a transient DB error, a crash mid-request), the org row alone would
+ * otherwise permanently look "done" and every retry would return
+ * `apiToken: null` forever with no way to recover. Checking for the team
+ * too lets an incomplete prior attempt self-heal on the next call instead.
  *
  * Billing bypass: this calls `createOrganisation` directly instead of going
  * through `packages/trpc/server/organisation-router/create-organisation.ts`.
@@ -49,38 +55,45 @@ export const provisionOrganisation = async ({
 }: ProvisionOrganisationInput): Promise<ProvisionOrganisationResult> => {
   const url = deriveOrganisationUrlFromExternalReference(externalReference);
 
-  const existing = await prisma.organisation.findUnique({ where: { url } });
+  let organisation = await prisma.organisation.findUnique({ where: { url } });
 
-  if (existing) {
-    return { organisationId: existing.id, apiToken: null, created: false };
-  }
+  let systemUser: Awaited<ReturnType<typeof getReeveAdminSystemUser>> | undefined;
 
-  const systemUser = await getReeveAdminSystemUser();
+  if (!organisation) {
+    systemUser = await getReeveAdminSystemUser();
 
-  let organisation: Awaited<ReturnType<typeof createOrganisation>>;
+    try {
+      organisation = await createOrganisation({
+        userId: systemUser.id,
+        name,
+        type: OrganisationType.ORGANISATION,
+        url,
+        claim: internalClaims[INTERNAL_CLAIM_ID.PLATFORM],
+      });
+    } catch (err) {
+      // Two concurrent requests for the same external_reference can both
+      // pass the findUnique check above and race on the DB-level unique
+      // constraint on `url`; createOrganisation surfaces that as
+      // ALREADY_EXISTS. Fall through to the shared "does it have a team
+      // yet" check below rather than assuming the race winner finished.
+      if (!(err instanceof AppError && err.code === AppErrorCode.ALREADY_EXISTS)) {
+        throw err;
+      }
 
-  try {
-    organisation = await createOrganisation({
-      userId: systemUser.id,
-      name,
-      type: OrganisationType.ORGANISATION,
-      url,
-      claim: internalClaims[INTERNAL_CLAIM_ID.PLATFORM],
-    });
-  } catch (err) {
-    // Two concurrent requests for the same external_reference can both pass
-    // the findUnique check above and race on the DB-level unique constraint
-    // on `url`; createOrganisation surfaces that as ALREADY_EXISTS. Treat it
-    // as an idempotent hit rather than an error.
-    if (err instanceof AppError && err.code === AppErrorCode.ALREADY_EXISTS) {
-      const raceWinner = await prisma.organisation.findUniqueOrThrow({ where: { url } });
-
-      return { organisationId: raceWinner.id, apiToken: null, created: false };
+      organisation = await prisma.organisation.findUniqueOrThrow({ where: { url } });
     }
-
-    throw err;
   }
 
+  const existingTeam = await prisma.team.findFirst({ where: { organisationId: organisation.id } });
+
+  if (existingTeam) {
+    // Fully provisioned already — a true idempotent hit. The token is
+    // intentionally never re-returned once minted (see the pinned
+    // contract: `api_token: null` on every hit after the first).
+    return { organisationId: organisation.id, apiToken: null, created: false };
+  }
+
+  systemUser ??= await getReeveAdminSystemUser();
   const teamUrl = `${url}-team`;
 
   await createTeam({

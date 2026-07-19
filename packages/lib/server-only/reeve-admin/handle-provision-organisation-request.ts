@@ -7,8 +7,11 @@ import {
   REEVE_ADMIN_TOKEN_HEADER,
 } from './reeve-admin-token';
 
+// Bounds kept in sync with `ZOrganisationNameSchema` in
+// packages/trpc/server/organisation-router/create-organisation.types.ts so
+// this REST path and the session tRPC path validate `name` identically.
 const ZProvisionOrganisationRequestSchema = z.object({
-  name: z.string().trim().min(1, 'name is required').max(255),
+  name: z.string().trim().min(3, 'name must be at least 3 characters').max(50, 'name must be at most 50 characters'),
   external_reference: z.string().trim().min(1, 'external_reference is required').max(512),
 });
 
