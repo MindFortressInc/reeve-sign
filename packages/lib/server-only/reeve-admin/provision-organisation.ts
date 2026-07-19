@@ -33,12 +33,14 @@ const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
  * persistent, unique, DB-backed column, so a lookup by the derived url is
  * enough to detect "already provisioned" across restarts without any new
  * schema/migration. A completed provision is defined as "organisation AND
- * team both exist" rather than just "organisation exists": if a prior call
- * created the organisation but then failed before minting the team/token
- * (a transient DB error, a crash mid-request), the org row alone would
- * otherwise permanently look "done" and every retry would return
- * `apiToken: null` forever with no way to recover. Checking for the team
- * too lets an incomplete prior attempt self-heal on the next call instead.
+ * team AND api token all exist" rather than just "organisation exists": a
+ * prior call can fail partway through (transient DB error, crash
+ * mid-request) after committing the org, or after committing the team but
+ * before minting the token. Either partial state would otherwise
+ * permanently look "done" on retry and return `apiToken: null` forever with
+ * no way to ever recover a token. Checking each step lets an incomplete
+ * prior attempt self-heal — completing exactly the steps that didn't
+ * finish — on the next call instead.
  *
  * Billing bypass: this calls `createOrganisation` directly instead of going
  * through `packages/trpc/server/organisation-router/create-organisation.ts`.
@@ -84,29 +86,35 @@ export const provisionOrganisation = async ({
     }
   }
 
-  const existingTeam = await prisma.team.findFirst({ where: { organisationId: organisation.id } });
+  let team = await prisma.team.findFirst({ where: { organisationId: organisation.id } });
 
-  if (existingTeam) {
-    // Fully provisioned already — a true idempotent hit. The token is
-    // intentionally never re-returned once minted (see the pinned
-    // contract: `api_token: null` on every hit after the first).
-    return { organisationId: organisation.id, apiToken: null, created: false };
+  if (team) {
+    const existingToken = await prisma.apiToken.findFirst({ where: { teamId: team.id } });
+
+    if (existingToken) {
+      // Fully provisioned already — a true idempotent hit. The token is
+      // intentionally never re-returned once minted (see the pinned
+      // contract: `api_token: null` on every hit after the first).
+      return { organisationId: organisation.id, apiToken: null, created: false };
+    }
+  } else {
+    systemUser ??= await getReeveAdminSystemUser();
+    const teamUrl = `${url}-team`;
+
+    await createTeam({
+      userId: systemUser.id,
+      teamName: name,
+      teamUrl,
+      organisationId: organisation.id,
+      inheritMembers: true,
+    });
+
+    team = await prisma.team.findFirstOrThrow({
+      where: { organisationId: organisation.id },
+    });
   }
 
   systemUser ??= await getReeveAdminSystemUser();
-  const teamUrl = `${url}-team`;
-
-  await createTeam({
-    userId: systemUser.id,
-    teamName: name,
-    teamUrl,
-    organisationId: organisation.id,
-    inheritMembers: true,
-  });
-
-  const team = await prisma.team.findFirstOrThrow({
-    where: { organisationId: organisation.id },
-  });
 
   const { token } = await createApiToken({
     userId: systemUser.id,
