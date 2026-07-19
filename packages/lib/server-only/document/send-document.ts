@@ -37,6 +37,7 @@ import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { type EnvelopeIdOptions, mapSecondaryIdToDocumentId } from '../../utils/envelope';
 import { toCheckboxCustomText, toRadioCustomText } from '../../utils/fields';
 import { getRecipientsWithMissingFields, isRecipientEmailValidForSending } from '../../utils/recipients';
+import { meterDocumentSend } from '../credits/meter-send';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
@@ -57,7 +58,7 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     teamId,
   });
 
-  const envelope = await prisma.envelope.findFirst({
+  const envelopeOrNull = await prisma.envelope.findFirst({
     where: envelopeWhereInput,
     include: {
       recipients: {
@@ -81,9 +82,17 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     },
   });
 
-  if (!envelope) {
+  if (!envelopeOrNull) {
     throw new Error('Document not found');
   }
+
+  // Rebind to a same-named const now that null has been ruled out. TS flow
+  // narrowing from the check above doesn't cross into the `sendDocumentInner`
+  // closure below (a known TS limitation — narrowing doesn't persist across
+  // function boundaries), so every downstream reference to `envelope`
+  // (inside or outside that closure) needs this binding's static
+  // (non-nullable) type rather than relying on flow analysis.
+  const envelope = envelopeOrNull;
 
   if (envelope.recipients.length === 0) {
     throw new Error('Document has no recipients');
@@ -114,207 +123,217 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     throw new Error('Missing envelope items');
   }
 
-  if (envelope.formValues) {
-    await Promise.all(
-      envelope.envelopeItems.map(async (envelopeItem) => {
-        await injectFormValuesIntoDocument(envelope, envelopeItem);
-      }),
-    );
-  }
+  // DEV-2838: from here on we're doing the actual send — everything above
+  // this point is read-only validation that should never be charged. Wrapped
+  // so BOTH return paths below (the no-action-to-take auto-seal and the
+  // normal transaction + notify + webhook path) reserve/commit/void credits
+  // identically; see meterDocumentSend's docstring for the fail-closed /
+  // no-op-when-unconfigured contract.
+  return meterDocumentSend({ userId, envelopeId: envelope.id }, () => sendDocumentInner());
 
-  // Validate that recipients with auth requirements have a valid email.
-  envelope.recipients.forEach((recipient) => {
-    const auth = extractDocumentAuthMethods({
-      documentAuth: envelope.authOptions,
-      recipientAuth: recipient.authOptions,
+  async function sendDocumentInner() {
+    if (envelope.formValues) {
+      await Promise.all(
+        envelope.envelopeItems.map(async (envelopeItem) => {
+          await injectFormValuesIntoDocument(envelope, envelopeItem);
+        }),
+      );
+    }
+
+    // Validate that recipients with auth requirements have a valid email.
+    envelope.recipients.forEach((recipient) => {
+      const auth = extractDocumentAuthMethods({
+        documentAuth: envelope.authOptions,
+        recipientAuth: recipient.authOptions,
+      });
+
+      if (
+        recipient.role !== RecipientRole.CC &&
+        (auth.recipientAccessAuthRequired || auth.recipientActionAuthRequired) &&
+        !isRecipientEmailValidForSending(recipient)
+      ) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} requires an email because they have auth requirements.`,
+        });
+      }
     });
 
-    if (
-      recipient.role !== RecipientRole.CC &&
-      (auth.recipientAccessAuthRequired || auth.recipientActionAuthRequired) &&
-      !isRecipientEmailValidForSending(recipient)
-    ) {
+    // Validate that recipients who require fields (e.g., signers need signature fields) have them.
+    const recipientsWithMissingFields = getRecipientsWithMissingFields(envelope.recipients, envelope.fields);
+
+    if (recipientsWithMissingFields.length > 0) {
+      const missingRecipientDescriptions = recipientsWithMissingFields
+        .map((r) => (r.name ? `${r.name} (${r.email}, id: ${r.id})` : `${r.email} (id: ${r.id})`))
+        .join(', ');
+
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Recipient ${recipient.id} requires an email because they have auth requirements.`,
+        message: `The following recipients are missing required fields: ${missingRecipientDescriptions}. Signers must have at least one signature field.`,
       });
     }
-  });
 
-  // Validate that recipients who require fields (e.g., signers need signature fields) have them.
-  const recipientsWithMissingFields = getRecipientsWithMissingFields(envelope.recipients, envelope.fields);
+    const allRecipientsHaveNoActionToTake = envelope.recipients.every(
+      (recipient) => recipient.role === RecipientRole.CC || recipient.signingStatus === SigningStatus.SIGNED,
+    );
 
-  if (recipientsWithMissingFields.length > 0) {
-    const missingRecipientDescriptions = recipientsWithMissingFields
-      .map((r) => (r.name ? `${r.name} (${r.email}, id: ${r.id})` : `${r.email} (id: ${r.id})`))
-      .join(', ');
+    if (allRecipientsHaveNoActionToTake) {
+      await jobs.triggerJob({
+        name: 'internal.seal-document',
+        payload: {
+          documentId: legacyDocumentId,
+          requestMetadata: requestMetadata?.requestMetadata,
+        },
+      });
 
-    throw new AppError(AppErrorCode.INVALID_REQUEST, {
-      message: `The following recipients are missing required fields: ${missingRecipientDescriptions}. Signers must have at least one signature field.`,
-    });
-  }
+      // Keep the return type the same for the `sendDocument` method
+      return await prisma.envelope.findFirstOrThrow({
+        where: {
+          id: envelope.id,
+        },
+        include: {
+          documentMeta: true,
+          recipients: true,
+        },
+      });
+    }
 
-  const allRecipientsHaveNoActionToTake = envelope.recipients.every(
-    (recipient) => recipient.role === RecipientRole.CC || recipient.signingStatus === SigningStatus.SIGNED,
-  );
+    const fieldsToAutoInsert: { fieldId: number; customText: string }[] = [];
 
-  if (allRecipientsHaveNoActionToTake) {
-    await jobs.triggerJob({
-      name: 'internal.seal-document',
-      payload: {
-        documentId: legacyDocumentId,
-        requestMetadata: requestMetadata?.requestMetadata,
-      },
-    });
+    // Validate and autoinsert fields for V2 envelopes.
+    if (envelope.internalVersion === 2) {
+      for (const unknownField of envelope.fields) {
+        const recipient = envelope.recipients.find((r) => r.id === unknownField.recipientId);
 
-    // Keep the return type the same for the `sendDocument` method
-    return await prisma.envelope.findFirstOrThrow({
-      where: {
-        id: envelope.id,
-      },
-      include: {
-        documentMeta: true,
-        recipients: true,
-      },
-    });
-  }
+        if (!recipient) {
+          throw new AppError(AppErrorCode.NOT_FOUND, {
+            message: 'Recipient not found',
+          });
+        }
 
-  const fieldsToAutoInsert: { fieldId: number; customText: string }[] = [];
+        const fieldToAutoInsert = extractFieldAutoInsertValues(unknownField, recipient);
 
-  // Validate and autoinsert fields for V2 envelopes.
-  if (envelope.internalVersion === 2) {
-    for (const unknownField of envelope.fields) {
-      const recipient = envelope.recipients.find((r) => r.id === unknownField.recipientId);
+        // Only auto-insert fields if the recipient has not been sent the document yet.
+        if (fieldToAutoInsert && recipient.sendStatus !== SendStatus.SENT) {
+          fieldsToAutoInsert.push(fieldToAutoInsert);
+        }
+      }
+    }
 
-      if (!recipient) {
-        throw new AppError(AppErrorCode.NOT_FOUND, {
-          message: 'Recipient not found',
+    const updatedEnvelope = await prisma.$transaction(async (tx) => {
+      if (envelope.status === DocumentStatus.DRAFT) {
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENT,
+            envelopeId: envelope.id,
+            metadata: requestMetadata,
+            data: {},
+          }),
         });
       }
 
-      const fieldToAutoInsert = extractFieldAutoInsertValues(unknownField, recipient);
+      if (envelope.internalVersion === 2) {
+        const autoInsertedFields = await Promise.all(
+          fieldsToAutoInsert.map(async (field) => {
+            // Warning: Only auto-insert fields if the recipient has not been sent the document yet.
+            return await tx.field.update({
+              where: {
+                id: field.fieldId,
+              },
+              data: {
+                customText: field.customText,
+                inserted: true,
+              },
+            });
+          }),
+        );
 
-      // Only auto-insert fields if the recipient has not been sent the document yet.
-      if (fieldToAutoInsert && recipient.sendStatus !== SendStatus.SENT) {
-        fieldsToAutoInsert.push(fieldToAutoInsert);
-      }
-    }
-  }
-
-  const updatedEnvelope = await prisma.$transaction(async (tx) => {
-    if (envelope.status === DocumentStatus.DRAFT) {
-      await tx.documentAuditLog.create({
-        data: createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENT,
-          envelopeId: envelope.id,
-          metadata: requestMetadata,
-          data: {},
-        }),
-      });
-    }
-
-    if (envelope.internalVersion === 2) {
-      const autoInsertedFields = await Promise.all(
-        fieldsToAutoInsert.map(async (field) => {
-          // Warning: Only auto-insert fields if the recipient has not been sent the document yet.
-          return await tx.field.update({
-            where: {
-              id: field.fieldId,
-            },
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELDS_AUTO_INSERTED,
+            envelopeId: envelope.id,
             data: {
-              customText: field.customText,
-              inserted: true,
+              fields: autoInsertedFields.map((field) => ({
+                fieldId: field.id,
+                fieldType: field.type,
+                recipientId: field.recipientId,
+              })),
+            },
+            // Don't put metadata or user here since it's a system event.
+          }),
+        });
+      }
+
+      const expiresAt = resolveExpiresAt(envelope.documentMeta?.envelopeExpirationPeriod ?? null);
+
+      // Set expiresAt on each recipient that hasn't already signed/rejected.
+      // Exclude CC recipients since they don't sign and shouldn't be subject to expiry.
+      if (expiresAt) {
+        await tx.recipient.updateMany({
+          where: {
+            envelopeId: envelope.id,
+            signingStatus: {
+              notIn: [SigningStatus.SIGNED, SigningStatus.REJECTED],
+            },
+            role: {
+              not: RecipientRole.CC,
+            },
+          },
+          data: {
+            expiresAt,
+            expirationNotifiedAt: null,
+          },
+        });
+      }
+
+      return await tx.envelope.update({
+        where: {
+          id: envelope.id,
+        },
+        data: {
+          status: DocumentStatus.PENDING,
+        },
+        include: {
+          documentMeta: true,
+          recipients: true,
+        },
+      });
+    });
+
+    const isRecipientSigningRequestEmailEnabled = extractDerivedDocumentEmailSettings(
+      envelope.documentMeta,
+    ).recipientSigningRequest;
+
+    // Only send email if one of the following is true:
+    // - It is explicitly set
+    // - The email is enabled for signing requests AND sendEmail is undefined
+    if (sendEmail || (isRecipientSigningRequestEmailEnabled && sendEmail === undefined)) {
+      await Promise.all(
+        recipientsToNotify.map(async (recipient) => {
+          if (recipient.sendStatus === SendStatus.SENT || recipient.role === RecipientRole.CC) {
+            return;
+          }
+
+          await jobs.triggerJob({
+            name: 'send.signing.requested.email',
+            payload: {
+              userId,
+              documentId: legacyDocumentId,
+              recipientId: recipient.id,
+              requestMetadata: requestMetadata?.requestMetadata,
             },
           });
         }),
       );
-
-      await tx.documentAuditLog.create({
-        data: createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELDS_AUTO_INSERTED,
-          envelopeId: envelope.id,
-          data: {
-            fields: autoInsertedFields.map((field) => ({
-              fieldId: field.id,
-              fieldType: field.type,
-              recipientId: field.recipientId,
-            })),
-          },
-          // Don't put metadata or user here since it's a system event.
-        }),
-      });
     }
 
-    const expiresAt = resolveExpiresAt(envelope.documentMeta?.envelopeExpirationPeriod ?? null);
-
-    // Set expiresAt on each recipient that hasn't already signed/rejected.
-    // Exclude CC recipients since they don't sign and shouldn't be subject to expiry.
-    if (expiresAt) {
-      await tx.recipient.updateMany({
-        where: {
-          envelopeId: envelope.id,
-          signingStatus: {
-            notIn: [SigningStatus.SIGNED, SigningStatus.REJECTED],
-          },
-          role: {
-            not: RecipientRole.CC,
-          },
-        },
-        data: {
-          expiresAt,
-          expirationNotifiedAt: null,
-        },
-      });
-    }
-
-    return await tx.envelope.update({
-      where: {
-        id: envelope.id,
-      },
-      data: {
-        status: DocumentStatus.PENDING,
-      },
-      include: {
-        documentMeta: true,
-        recipients: true,
-      },
+    await triggerWebhook({
+      event: WebhookTriggerEvents.DOCUMENT_SENT,
+      data: ZWebhookDocumentSchema.parse(mapEnvelopeToWebhookDocumentPayload(updatedEnvelope)),
+      userId,
+      teamId,
     });
-  });
 
-  const isRecipientSigningRequestEmailEnabled = extractDerivedDocumentEmailSettings(
-    envelope.documentMeta,
-  ).recipientSigningRequest;
-
-  // Only send email if one of the following is true:
-  // - It is explicitly set
-  // - The email is enabled for signing requests AND sendEmail is undefined
-  if (sendEmail || (isRecipientSigningRequestEmailEnabled && sendEmail === undefined)) {
-    await Promise.all(
-      recipientsToNotify.map(async (recipient) => {
-        if (recipient.sendStatus === SendStatus.SENT || recipient.role === RecipientRole.CC) {
-          return;
-        }
-
-        await jobs.triggerJob({
-          name: 'send.signing.requested.email',
-          payload: {
-            userId,
-            documentId: legacyDocumentId,
-            recipientId: recipient.id,
-            requestMetadata: requestMetadata?.requestMetadata,
-          },
-        });
-      }),
-    );
+    return updatedEnvelope;
   }
-
-  await triggerWebhook({
-    event: WebhookTriggerEvents.DOCUMENT_SENT,
-    data: ZWebhookDocumentSchema.parse(mapEnvelopeToWebhookDocumentPayload(updatedEnvelope)),
-    userId,
-    teamId,
-  });
-
-  return updatedEnvelope;
 };
 
 const injectFormValuesIntoDocument = async (
