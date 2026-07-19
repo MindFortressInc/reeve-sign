@@ -37,6 +37,16 @@ export const IS_OIDC_SSO_ENABLED = Boolean(
   env('NEXT_PRIVATE_OIDC_WELL_KNOWN') && env('NEXT_PRIVATE_OIDC_CLIENT_ID') && env('NEXT_PRIVATE_OIDC_CLIENT_SECRET'),
 );
 
+/**
+ * Defense-in-depth: once OIDC SSO is configured, the sign-in/sign-up UI already
+ * hides password/passkey/social auth (DEV-2835). This flag additionally gates
+ * the server-side auth routes so a hand-crafted request can't reach them
+ * either (DEV-2904). Defaults on whenever OIDC is configured; set
+ * `NEXT_PRIVATE_OIDC_ONLY_AUTH=false` to opt out for local dev against stock
+ * Documenso auth.
+ */
+export const IS_OIDC_ONLY_AUTH = Boolean(IS_OIDC_SSO_ENABLED && env('NEXT_PRIVATE_OIDC_ONLY_AUTH') !== 'false');
+
 export const OIDC_PROVIDER_LABEL = env('NEXT_PRIVATE_OIDC_PROVIDER_LABEL');
 
 export const USER_SECURITY_AUDIT_LOG_MAP: Record<string, string> = {
