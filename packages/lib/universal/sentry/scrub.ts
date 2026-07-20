@@ -61,6 +61,8 @@ export interface ScrubbableSentryEvent {
     headers?: Record<string, string>;
     data?: unknown;
     extra?: unknown;
+    url?: string;
+    query_string?: unknown;
     [key: string]: unknown;
   };
   extra?: Record<string, unknown>;
@@ -110,6 +112,19 @@ export function buildSentryBeforeSend(
       // case a future SDK version or a custom integration adds one.
       if ('extra' in request) {
         request.extra = scrubValue(request.extra, compiled);
+      }
+
+      // Sentry's request integrations populate `request.url` and
+      // `request.query_string` even with `sendDefaultPii: false`, and these
+      // routes carry presigned tokens in the query string. Strip the query
+      // string off the URL and redact `query_string` entirely so tokens
+      // never leave the process.
+      if (typeof request.url === 'string') {
+        request.url = request.url.split('?')[0];
+      }
+
+      if ('query_string' in request) {
+        request.query_string = REDACTED;
       }
     }
 

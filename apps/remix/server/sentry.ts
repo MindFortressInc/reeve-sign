@@ -135,13 +135,21 @@ export const sentryTaggingMiddleware = createMiddleware<HonoEnv>(async (_c, next
  * it does not change the response any existing route returns on error.
  */
 export const sentryErrorHandler: ErrorHandler<HonoEnv> = (err, c) => {
-  if (Sentry.getClient()) {
-    Sentry.captureException(err);
-  }
-
+  // Expected control-flow errors (e.g. `HTTPException` 401/403/404/redirects)
+  // resolve to a sub-500 response and are not incidents -- capturing them
+  // would flood Sentry with noise, so only report 500-level responses.
   if (typeof err === 'object' && err !== null && 'getResponse' in err) {
     const res = (err as { getResponse: () => Response }).getResponse();
+
+    if (Sentry.getClient() && res.status >= 500) {
+      Sentry.captureException(err);
+    }
+
     return c.newResponse(res.body, res);
+  }
+
+  if (Sentry.getClient()) {
+    Sentry.captureException(err);
   }
 
   console.error(err);
