@@ -7,9 +7,11 @@ import {
 import { logger } from '@documenso/lib/utils/logger';
 
 import { consentCheckCookie, getCachedConsentSubjectId } from '~/storage/consent-check-cookie.server';
+import { CONSENT_GATE_ROUTE_PATH } from '~/utils/consent-gate-route';
 
-/** Route the consent gate never redirects away from — avoids a redirect loop. */
-export const CONSENT_GATE_ROUTE_PATH = '/legal-consent';
+// Re-exported for existing importers; the source of truth is the client-safe
+// `consent-gate-route` module so the layout's `shouldRevalidate` can share it.
+export { CONSENT_GATE_ROUTE_PATH };
 
 /**
  * Discriminated union (deep-review finding, DEV-2837): a redirect and a

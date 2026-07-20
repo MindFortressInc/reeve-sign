@@ -7,7 +7,7 @@ import { cn } from '@documenso/ui/lib/utils';
 import { Button } from '@documenso/ui/primitives/button';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { data, Link, Outlet, redirect } from 'react-router';
+import { data, Link, Outlet, redirect, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import { AppBanner } from '~/components/general/app-banner';
 import { Header } from '~/components/general/app-header';
@@ -15,16 +15,28 @@ import { GenericErrorLayout } from '~/components/general/generic-error-layout';
 import { OrganisationBillingBanner } from '~/components/general/organisations/organisation-billing-banner';
 import { VerifyEmailBanner } from '~/components/general/verify-email-banner';
 import { TeamProvider } from '~/providers/team';
+import { CONSENT_GATE_ROUTE_PATH } from '~/utils/consent-gate-route';
 import { checkConsentGate } from '~/utils/consent-gate.server';
 
 import type { Route } from './+types/_layout';
 
 /**
- * Don't revalidate (run the loader on sequential navigations)
+ * Don't revalidate (run the loader on sequential navigations) — values are
+ * updated via providers, so re-running the loader on every client navigation
+ * is wasted work.
  *
- * Update values via providers.
+ * Exception (DEV-2837): the ToS/Privacy consent gate lives in this loader. A
+ * `false` here means the loader (and the gate) is skipped on client-side
+ * navigations, which let a not-yet-accepted user escape `/legal-consent` by
+ * clicking any in-app link (an SPA nav that skips this parent loader). Force a
+ * revalidation whenever we navigate *away* from the consent page so the gate
+ * re-runs and bounces an un-accepted user right back. Accepted users are never
+ * on the consent page, so their fast (no-revalidate, no-API-call) path is
+ * unaffected.
  */
-export const shouldRevalidate = () => false;
+export const shouldRevalidate = ({ currentUrl, nextUrl }: ShouldRevalidateFunctionArgs) => {
+  return currentUrl.pathname === CONSENT_GATE_ROUTE_PATH && nextUrl.pathname !== CONSENT_GATE_ROUTE_PATH;
+};
 
 export async function loader({ request }: Route.LoaderArgs) {
   const [session, banner] = await Promise.all([
