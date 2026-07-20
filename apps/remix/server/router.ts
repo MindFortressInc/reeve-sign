@@ -29,8 +29,17 @@ import { filesRoute } from './api/files/files';
 import { type AppContext, appContext } from './context';
 import { appMiddleware } from './middleware';
 import { securityHeadersMiddleware } from './security-headers';
+import { initServerSentry, sentryErrorHandler, sentryTaggingMiddleware } from './sentry';
 import { openApiTrpcServerHandler } from './trpc/hono-trpc-open-api';
 import { reactRouterTrpcServer } from './trpc/hono-trpc-remix';
+
+// Initialize Sentry (DEV-2839) as early as this entrypoint allows. No-op
+// when SENTRY_DSN is unset. `server/main.js` also imports this module
+// first (before its other imports) to initialize slightly earlier in the
+// production boot sequence; the guard in `initServerSentry` makes calling
+// it from both places safe. See `./sentry` for the full SDK-choice
+// rationale.
+initServerSentry();
 
 // Re-export so the rollup build (entry: server/router.ts) bundles
 // load-context.ts. server/main.js imports getLoadContext from the rolled-up
@@ -61,6 +70,14 @@ const fileRateLimitMiddleware = createRateLimitMiddleware(fileUploadRateLimit);
  */
 app.use(contextStorage());
 app.use(appContext);
+
+/**
+ * Tag Sentry events for this request with service_name/host_app. Runs
+ * early so downstream middleware/route errors are tagged too. See
+ * `./sentry` for what is/isn't tagged here and why (org_id/user_id are
+ * tagged client-side instead).
+ */
+app.use('*', sentryTaggingMiddleware);
 
 /**
  * Emit response security headers (CSP with per-request nonce, plus
@@ -137,6 +154,11 @@ app.use(`/api/v2-beta/*`, async (c) =>
     isBeta: true,
   }),
 );
+
+// Report unhandled errors to Sentry (DEV-2839). Replicates Hono's own
+// default error response exactly -- see `./sentry` -- so this is additive
+// only (reporting), not a change in what any route returns on error.
+app.onError(sentryErrorHandler);
 
 // Start telemetry client for anonymous usage tracking.
 // Can be disabled by setting DOCUMENSO_DISABLE_TELEMETRY=true

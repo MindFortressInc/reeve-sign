@@ -8,6 +8,7 @@ import { getOrganisationSession } from '@documenso/trpc/server/organisation-rout
 import { Toaster } from '@documenso/ui/primitives/toaster';
 import { TooltipProvider } from '@documenso/ui/primitives/tooltip';
 import { NuqsAdapter } from 'nuqs/adapters/react-router/v7';
+import { useEffect } from 'react';
 import {
   data,
   isRouteErrorResponse,
@@ -111,6 +112,21 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
 
   const [theme] = useTheme();
 
+  // Client-side Sentry user tagging (DEV-2839). The session is
+  // already-loaded loader data here, so this is a cheap place to set
+  // `user_id` -- unlike the Hono middleware layer (server/sentry.ts),
+  // which would need a second, redundant session lookup to get it.
+  useEffect(() => {
+    void import('@sentry/react').then((Sentry) => {
+      if (session?.user) {
+        Sentry.setUser({ id: String(session.user.id) });
+        Sentry.setTag('user_id', String(session.user.id));
+      } else {
+        Sentry.setUser(null);
+      }
+    });
+  }, [session?.user?.id]);
+
   // Recipient routes (signing pages) put `documenso-branded` on <body> so the
   // <style> block from `RecipientBranding` applies to BOTH the main tree and
   // any portaled content (Radix dialogs/popovers/dropdowns mount outside the
@@ -193,6 +209,18 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   if (errorCode !== 404) {
     console.error('[RootErrorBoundary]', error);
+
+    // Client-only (DEV-2839): this file is isomorphic (bundled for both the
+    // server and client builds), so `@sentry/react` is dynamically imported
+    // rather than statically imported at module scope, which would pull the
+    // browser SDK into the server bundle. Sentry itself is only initialized
+    // in the browser (see `entry.client.tsx`'s `SentryInit`); on the server
+    // this boundary can still render during SSR, but `typeof window` is
+    // `undefined` there so no capture is attempted -- server-side errors are
+    // caught separately (see `apps/remix/server/sentry.ts`).
+    if (typeof window !== 'undefined' && error instanceof Error) {
+      void import('@sentry/react').then((Sentry) => Sentry.captureException(error));
+    }
   }
 
   return <GenericErrorLayout errorCode={errorCode} />;
