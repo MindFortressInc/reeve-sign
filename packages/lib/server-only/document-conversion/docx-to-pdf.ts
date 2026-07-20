@@ -11,6 +11,12 @@ import { convertDocxToPdfViaGotenberg } from './gotenberg';
 type ConvertDocxToPdfOptions = {
   buffer: Buffer;
   filename: string;
+  /**
+   * The source file's real mime type (DOCX or legacy DOC). Defaults to the
+   * DOCX constant so existing callers that don't pass it keep working
+   * unchanged.
+   */
+  mimeType?: string;
 };
 
 const NOT_CONFIGURED_USER_MESSAGE = "Document conversion isn't enabled on this instance. Please upload a PDF.";
@@ -24,7 +30,7 @@ const UNAVAILABLE_USER_MESSAGE =
  * and emits a structured log line for each attempt.
  */
 export const convertDocxToPdf = async (
-  { buffer, filename }: ConvertDocxToPdfOptions,
+  { buffer, filename, mimeType = DOCUMENT_CONVERSION_MIME_TYPE_DOCX }: ConvertDocxToPdfOptions,
   logger?: Logger,
 ): Promise<Buffer> => {
   if (!IS_DOCUMENT_CONVERSION_ENABLED()) {
@@ -46,14 +52,14 @@ export const convertDocxToPdf = async (
   const startedAt = Date.now();
 
   try {
-    const outputBuffer = await convertDocxToPdfViaGotenberg({ buffer, filename });
+    const outputBuffer = await convertDocxToPdfViaGotenberg({ buffer, filename, mimeType });
 
     recordSuccess();
 
     logger?.info({
       event: 'document_conversion_attempt',
       filename,
-      sourceMimeType: DOCUMENT_CONVERSION_MIME_TYPE_DOCX,
+      sourceMimeType: mimeType,
       durationMs: Date.now() - startedAt,
       inputBytes: buffer.byteLength,
       outputBytes: outputBuffer.byteLength,
@@ -69,7 +75,7 @@ export const convertDocxToPdf = async (
     const logData = {
       event: 'document_conversion_attempt',
       filename,
-      sourceMimeType: DOCUMENT_CONVERSION_MIME_TYPE_DOCX,
+      sourceMimeType: mimeType,
       durationMs: Date.now() - startedAt,
       inputBytes: buffer.byteLength,
       failed: true,
