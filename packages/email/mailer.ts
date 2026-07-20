@@ -1,9 +1,31 @@
-import { env } from '@documenso/lib/utils/env';
+import { assertLocalhostFallbackAllowed, env } from '@documenso/lib/utils/env';
 import { ResendTransport } from '@documenso/nodemailer-resend';
 import type { Transporter } from 'nodemailer';
 import { createTransport } from 'nodemailer';
 
 import { MailChannelsTransport } from './transports/mailchannels';
+
+/**
+ * The local Inbucket mail server from `docker/development/compose.yml`.
+ */
+const LOCAL_SMTP_HOST = '127.0.0.1:2500';
+
+/**
+ * The `smtp-auth` transport is the default, so an unset host must not quietly
+ * mean "post to a local relay" in production — mail would vanish without error.
+ * The `resend` and `smtp-api` transports above already fail loud in the same way.
+ */
+const getSmtpAuthHost = (): string => {
+  const smtpHost = env('NEXT_PRIVATE_SMTP_HOST');
+
+  if (smtpHost) {
+    return smtpHost;
+  }
+
+  assertLocalhostFallbackAllowed('NEXT_PRIVATE_SMTP_HOST', LOCAL_SMTP_HOST);
+
+  return LOCAL_SMTP_HOST;
+};
 
 /**
  * Creates a Nodemailer transport object for sending emails.
@@ -25,7 +47,7 @@ import { MailChannelsTransport } from './transports/mailchannels';
  *   - `NEXT_PRIVATE_SMTP_APIKEY`: The API key for SMTP authentication
  *   - `NEXT_PRIVATE_SMTP_APIKEY_USER`: The username for SMTP authentication (default: 'apikey')
  * - **smtp-auth** (default): Uses a standard SMTP configuration, requiring:
- *   - `NEXT_PRIVATE_SMTP_HOST`: The SMTP server host (default: 'localhost:2500')
+ *   - `NEXT_PRIVATE_SMTP_HOST`: The SMTP server host (outside production, default: '127.0.0.1:2500')
  *   - `NEXT_PRIVATE_SMTP_PORT`: The port to connect to (default: 587)
  *   - `NEXT_PRIVATE_SMTP_SECURE`: Whether to use SSL/TLS (default: false)
  *   - `NEXT_PRIVATE_SMTP_UNSAFE_IGNORE_TLS`: Whether to ignore TLS (default: false)
@@ -91,7 +113,7 @@ const getTransport = (): Transporter => {
   }
 
   return createTransport({
-    host: env('NEXT_PRIVATE_SMTP_HOST') ?? '127.0.0.1:2500',
+    host: getSmtpAuthHost(),
     port: Number(env('NEXT_PRIVATE_SMTP_PORT')) || 587,
     secure: env('NEXT_PRIVATE_SMTP_SECURE') === 'true',
     ignoreTLS: env('NEXT_PRIVATE_SMTP_UNSAFE_IGNORE_TLS') === 'true',

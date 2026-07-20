@@ -10,6 +10,13 @@ import {
 type ConvertDocxToPdfViaGotenbergOptions = {
   buffer: Buffer;
   filename: string;
+  /**
+   * The source file's real mime type, forwarded onto the multipart form so
+   * LibreOffice's import filter matches the actual format (DOCX vs. legacy
+   * DOC, ...). Defaults to the DOCX constant to preserve existing behavior
+   * for callers that don't pass it.
+   */
+  mimeType?: string;
 };
 
 const UNAVAILABLE_USER_MESSAGE =
@@ -34,6 +41,7 @@ const MAX_ERROR_BODY_CHARS = 500;
 export const convertDocxToPdfViaGotenberg = async ({
   buffer,
   filename,
+  mimeType = DOCUMENT_CONVERSION_MIME_TYPE_DOCX,
 }: ConvertDocxToPdfViaGotenbergOptions): Promise<Buffer> => {
   const url = DOCUMENT_CONVERSION_URL();
 
@@ -46,7 +54,7 @@ export const convertDocxToPdfViaGotenberg = async ({
   }
 
   const formData = new FormData();
-  const blob = new Blob([buffer], { type: DOCUMENT_CONVERSION_MIME_TYPE_DOCX });
+  const blob = new Blob([buffer], { type: mimeType });
 
   formData.append('files', blob, filename);
 
