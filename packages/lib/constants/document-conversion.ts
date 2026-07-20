@@ -3,6 +3,13 @@ import { env } from '@documenso/lib/utils/env';
 export const DOCUMENT_CONVERSION_MIME_TYPE_DOCX =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+/**
+ * Legacy Word format (Office 97-2003). LibreOffice (via Gotenberg) converts
+ * this the same way as DOCX; the only difference is the mime type/extension
+ * used for dispatch and forwarded to the conversion service.
+ */
+export const DOCUMENT_CONVERSION_MIME_TYPE_DOC = 'application/msword';
+
 const DEFAULT_DOCUMENT_CONVERSION_TIMEOUT_MS = 30_000;
 
 /**
@@ -84,6 +91,7 @@ export const getAllowedUploadMimeTypes = (): Record<string, string[]> => {
 
   if (IS_DOCUMENT_CONVERSION_ENABLED()) {
     base[DOCUMENT_CONVERSION_MIME_TYPE_DOCX] = ['.docx'];
+    base[DOCUMENT_CONVERSION_MIME_TYPE_DOC] = ['.doc'];
   }
 
   return base;

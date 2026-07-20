@@ -1,7 +1,10 @@
 import { AppError } from '@documenso/lib/errors/app-error';
 import type { Logger } from 'pino';
 
-import { DOCUMENT_CONVERSION_MIME_TYPE_DOCX } from '../../constants/document-conversion';
+import {
+  DOCUMENT_CONVERSION_MIME_TYPE_DOC,
+  DOCUMENT_CONVERSION_MIME_TYPE_DOCX,
+} from '../../constants/document-conversion';
 import { convertDocxToPdf } from './docx-to-pdf';
 
 // We should work on unifying these later on.
@@ -18,7 +21,8 @@ const UNSUPPORTED_USER_MESSAGE = "This file type isn't supported. Please upload 
  * input file:
  *
  * - PDF in → PDF out (no conversion, no network call).
- * - DOCX in → converted PDF out via the configured conversion service.
+ * - DOCX or legacy DOC in → converted PDF out via the configured conversion
+ *   service.
  * - Any other mime type → throws `UNSUPPORTED_FILE_TYPE`.
  *
  * To support new source formats (PowerPoint, HTML, ...), add a new
@@ -29,10 +33,10 @@ export const convertToPdf = async (file: FileInput, logger?: Logger): Promise<Bu
     return Buffer.from(await file.arrayBuffer());
   }
 
-  if (file.type === DOCUMENT_CONVERSION_MIME_TYPE_DOCX) {
+  if (file.type === DOCUMENT_CONVERSION_MIME_TYPE_DOCX || file.type === DOCUMENT_CONVERSION_MIME_TYPE_DOC) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    return convertDocxToPdf({ buffer, filename: file.name }, logger);
+    return convertDocxToPdf({ buffer, filename: file.name, mimeType: file.type }, logger);
   }
 
   throw new AppError('UNSUPPORTED_FILE_TYPE', {
