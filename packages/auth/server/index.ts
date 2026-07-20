@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
+import { oidcOnlyGuard } from './lib/oidc-only-guard';
 import { setCsrfCookie } from './lib/session/session-cookies';
 import { accountRoute } from './routes/account';
 import { callbackRoute } from './routes/callback';
@@ -36,6 +37,19 @@ export const auth = new Hono<HonoAuthContext>()
 
     await next();
   })
+  // DEV-2904: defense-in-depth — reject password/passkey/social auth
+  // server-side when OIDC-only mode is active. Must be registered before the
+  // route chain below so it short-circuits ahead of the real handlers.
+  // /oauth/authorize/oidc and /oauth/authorize/oidc/org/:orgUrl are
+  // intentionally not in this list and must stay open.
+  .use('/email-password/authorize', oidcOnlyGuard)
+  .use('/email-password/signup', oidcOnlyGuard)
+  .use('/email-password/forgot-password', oidcOnlyGuard)
+  .use('/email-password/reset-password', oidcOnlyGuard)
+  .use('/email-password/update-password', oidcOnlyGuard)
+  .use('/passkey/authorize', oidcOnlyGuard)
+  .use('/oauth/authorize/google', oidcOnlyGuard)
+  .use('/oauth/authorize/microsoft', oidcOnlyGuard)
   .get('/csrf', async (c) => {
     const csrfToken = await setCsrfCookie(c);
 
