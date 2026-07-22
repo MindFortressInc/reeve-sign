@@ -1,4 +1,5 @@
 name: 'Setup node'
+description: 'Set up Node.js, enable corepack, and install project dependencies (npm ci + prisma generate).'
 inputs:
   node_version:
     required: false
