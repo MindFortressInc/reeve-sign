@@ -25,7 +25,7 @@ jobs:
             const username = context.payload.pull_request.user.login;
             console.log(`Username Extracted: ${username}`);
 
-            const { data: pullRequests } = await octokit.pulls.list({
+            const { data: pullRequests } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
@@ -40,7 +40,7 @@ jobs:
             if (prCount > 3) {
               let prReminderMessage = `🚨 @${username} has ${prCount} pull requests awaiting review. Please consider reviewing them when possible. 🚨`;
 
-              await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+              await github.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.payload.pull_request.number,
