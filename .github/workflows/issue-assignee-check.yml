@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   countIssues:
-    if: ${{ github.event.issue.assignee }} && github.event.action == 'assigned' && github.event.sender.type == 'User'
+    if: ${{ github.event.issue.assignee && github.event.action == 'assigned' && github.event.sender.type == 'User' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,7 +26,7 @@ jobs:
 
       - name: Check Assigned User's Issue Count
         id: parse-comment
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

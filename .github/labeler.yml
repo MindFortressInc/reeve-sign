@@ -1,21 +1,29 @@
 'apps: web':
-  - apps/remix/**
+  - changed-files:
+      - any-glob-to-any-file: 'apps/remix/**'
 
 'type: documentation':
-  - apps/docs/**
+  - changed-files:
+      - any-glob-to-any-file: 'apps/docs/**'
 
 'version bump 👀':
-  - '**/package.json'
-  - '**/package-lock.json'
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/package.json'
+          - '**/package-lock.json'
 
 '🚨 migrations 🚨':
-  - packages/prisma/migrations/**/migration.sql
+  - changed-files:
+      - any-glob-to-any-file: 'packages/prisma/migrations/**/migration.sql'
 
 '🚨 e2e changes 🚨':
-  - packages/app-tests/e2e/**
+  - changed-files:
+      - any-glob-to-any-file: 'packages/app-tests/e2e/**'
 
 '🚨 .env changes 🚨':
-  - .env.example
+  - changed-files:
+      - any-glob-to-any-file: '.env.example'
 
 'pkg: ee changes':
-  - packages/ee/**
+  - changed-files:
+      - any-glob-to-any-file: 'packages/ee/**'
