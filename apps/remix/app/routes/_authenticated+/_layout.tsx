@@ -16,8 +16,8 @@ import { OrganisationBillingBanner } from '~/components/general/organisations/or
 import { AgplSourceLink } from '~/components/general/reeve/agpl-source-link';
 import { VerifyEmailBanner } from '~/components/general/verify-email-banner';
 import { TeamProvider } from '~/providers/team';
-import { CONSENT_GATE_ROUTE_PATH } from '~/utils/consent-gate-route';
 import { checkConsentGate } from '~/utils/consent-gate.server';
+import { shouldRevalidateConsentGate } from '~/utils/consent-gate-route';
 
 import type { Route } from './+types/_layout';
 
@@ -36,7 +36,10 @@ import type { Route } from './+types/_layout';
  * unaffected.
  */
 export const shouldRevalidate = ({ currentUrl, nextUrl }: ShouldRevalidateFunctionArgs) => {
-  return currentUrl.pathname === CONSENT_GATE_ROUTE_PATH && nextUrl.pathname !== CONSENT_GATE_ROUTE_PATH;
+  return shouldRevalidateConsentGate({
+    currentPathname: currentUrl.pathname,
+    nextPathname: nextUrl.pathname,
+  });
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
