@@ -13,6 +13,7 @@ import { AppBanner } from '~/components/general/app-banner';
 import { Header } from '~/components/general/app-header';
 import { GenericErrorLayout } from '~/components/general/generic-error-layout';
 import { OrganisationBillingBanner } from '~/components/general/organisations/organisation-billing-banner';
+import { AgplSourceLink } from '~/components/general/reeve/agpl-source-link';
 import { VerifyEmailBanner } from '~/components/general/verify-email-banner';
 import { TeamProvider } from '~/providers/team';
 import { CONSENT_GATE_ROUTE_PATH } from '~/utils/consent-gate-route';
@@ -145,6 +146,16 @@ export default function Layout({ loaderData, params, matches }: Route.ComponentP
         >
           <Outlet />
         </main>
+
+        {/* AGPL-3.0 §13 source offer for senders in the authenticated app.
+            Hidden on the full-screen editor routes (same gate as the header). */}
+        {!hideHeader && (
+          <footer className="border-border/40 border-t py-4">
+            <div className="mx-auto flex max-w-screen-xl items-center justify-center px-4">
+              <AgplSourceLink />
+            </div>
+          </footer>
+        )}
       </TeamProvider>
     </OrganisationProvider>
   );
