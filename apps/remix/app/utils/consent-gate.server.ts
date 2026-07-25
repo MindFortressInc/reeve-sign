@@ -6,7 +6,7 @@ import {
 } from '@documenso/lib/server-only/compliance';
 import { logger } from '@documenso/lib/utils/logger';
 
-import { consentCheckCookie, getCachedConsentSubjectId } from '~/storage/consent-check-cookie.server';
+import { getCachedConsent, serializeConsentCache } from '~/storage/consent-check-cookie.server';
 import { CONSENT_GATE_ROUTE_PATH } from '~/utils/consent-gate-route';
 
 // Re-exported for existing importers; the source of truth is the client-safe
@@ -28,6 +28,17 @@ export type ConsentGateResult =
 const NO_ACTION: ConsentGateResult = { type: 'noop' };
 
 /**
+ * Whether the cached version map covers every doc_type the gate currently
+ * requires. A missing doc_type means the cache predates a new requirement and
+ * must not be trusted.
+ */
+const hasAllDocTypes = (versions: Record<string, string>): boolean => {
+  return REEVE_COMPLIANCE_DOC_TYPES.every(
+    (docType) => typeof versions[docType] === 'string' && versions[docType].length > 0,
+  );
+};
+
+/**
  * DEV-2837: gates authenticated access on ToS/Privacy acceptance via the
  * Reeve.Compliance API (`GET /api/compliance/v1/consent/status`,
  * host_app=`reeve`, doc_types=`tos,privacy`).
@@ -40,9 +51,11 @@ const NO_ACTION: ConsentGateResult = { type: 'noop' };
  * be the reason the whole app goes down; availability wins over strictness
  * here (an outage means a delayed re-prompt, not a lockout).
  *
- * A positive result is cached in a session-scoped cookie keyed to the
- * subject_id, so the status endpoint is called at most once per browser
- * session per user (not on every single navigation).
+ * A positive result is cached in a signed cookie keyed to the subject_id
+ * *and* the accepted doc_type → version map, with a bounded TTL, so the
+ * status endpoint stays off the hot path for most navigations while a
+ * version bump or a newly-required doc_type still re-prompts (DEV-4781) —
+ * see `consent-check-cookie.server.ts` for the caching contract.
  */
 export const checkConsentGate = async ({
   request,
@@ -65,9 +78,14 @@ export const checkConsentGate = async ({
 
   const subjectId = user.email;
 
-  const cachedSubjectId = await getCachedConsentSubjectId(request);
+  const cached = await getCachedConsent(request);
 
-  if (cachedSubjectId && cachedSubjectId === subjectId) {
+  // Trust the cache only when it belongs to this subject AND still covers
+  // every currently-required doc_type. A doc_type added to the required set
+  // (e.g. via deploy) invalidates a stale cookie locally with no API call; a
+  // version bump of an existing doc_type is caught by the cookie's bounded
+  // TTL, after which we fall through to a fresh status check here (DEV-4781).
+  if (cached && cached.subjectId === subjectId && hasAllDocTypes(cached.versions)) {
     return NO_ACTION;
   }
 
@@ -91,9 +109,13 @@ export const checkConsentGate = async ({
     return { type: 'redirect', to };
   }
 
-  // Positive result — cache it for the rest of this browser session so we
-  // don't hit the compliance API on every request.
-  const setCookieHeader = await consentCheckCookie.serialize(subjectId);
+  // Positive result — cache it (subject + accepted versions, bounded TTL) so
+  // we don't hit the compliance API on every request.
+  const versions = Object.fromEntries(
+    status.map((item) => [item.docType, item.currentVersion ?? item.acceptedVersion ?? '']),
+  );
+
+  const setCookieHeader = await serializeConsentCache({ subjectId, versions });
 
   return { type: 'cache', setCookieHeader };
 };

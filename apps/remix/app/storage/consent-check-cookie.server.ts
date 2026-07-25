@@ -2,16 +2,27 @@ import { env } from '@documenso/lib/utils/env';
 import { createCookie } from 'react-router';
 
 /**
- * Caches a *positive* Reeve.Compliance consent-status result for the rest
- * of the browser session, so the authenticated layout loader
- * (`routes/_authenticated+/_layout.tsx`) doesn't call
- * `GET /api/compliance/v1/consent/status` on every single request (DEV-2837).
+ * Caches a *positive* Reeve.Compliance consent-status result so the
+ * authenticated layout loader (`routes/_authenticated+/_layout.tsx`) doesn't
+ * call `GET /api/compliance/v1/consent/status` on every single request
+ * (DEV-2837).
  *
- * The cookie value is the subject_id (user email) that was last confirmed
- * as fully accepted — not just a boolean — so that if a different user logs
- * in on the same browser, the stale cookie doesn't wrongly skip their check.
- * No `maxAge`/`expires` is set: this is a session cookie, matching "at most
- * once per session" literally (it's gone once the browser session ends).
+ * The cookie value records the subject_id (user email) that was confirmed as
+ * fully accepted *and* the exact doc_type → version map they accepted — not
+ * just a boolean, and not the subject alone. Keying on version matters
+ * (DEV-4781): a subject-only cache meant a mid-session ToS/Privacy version
+ * bump (or a newly-required doc_type) would never re-prompt, because the
+ * stale cookie kept matching. Now the gate re-checks whenever the cached
+ * version map no longer covers every currently-required doc_type.
+ *
+ * A bounded `maxAge` is the second half of that fix: the app can't learn
+ * about a server-side *version bump of an existing doc_type* without asking
+ * the compliance API, so the cache is trusted for at most
+ * `CONSENT_CACHE_MAX_AGE_SECONDS`, after which the gate re-validates against
+ * the live status endpoint and re-prompts if the accepted version is now
+ * stale. This turns "never re-prompts this browser session" into "re-prompts
+ * within the TTL window" while still keeping the status endpoint off the hot
+ * path for the vast majority of navigations.
  *
  * `secrets` is REQUIRED here (deep-review finding, DEV-2837): without it,
  * `createCookie` falls back to plain reversible base64 encoding, which
@@ -27,10 +38,19 @@ import { createCookie } from 'react-router';
  *
  * Pattern otherwise mirrors the existing `lang-cookie.server.ts`.
  */
+
+/**
+ * How long a positive consent result is trusted before the gate re-checks the
+ * compliance API. One hour bounds the re-prompt latency after a version bump
+ * without putting the status endpoint on every navigation.
+ */
+export const CONSENT_CACHE_MAX_AGE_SECONDS = 60 * 60;
+
 const authSecret = env('NEXTAUTH_SECRET');
 
 export const consentCheckCookie = createCookie('reeve-consent-ok', {
   path: '/',
+  maxAge: CONSENT_CACHE_MAX_AGE_SECONDS,
   httpOnly: true,
   sameSite: 'lax',
   secure: env('NODE_ENV') === 'production',
@@ -38,10 +58,44 @@ export const consentCheckCookie = createCookie('reeve-consent-ok', {
 });
 
 /**
- * Returns the subject_id cached as "consent OK" on this request, or `null`
- * if there is no cookie (or it fails to parse).
+ * Persisted shape of the consent cache cookie. `versions` maps each accepted
+ * doc_type to the version that was confirmed current at cache time.
  */
-export const getCachedConsentSubjectId = async (request: Request): Promise<string | null> => {
+export type CachedConsent = {
+  subjectId: string;
+  versions: Record<string, string>;
+};
+
+/**
+ * Serializes a `Set-Cookie` header caching the given positive consent result.
+ */
+export const serializeConsentCache = (cached: CachedConsent): Promise<string> => {
+  return consentCheckCookie.serialize(cached);
+};
+
+const isCachedConsent = (value: unknown): value is CachedConsent => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (typeof candidate.subjectId !== 'string' || candidate.subjectId.length === 0) {
+    return false;
+  }
+
+  if (typeof candidate.versions !== 'object' || candidate.versions === null) {
+    return false;
+  }
+
+  return Object.values(candidate.versions as Record<string, unknown>).every((v) => typeof v === 'string');
+};
+
+/**
+ * Returns the parsed consent cache on this request, or `null` if there is no
+ * cookie, it fails to verify/parse, or it doesn't match the expected shape.
+ */
+export const getCachedConsent = async (request: Request): Promise<CachedConsent | null> => {
   const cookieHeader = request.headers.get('cookie');
 
   if (!cookieHeader) {
@@ -50,5 +104,5 @@ export const getCachedConsentSubjectId = async (request: Request): Promise<strin
 
   const value: unknown = await consentCheckCookie.parse(cookieHeader).catch(() => null);
 
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return isCachedConsent(value) ? value : null;
 };
