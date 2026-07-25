@@ -31,6 +31,7 @@ import { SignFieldTextDialog } from '~/components/dialogs/sign-field-text-dialog
 import { useEmbedSigningContext } from '~/components/embed/embed-signing-context';
 import { EnvelopeSignerPageRenderer } from '~/components/general/envelope-signing/envelope-signer-page-renderer';
 import { EnvelopePdfViewer } from '~/components/general/pdf-viewer/envelope-pdf-viewer';
+import { AgplSourceLink } from '~/components/general/reeve/agpl-source-link';
 
 import { BrandingLogo } from '../branding-logo';
 import { DocumentSigningAttachmentsPopover } from '../document-signing/document-signing-attachments-popover';
@@ -295,15 +296,9 @@ export const DocumentSigningPageViewV2 = () => {
                 </a>
               )}
 
-              {/* AGPL-3.0 source offer (Reeve.Sign fork) — always present, not gated by hidePoweredBy */}
-              <a
-                href="https://github.com/MindFortressInc/reeve-sign"
-                target="_blank"
-                rel="noopener"
-                className="fixed bottom-0 left-0 z-40 hidden rounded-tr bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-30 hover:opacity-70 lg:block"
-              >
-                <Trans>Credits</Trans>
-              </a>
+              {/* AGPL-3.0 source offer (Reeve.Sign fork) — always present on every
+                  breakpoint, not gated by hidePoweredBy. See AgplSourceLink. */}
+              <AgplSourceLink className="fixed bottom-0 left-0 z-40 block rounded-tr bg-muted px-1.5 py-0.5 text-[10px] opacity-40 hover:opacity-80" />
             </div>
           </div>
         </div>
