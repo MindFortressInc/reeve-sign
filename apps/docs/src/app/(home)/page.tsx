@@ -21,7 +21,7 @@ export default function HomePage() {
         <div className="flex flex-wrap justify-center gap-3">
           <Link
             href="/docs/users"
-            className="inline-flex items-center gap-2 rounded-lg bg-documenso px-5 py-2.5 font-medium text-fd-primary-foreground text-sm transition-colors hover:bg-documenso-dark/90"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-5 py-2.5 font-medium text-fd-primary-foreground text-sm transition-colors hover:bg-brand-dark/90"
           >
             Get Started
           </Link>
@@ -247,7 +247,7 @@ export default function HomePage() {
           </a>
           <a
             href="https://app.documenso.com/signup"
-            className="inline-flex items-center gap-2 rounded-lg bg-documenso px-4 py-2 font-medium text-fd-primary-foreground text-sm transition-colors hover:bg-documenso/90"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 font-medium text-fd-primary-foreground text-sm transition-colors hover:bg-brand/90"
           >
             Try Documenso
           </a>

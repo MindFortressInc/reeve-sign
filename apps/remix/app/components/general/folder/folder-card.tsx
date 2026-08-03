@@ -58,13 +58,13 @@ export const FolderCard = ({ folder, onMove, onSettings, onDelete }: FolderCardP
       <Card className="h-full border border-border transition-all hover:bg-muted/50">
         <CardContent className="p-4">
           <div className="flex min-w-0 items-center gap-3">
-            <FolderIcon className="h-6 w-6 flex-shrink-0 text-documenso" />
+            <FolderIcon className="h-6 w-6 flex-shrink-0 text-brand" />
 
             <div className="flex w-full min-w-0 items-center justify-between">
               <div className="min-w-0 flex-1">
                 <h3 className="flex min-w-0 items-center gap-2 font-medium">
                   <span className="truncate">{folder.name}</span>
-                  {folder.pinned && <PinIcon className="h-3 w-3 flex-shrink-0 text-documenso" />}
+                  {folder.pinned && <PinIcon className="h-3 w-3 flex-shrink-0 text-brand" />}
                 </h3>
 
                 <div className="mt-1 flex space-x-2 truncate text-muted-foreground text-xs">

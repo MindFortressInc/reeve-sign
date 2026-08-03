@@ -163,7 +163,7 @@ export default function LegalConsentPage({ loaderData }: Route.ComponentProps) {
                   href={safeLegalLink(tos?.contentUrl ?? null)}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-documenso-700 underline"
+                  className="text-brand-700 underline"
                 >
                   <Trans>Terms of Service</Trans>
                 </a>{' '}
@@ -172,7 +172,7 @@ export default function LegalConsentPage({ loaderData }: Route.ComponentProps) {
                   href={safeLegalLink(privacy?.contentUrl ?? null)}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-documenso-700 underline"
+                  className="text-brand-700 underline"
                 >
                   <Trans>Privacy Policy</Trans>
                 </a>

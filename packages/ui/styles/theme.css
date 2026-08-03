@@ -32,6 +32,25 @@
     --primary: 189.5 49.4% 32.5%;
     --primary-foreground: 0 0% 100%;
 
+    /*
+     * Brand ramp (DEV-5616). Static defaults for the `brand` Tailwind token —
+     * exact HSL conversions of the original Reeve teal hex ramp
+     * (#F0F7F8 … #2A6F7C … #0F262B), so the app renders identically when no
+     * host_app_brands registry override is injected at runtime.
+     */
+    --brand: 189.5 49.4% 32.5%; /* #2A6F7C */
+    --brand-50: 187.5 36.4% 95.7%; /* #F0F7F8 */
+    --brand-100: 189 37% 89.4%; /* #DAEBEE */
+    --brand-200: 186.5 35.2% 79.4%; /* #B8D9DD */
+    --brand-300: 188.3 34.1% 66.7%; /* #8DBFC7 */
+    --brand-400: 188.6 30.7% 50.8%; /* #5B9DA8 */
+    --brand-500: 189.9 42.3% 39.4%; /* #3A818F */
+    --brand-600: 189.5 49.4% 32.5%; /* #2A6F7C */
+    --brand-700: 189.2 48.1% 26.5%; /* #235A64 */
+    --brand-800: 189.4 45.1% 22.2%; /* #1F4A52 */
+    --brand-900: 190.5 40.8% 19.2%; /* #1D3E45 */
+    --brand-950: 190.7 48.3% 11.4%; /* #0F262B */
+
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
 
