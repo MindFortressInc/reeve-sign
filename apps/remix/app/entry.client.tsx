@@ -40,46 +40,55 @@ function PosthogInit() {
  * out of the initial bundle. See `apps/remix/server/sentry.ts` for the
  * SDK-choice rationale (`@sentry/node` + `@sentry/react`, not
  * `@sentry/react-router`) and the shared PII-scrubbing conventions.
+ *
+ * Awaited in `main()` *before* `hydrateRoot` (DEV-4790) -- previously this
+ * ran in a post-hydration `useEffect`, which meant errors thrown during
+ * hydration itself (the ones `root.tsx`'s `ErrorBoundary` forwards via
+ * `Sentry.captureException`) were silently dropped because no client
+ * existed yet. Runs in parallel with the i18n catalog load, so hydration
+ * isn't delayed by the extra chunk fetch.
  */
-function SentryInit() {
-  useEffect(() => {
-    const dsn = env('NEXT_PUBLIC_SENTRY_DSN');
+async function initClientSentry() {
+  const dsn = env('NEXT_PUBLIC_SENTRY_DSN');
 
-    if (dsn) {
-      void import('@sentry/react').then((Sentry) => {
-        const scrubBeforeSend = buildSentryBeforeSend();
+  if (!dsn) {
+    return;
+  }
 
-        Sentry.init({
-          dsn,
-          environment: import.meta.env.MODE,
-          // Deliberately no tracesSampleRate / browserTracingIntegration:
-          // this ticket (DEV-2839) scopes to error monitoring only. See the
-          // matching comment in apps/remix/server/sentry.ts -- `beforeSend`
-          // below never fires for transaction/span events, so enabling
-          // tracing here without a `beforeSendTransaction` scrubber would
-          // ship unscrubbed page URLs (including query-string tokens, e.g.
-          // the embed-authoring routes' presigned tokens) to Sentry.
-          sendDefaultPii: false,
-          // See the matching comment in apps/remix/server/sentry.ts -- same
-          // narrow adapter cast, same reason (scrub.ts has zero Sentry SDK
-          // dependency on purpose).
-          beforeSend: (event) =>
-            scrubBeforeSend(event as unknown as ScrubbableSentryEvent) as unknown as SentryErrorEvent,
-        });
+  const Sentry = await import('@sentry/react');
 
-        Sentry.setTag('service_name', 'reeve-sign');
-        Sentry.setTag('host_app', 'reeve');
-      });
-    }
-  }, []);
+  const scrubBeforeSend = buildSentryBeforeSend();
 
-  return null;
+  Sentry.init({
+    dsn,
+    environment: import.meta.env.MODE,
+    // Deliberately no tracesSampleRate / browserTracingIntegration:
+    // this ticket (DEV-2839) scopes to error monitoring only. See the
+    // matching comment in apps/remix/server/sentry.ts -- `beforeSend`
+    // below never fires for transaction/span events, so enabling
+    // tracing here without a `beforeSendTransaction` scrubber would
+    // ship unscrubbed page URLs (including query-string tokens, e.g.
+    // the embed-authoring routes' presigned tokens) to Sentry.
+    sendDefaultPii: false,
+    // See the matching comment in apps/remix/server/sentry.ts -- same
+    // narrow adapter cast, same reason (scrub.ts has zero Sentry SDK
+    // dependency on purpose).
+    beforeSend: (event) => scrubBeforeSend(event as unknown as ScrubbableSentryEvent) as unknown as SentryErrorEvent,
+  });
+
+  Sentry.setTag('service_name', 'reeve-sign');
+  Sentry.setTag('host_app', 'reeve');
 }
 
 async function main() {
   const locale = detect(fromHtmlTag('lang')) || 'en';
 
-  await dynamicActivate(locale);
+  // Monitoring must never block the app: if the `@sentry/react` chunk fails
+  // to load (ad blocker, flaky network), log and hydrate anyway.
+  await Promise.all([
+    dynamicActivate(locale),
+    initClientSentry().catch((err) => console.error('[sentry] client init failed', err)),
+  ]);
 
   startTransition(() => {
     hydrateRoot(
@@ -90,7 +99,6 @@ async function main() {
         </I18nProvider>
 
         <PosthogInit />
-        <SentryInit />
       </StrictMode>,
     );
   });
