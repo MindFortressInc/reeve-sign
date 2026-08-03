@@ -10,7 +10,7 @@ export default function NotFound() {
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Link
           href="/docs/users"
-          className="inline-flex items-center rounded-lg bg-documenso px-5 py-2.5 font-medium text-fd-primary-foreground text-sm transition-colors hover:bg-documenso/90"
+          className="inline-flex items-center rounded-lg bg-brand px-5 py-2.5 font-medium text-fd-primary-foreground text-sm transition-colors hover:bg-brand/90"
         >
           Browse documentation
         </Link>

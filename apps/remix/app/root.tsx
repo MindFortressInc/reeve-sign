@@ -1,6 +1,7 @@
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { SessionProvider } from '@documenso/lib/client-only/providers/session';
 import { APP_I18N_OPTIONS, type SupportedLanguageCodes } from '@documenso/lib/constants/i18n';
+import { fetchHostAppBrandCssVars } from '@documenso/lib/server-only/host-app-brand/fetch-host-app-brand';
 import { createPublicEnv } from '@documenso/lib/utils/env';
 import { extractLocaleData } from '@documenso/lib/utils/i18n';
 import { TrpcProvider } from '@documenso/trpc/react';
@@ -64,9 +65,15 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     organisations = await getOrganisationSession({ userId: session.user.id });
   }
 
+  // DEV-5616: registry-driven brand chrome. `null` (unconfigured or fetch
+  // failure) means the static `theme.css` defaults win — fail-open,
+  // in-memory cached server-side (~1h) so this is not a per-request fetch.
+  const hostAppBrandCssVars = await fetchHostAppBrandCssVars();
+
   return data(
     {
       lang,
+      hostAppBrandCssVars,
       theme: getTheme(),
       disableAnimations,
       // Surface the per-request CSP nonce produced by `securityHeadersMiddleware` so all
@@ -106,6 +113,7 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
     session,
     lang,
     disableAnimations,
+    hostAppBrandCssVars,
     nonce: cspNonce,
     ...data
   } = useLoaderData<typeof loader>() || {};
@@ -148,6 +156,22 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
         <Links nonce={nonce(cspNonce)} />
         <meta name="google" content="notranslate" />
         <PreventFlashOnWrongTheme ssrTheme={Boolean(data.theme)} nonce={nonce(cspNonce)} />
+
+        {/*
+          DEV-5616: host_app_brands registry overrides, SSR-inlined so the
+          first paint is already re-themed. Un-layered `:root` declarations
+          beat the `@layer base` defaults in theme.css regardless of order,
+          so a brand-row change re-themes without a rebuild. Absent when the
+          registry is unconfigured/unreachable (static defaults win). The
+          values are server-derived HSL triplets / validated lengths, never
+          raw registry strings — see fetch-host-app-brand.ts.
+        */}
+        {hostAppBrandCssVars && (
+          <style
+            nonce={nonce(cspNonce)}
+            dangerouslySetInnerHTML={{ __html: `:root { ${hostAppBrandCssVars} }` }}
+          />
+        )}
 
         {disableAnimations && (
           <style

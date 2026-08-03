@@ -68,7 +68,7 @@ export default function VerifyEmailPage({ loaderData }: Route.ComponentProps) {
   if (isLoading || state === null) {
     return (
       <div className="relative">
-        <Loader className="h-8 w-8 animate-spin text-documenso" />
+        <Loader className="h-8 w-8 animate-spin text-brand" />
       </div>
     );
   }

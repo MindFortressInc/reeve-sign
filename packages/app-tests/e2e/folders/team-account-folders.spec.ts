@@ -121,7 +121,7 @@ test('[TEAMS]: can pin a document folder', async ({ page }) => {
 
   await page.reload();
 
-  await expect(page.locator('svg.text-documenso.h-3.w-3')).toBeVisible();
+  await expect(page.locator('svg.text-brand.h-3.w-3')).toBeVisible();
 });
 
 test('[TEAMS]: can unpin a document folder', async ({ page }) => {
@@ -148,7 +148,7 @@ test('[TEAMS]: can unpin a document folder', async ({ page }) => {
 
   await page.reload();
 
-  await expect(page.locator('svg.text-documenso.h-3.w-3')).not.toBeVisible();
+  await expect(page.locator('svg.text-brand.h-3.w-3')).not.toBeVisible();
 });
 
 test('[TEAMS]: can rename a document folder', async ({ page }) => {
@@ -438,7 +438,7 @@ test('[TEAMS]: can pin a template folder', async ({ page }) => {
 
   await page.reload();
 
-  await expect(page.locator('svg.text-documenso.h-3.w-3')).toBeVisible();
+  await expect(page.locator('svg.text-brand.h-3.w-3')).toBeVisible();
 });
 
 test('[TEAMS]: can unpin a template folder', async ({ page }) => {
@@ -467,7 +467,7 @@ test('[TEAMS]: can unpin a template folder', async ({ page }) => {
   await page.reload();
   await page.waitForTimeout(1000);
 
-  await expect(page.locator('svg.text-documenso.h-3.w-3')).not.toBeVisible();
+  await expect(page.locator('svg.text-brand.h-3.w-3')).not.toBeVisible();
 });
 
 test('[TEAMS]: can rename a template folder', async ({ page }) => {

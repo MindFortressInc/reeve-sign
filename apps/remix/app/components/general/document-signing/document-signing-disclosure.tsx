@@ -17,7 +17,7 @@ export const DocumentSigningDisclosure = ({ className, ...props }: DocumentSigni
       <span className="mt-2 block">
         <Trans>
           Read the full{' '}
-          <Link className="text-documenso-700 underline" to="/articles/signature-disclosure" target="_blank">
+          <Link className="text-brand-700 underline" to="/articles/signature-disclosure" target="_blank">
             signature disclosure
           </Link>
           .

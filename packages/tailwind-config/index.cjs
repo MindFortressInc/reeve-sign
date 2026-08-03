@@ -67,22 +67,24 @@ module.exports = {
           DEFAULT: 'hsl(var(--widget))',
           foreground: 'hsl(var(--widget-foreground))',
         },
-        // Reeve.Sign brand color (Reeve teal). Token name kept as `documenso`
-        // to avoid churning every `bg-documenso`/`text-documenso-*` usage across
-        // the upstream tree (keeps our rebase diff minimal); values are Reeve's.
-        documenso: {
-          DEFAULT: '#2A6F7C',
-          50: '#F0F7F8',
-          100: '#DAEBEE',
-          200: '#B8D9DD',
-          300: '#8DBFC7',
-          400: '#5B9DA8',
-          500: '#3A818F',
-          600: '#2A6F7C',
-          700: '#235A64',
-          800: '#1F4A52',
-          900: '#1D3E45',
-          950: '#0F262B',
+        // Reeve.Sign brand color ramp (DEV-5616). Sourced from CSS variables so
+        // the host_app_brands registry can re-theme at runtime without a
+        // rebuild — static defaults (the Reeve teal ramp) live in
+        // `packages/ui/styles/theme.css` and runtime overrides are injected by
+        // the Remix root layout (see `apps/remix/app/root.tsx`).
+        brand: {
+          DEFAULT: 'hsl(var(--brand))',
+          50: 'hsl(var(--brand-50))',
+          100: 'hsl(var(--brand-100))',
+          200: 'hsl(var(--brand-200))',
+          300: 'hsl(var(--brand-300))',
+          400: 'hsl(var(--brand-400))',
+          500: 'hsl(var(--brand-500))',
+          600: 'hsl(var(--brand-600))',
+          700: 'hsl(var(--brand-700))',
+          800: 'hsl(var(--brand-800))',
+          900: 'hsl(var(--brand-900))',
+          950: 'hsl(var(--brand-950))',
         },
         dawn: {
           DEFAULT: '#aaa89f',

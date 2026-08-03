@@ -42,7 +42,7 @@ export const TemplateDocumentSelfSigned = ({ documentName, assetBaseUrl }: Templ
             <Link
               href={signUpUrl}
               target="_blank"
-              className="whitespace-nowrap text-documenso-700 hover:text-documenso-600"
+              className="whitespace-nowrap text-brand-700 hover:text-brand-600"
             >
               free account
             </Link>{' '}

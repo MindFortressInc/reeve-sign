@@ -318,7 +318,7 @@ export const SignInForm = ({
           type="button"
           size="lg"
           loading={isSubmitting}
-          className="bg-documenso hover:opacity-90"
+          className="bg-brand hover:opacity-90"
           onClick={onSignInWithOIDCClick}
         >
           <FaIdCardClip className="mr-2 h-5 w-5" />
@@ -388,7 +388,7 @@ export const SignInForm = ({
             />
           )}
 
-          <Button type="submit" size="lg" loading={isSubmitting} className="dark:bg-documenso dark:hover:opacity-90">
+          <Button type="submit" size="lg" loading={isSubmitting} className="dark:bg-brand dark:hover:opacity-90">
             {isSubmitting ? <Trans>Signing in...</Trans> : <Trans>Sign In</Trans>}
           </Button>
 

@@ -126,5 +126,16 @@ declare namespace NodeJS {
      */
     REEVE_SIGN_ADMIN_TOKEN?: string;
     REEVE_SIGN_SYSTEM_USER_EMAIL?: string;
+
+    /**
+     * Reeve.Sign fork-local: runtime brand chrome from reeve-services'
+     * host_app_brands registry (public GET
+     * /v1/tenant/host-app-brand/{host_app_id}). Fail-open when unset — the
+     * static theme.css defaults win. See
+     * packages/lib/server-only/host-app-brand/ and DEV-5616.
+     */
+    REEVE_BRAND_API_URL?: string;
+    REEVE_BRAND_HOST_APP_ID?: string;
+    REEVE_BRAND_TIMEOUT_MS?: string;
   }
 }
