@@ -10,8 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  *
  * None of these requests reach a database: the 403 cases are stopped by
  * `oidcOnlyGuard` before any route handler runs, and the pass-through cases
- * either fail schema validation before the handler runs or - for
- * /oauth/authorize/oidc - never touch Prisma at all.
+ * either fail schema validation before the handler runs, fail the OAuth
+ * client/state validation inside `validateOauth` (the /callback/* routes) or
+ * - for /oauth/authorize/oidc - never touch Prisma at all.
  */
 
 const ORIGINAL_ENV = { ...process.env };
@@ -24,7 +25,7 @@ const OIDC_ENV = {
 
 const FORBIDDEN_BODY = { message: 'Forbidden', statusCode: 403 };
 
-const BLOCKED_ROUTES: Array<{ path: string; method: 'POST' }> = [
+const BLOCKED_ROUTES: Array<{ path: string; method: 'GET' | 'POST' }> = [
   { path: '/email-password/authorize', method: 'POST' },
   { path: '/email-password/signup', method: 'POST' },
   { path: '/email-password/forgot-password', method: 'POST' },
@@ -33,6 +34,10 @@ const BLOCKED_ROUTES: Array<{ path: string; method: 'POST' }> = [
   { path: '/passkey/authorize', method: 'POST' },
   { path: '/oauth/authorize/google', method: 'POST' },
   { path: '/oauth/authorize/microsoft', method: 'POST' },
+  // DEV-4741: the IdP redirect targets - reachable via a manually driven
+  // consent flow even when the authorize routes above are blocked.
+  { path: '/callback/google', method: 'GET' },
+  { path: '/callback/microsoft', method: 'GET' },
 ];
 
 async function loadAuthApp() {
@@ -41,9 +46,13 @@ async function loadAuthApp() {
   return mod.auth;
 }
 
-function emptyJsonRequest(): RequestInit {
+function emptyRequest(method: 'GET' | 'POST'): RequestInit {
+  if (method === 'GET') {
+    return { method };
+  }
+
   return {
-    method: 'POST',
+    method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   };
@@ -105,6 +114,35 @@ describe('oidcOnlyGuard wired into packages/auth/server/index.ts', () => {
       expect(body.redirectUrl).toContain('https://idp.example.com/authorize');
     });
 
+    it('does not touch /callback/oidc - it falls through to the real callback handler', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                authorization_endpoint: 'https://idp.example.com/authorize',
+                token_endpoint: 'https://idp.example.com/token',
+                scopes_supported: ['openid', 'email', 'profile'],
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            ),
+        ),
+      );
+
+      const auth = await loadAuthApp();
+
+      const res = await auth.request('/callback/oidc', { method: 'GET' });
+
+      // The real handler rejects the missing OAuth code/state itself - the
+      // request must never be short-circuited by the guard's Forbidden
+      // envelope.
+      expect(res.status).not.toBe(403);
+
+      const body = await res.json().catch(() => null);
+      expect(body).not.toEqual(FORBIDDEN_BODY);
+    });
+
     it('does not touch /oauth/authorize/oidc/org/:orgUrl path shape (guard list excludes it)', async () => {
       const { OIDC_ONLY_GUARDED_PATHS } = await import('./oidc-only-guard');
 
@@ -114,8 +152,19 @@ describe('oidcOnlyGuard wired into packages/auth/server/index.ts', () => {
   });
 
   describe('when IS_OIDC_ONLY_AUTH is false', () => {
+    beforeEach(() => {
+      // The /callback/google and /callback/microsoft pass-through cases must
+      // fail at the NOT_SETUP check inside validateOauth (before any network
+      // call), so ensure no provider credentials leak in from the runner env.
+      delete process.env.NEXT_PRIVATE_GOOGLE_CLIENT_ID;
+      delete process.env.NEXT_PRIVATE_GOOGLE_CLIENT_SECRET;
+      delete process.env.NEXT_PRIVATE_MICROSOFT_CLIENT_ID;
+      delete process.env.NEXT_PRIVATE_MICROSOFT_CLIENT_SECRET;
+    });
+
     it.each(BLOCKED_ROUTES)('does not return the guard 403 for $method $path when OIDC is unconfigured', async ({
       path,
+      method,
     }) => {
       delete process.env.NEXT_PRIVATE_OIDC_WELL_KNOWN;
       delete process.env.NEXT_PRIVATE_OIDC_CLIENT_ID;
@@ -123,7 +172,7 @@ describe('oidcOnlyGuard wired into packages/auth/server/index.ts', () => {
 
       const auth = await loadAuthApp();
 
-      const res = await auth.request(path, emptyJsonRequest());
+      const res = await auth.request(path, emptyRequest(method));
 
       // Falls through to real validation/handler logic instead (schema
       // validation failure or a differently-shaped AppError) - never the
@@ -136,13 +185,14 @@ describe('oidcOnlyGuard wired into packages/auth/server/index.ts', () => {
 
     it.each(BLOCKED_ROUTES)('does not return the guard 403 for $method $path when explicitly opted out', async ({
       path,
+      method,
     }) => {
       Object.assign(process.env, OIDC_ENV);
       process.env.NEXT_PRIVATE_OIDC_ONLY_AUTH = 'false';
 
       const auth = await loadAuthApp();
 
-      const res = await auth.request(path, emptyJsonRequest());
+      const res = await auth.request(path, emptyRequest(method));
 
       expect(res.status).not.toBe(403);
 

@@ -9,9 +9,13 @@ import type { HonoAuthContext } from '../types/context';
  * server-side when `IS_OIDC_ONLY_AUTH` is on. This is defense-in-depth for
  * DEV-2904: the sign-in/sign-up UI already hides these options (DEV-2835),
  * this guard stops a hand-crafted request from reaching the handler too.
+ * DEV-4741: the Google/Microsoft callbacks are guarded as well - without
+ * them, an attacker driving the IdP consent flow manually could still
+ * complete login even though the authorize routes are blocked.
  *
  * Deliberately NOT included (must keep working): `/oauth/authorize/oidc`,
- * `/oauth/authorize/oidc/org/:orgUrl`, `/callback/*`, `/session*`,
+ * `/oauth/authorize/oidc/org/:orgUrl`, `/callback/oidc`,
+ * `/callback/oidc/org/:orgUrl`, `/session*`,
  * `/sign-out`, `/account*`, `/email-password/verify-email`,
  * `/email-password/resend-verify-email`, and all `/two-factor/*` routes.
  */
@@ -24,6 +28,8 @@ export const OIDC_ONLY_GUARDED_PATHS = [
   '/passkey/authorize',
   '/oauth/authorize/google',
   '/oauth/authorize/microsoft',
+  '/callback/google',
+  '/callback/microsoft',
 ] as const;
 
 /**

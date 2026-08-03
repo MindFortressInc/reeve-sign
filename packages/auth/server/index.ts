@@ -40,8 +40,12 @@ export const auth = new Hono<HonoAuthContext>()
   // DEV-2904: defense-in-depth — reject password/passkey/social auth
   // server-side when OIDC-only mode is active. Must be registered before the
   // route chain below so it short-circuits ahead of the real handlers.
-  // /oauth/authorize/oidc and /oauth/authorize/oidc/org/:orgUrl are
-  // intentionally not in this list and must stay open.
+  // DEV-4741: the Google/Microsoft IdP callbacks are guarded too, otherwise a
+  // manually driven consent flow could still complete login while the
+  // authorize routes above are blocked.
+  // /oauth/authorize/oidc, /oauth/authorize/oidc/org/:orgUrl, /callback/oidc
+  // and /callback/oidc/org/:orgUrl are intentionally not in this list and
+  // must stay open.
   .use('/email-password/authorize', oidcOnlyGuard)
   .use('/email-password/signup', oidcOnlyGuard)
   .use('/email-password/forgot-password', oidcOnlyGuard)
@@ -50,6 +54,8 @@ export const auth = new Hono<HonoAuthContext>()
   .use('/passkey/authorize', oidcOnlyGuard)
   .use('/oauth/authorize/google', oidcOnlyGuard)
   .use('/oauth/authorize/microsoft', oidcOnlyGuard)
+  .use('/callback/google', oidcOnlyGuard)
+  .use('/callback/microsoft', oidcOnlyGuard)
   .get('/csrf', async (c) => {
     const csrfToken = await setCsrfCookie(c);
 
