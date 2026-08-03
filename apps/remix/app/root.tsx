@@ -238,7 +238,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     // server and client builds), so `@sentry/react` is dynamically imported
     // rather than statically imported at module scope, which would pull the
     // browser SDK into the server bundle. Sentry itself is only initialized
-    // in the browser (see `entry.client.tsx`'s `SentryInit`); on the server
+    // in the browser (see `entry.client.tsx`'s `initClientSentry`, awaited
+    // before hydration so errors thrown while hydrating are captured too);
+    // on the server
     // this boundary can still render during SSR, but `typeof window` is
     // `undefined` there so no capture is attempted -- server-side errors are
     // caught separately (see `apps/remix/server/sentry.ts`).
