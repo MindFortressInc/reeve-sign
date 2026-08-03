@@ -1,0 +1,160 @@
+name: Image staleness monitor
+
+# DEV-5793 Option 3 (the floor): alert when the newest reeve-sign image
+# published to GHCR falls behind main. See docs/deployment-staleness.md for
+# the deploy runbook and this monitor's known blind spot (it compares merged
+# vs PUBLISHED, not published vs RUNNING on the box).
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  issues: write
+
+env:
+  COMMITS_THRESHOLD: 5
+  DAYS_THRESHOLD: 7
+  ISSUE_TITLE: reeve-sign prod image is stale
+  ISSUE_LABEL: image-staleness
+
+jobs:
+  check:
+    name: Compare newest published image against main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history, needed to resolve image shas)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find newest published sha-* image and measure drift
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Newest GHCR package version carrying an immutable sha-<shortsha>
+          # tag (publish.yml always pushes one alongside the moving tag).
+          VERSIONS_JSON="$(gh api \
+            "/orgs/MindFortressInc/packages/container/reeve-sign/versions?per_page=100" \
+            2>/dev/null || echo '[]')"
+          NEWEST="$(jq -r '
+            [ .[] | select((.metadata.container.tags // []) | any(startswith("sha-"))) ]
+            | sort_by(.created_at) | reverse | .[0] // empty
+            | ((.metadata.container.tags | map(select(startswith("sha-")))[0]
+                | sub("^sha-"; "")) + " " + .created_at)
+          ' <<<"$VERSIONS_JSON")"
+
+          STALE=false
+          REASONS=""
+          add_reason() { REASONS="${REASONS:+${REASONS}; }$1"; STALE=true; }
+
+          SHORT_SHA="(unknown)"
+          PUBLISHED_AT="(unknown)"
+          BEHIND=""
+          if [ -z "$NEWEST" ]; then
+            add_reason "no sha-* tagged image version found in GHCR (package unreadable or never published)"
+          else
+            SHORT_SHA="${NEWEST%% *}"
+            PUBLISHED_AT="${NEWEST##* }"
+            if IMAGE_SHA="$(git rev-parse --verify --quiet "${SHORT_SHA}^{commit}")"; then
+              BEHIND="$(git rev-list --count "${IMAGE_SHA}..origin/main")"
+              MAIN_TS="$(git log -1 --format=%ct origin/main)"
+              PUB_TS="$(date -d "$PUBLISHED_AT" +%s)"
+              AGE_DAYS=$(( (MAIN_TS - PUB_TS) / 86400 ))
+              if [ "$BEHIND" -gt "$COMMITS_THRESHOLD" ]; then
+                add_reason "main is ${BEHIND} commits ahead of the newest published image sha-${SHORT_SHA} (threshold: ${COMMITS_THRESHOLD})"
+              fi
+              if [ "$AGE_DAYS" -gt "$DAYS_THRESHOLD" ]; then
+                add_reason "newest image was published ${AGE_DAYS} days before the latest main commit (threshold: ${DAYS_THRESHOLD} days)"
+              fi
+            else
+              add_reason "newest published image tag sha-${SHORT_SHA} does not resolve to any commit in this repository"
+            fi
+          fi
+
+          echo "stale=${STALE}, short_sha=${SHORT_SHA}, published_at=${PUBLISHED_AT}, behind=${BEHIND:-n/a}, reasons=${REASONS:-none}"
+          {
+            echo "stale=${STALE}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "published_at=${PUBLISHED_AT}"
+            echo "behind=${BEHIND}"
+            echo "reasons=${REASONS}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update the staleness issue
+        if: steps.check.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASONS: ${{ steps.check.outputs.reasons }}
+          SHORT_SHA: ${{ steps.check.outputs.short_sha }}
+          PUBLISHED_AT: ${{ steps.check.outputs.published_at }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+        run: |
+          set -euo pipefail
+          gh label create "$ISSUE_LABEL" --repo "$GITHUB_REPOSITORY" --force \
+            --color D93F0B --description "Published reeve-sign image lags behind main"
+
+          BODY="$(cat <<EOF
+          The scheduled image-staleness monitor found that the newest reeve-sign image published to GHCR is behind \`main\`:
+
+          - **Reason(s):** ${REASONS}
+          - **Newest published image:** \`sha-${SHORT_SHA}\` (published ${PUBLISHED_AT})
+          - **Commits on main not in that image:** ${BEHIND:-unknown}
+          - **Run:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          To fix, follow the manual deploy runbook in \`docs/deployment-staleness.md\` (publish.yml build → export_tarball → scp → docker load → bump the tag in the box's compose.yml → \`up -d\`).
+
+          _Note: this monitor compares merged vs published. Even when it is green, the image actually **running** on the box may be older — see the blind-spot section of the doc (DEV-5793 Options 1/2)._
+          EOF
+          )"
+
+          NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$ISSUE_LABEL" \
+            --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$NUMBER" ]; then
+            gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            echo "Updated existing issue #$NUMBER"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" \
+              --label "$ISSUE_LABEL" --body "$BODY"
+          fi
+
+      - name: Close the staleness issue when the check passes
+        if: steps.check.outputs.stale != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHORT_SHA: ${{ steps.check.outputs.short_sha }}
+          BEHIND: ${{ steps.check.outputs.behind }}
+        run: |
+          set -euo pipefail
+          NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$ISSUE_LABEL" \
+            --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$NUMBER" ]; then
+            gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --comment "The image-staleness check passes again: newest published image is sha-${SHORT_SHA}, ${BEHIND} commit(s) behind main. Closing."
+          fi
+
+      - name: Notify Slack (only if SLACK_WEBHOOK_URL is configured)
+        if: steps.check.outputs.stale == 'true' && secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          REASONS: ${{ steps.check.outputs.reasons }}
+        run: |
+          set -euo pipefail
+          TEXT="reeve-sign prod image is stale: ${REASONS}. ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          jq -n --arg text "$TEXT" '{text: $text}' \
+            | curl -fsS -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+
+      - name: Fail the run when stale
+        if: steps.check.outputs.stale == 'true'
+        env:
+          REASONS: ${{ steps.check.outputs.reasons }}
+        run: |
+          echo "::error::reeve-sign published image is stale: ${REASONS}"
+          exit 1
