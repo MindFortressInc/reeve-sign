@@ -77,7 +77,7 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     expect(compose).toMatch(/curl.*http:\/\/localhost:3000\/health/);
   });
 
-  it('never assigns a secret-shaped env var name to a literal value -- only ${VAR} refs', () => {
+  it('never assigns a secret-shaped env var name to a literal value -- only variable-interpolation refs', () => {
     // Automated form of the epic's hard security rule ("never commit a
     // secret VALUE"): every env line whose NAME looks like a secret must
     // use ${...} interpolation, never a literal. Catches a future
