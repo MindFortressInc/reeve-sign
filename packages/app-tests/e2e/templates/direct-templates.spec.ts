@@ -7,7 +7,7 @@ import { seedTeam } from '@documenso/prisma/seed/teams';
 import { seedDirectTemplate, seedTemplate } from '@documenso/prisma/seed/templates';
 import { seedTestEmail, seedUser } from '@documenso/prisma/seed/users';
 import { expect, test } from '@playwright/test';
-import { DocumentSigningOrder, RecipientRole } from '@prisma/client';
+import { DocumentSigningOrder, FieldType, RecipientRole } from '@prisma/client';
 import { customAlphabet } from 'nanoid';
 
 import { apiSignin } from '../fixtures/authentication';
@@ -259,7 +259,16 @@ test('[DIRECT_TEMPLATES]: V1 use direct template link with 2 recipients with nex
   const originalName = 'Signer 2';
   const originalSecondSignerEmail = seedTestEmail();
 
-  // Add another signer
+  const templateEnvelopeItem = await prisma.envelopeItem.findFirstOrThrow({
+    where: {
+      envelopeId: template.id,
+    },
+  });
+
+  // Add another signer with a signature field. Signers without a signature
+  // field are rejected by `sendDocument`'s missing-fields validation, which
+  // now surfaces to the direct-template signer instead of being swallowed
+  // (DEV-4789).
   await prisma.recipient.create({
     data: {
       signingOrder: 2,
@@ -268,6 +277,21 @@ test('[DIRECT_TEMPLATES]: V1 use direct template link with 2 recipients with nex
       name: originalName,
       token: Math.random().toString().slice(2, 7),
       role: RecipientRole.SIGNER,
+      fields: {
+        create: {
+          page: 1,
+          type: FieldType.SIGNATURE,
+          inserted: false,
+          customText: '',
+          positionX: 1,
+          positionY: 1,
+          width: 5,
+          height: 5,
+          envelopeId: template.id,
+          envelopeItemId: templateEnvelopeItem.id,
+          fieldMeta: { type: 'signature' },
+        },
+      },
     },
   });
 
@@ -341,7 +365,16 @@ test('[DIRECT_TEMPLATES]: V2 use direct template link with 2 recipients with nex
   const originalName = 'Signer 2';
   const originalSecondSignerEmail = seedTestEmail();
 
-  // Add another signer
+  const templateEnvelopeItem = await prisma.envelopeItem.findFirstOrThrow({
+    where: {
+      envelopeId: template.id,
+    },
+  });
+
+  // Add another signer with a signature field. Signers without a signature
+  // field are rejected by `sendDocument`'s missing-fields validation, which
+  // now surfaces to the direct-template signer instead of being swallowed
+  // (DEV-4789).
   await prisma.recipient.create({
     data: {
       signingOrder: 2,
@@ -350,6 +383,21 @@ test('[DIRECT_TEMPLATES]: V2 use direct template link with 2 recipients with nex
       name: originalName,
       token: Math.random().toString().slice(2, 7),
       role: RecipientRole.SIGNER,
+      fields: {
+        create: {
+          page: 1,
+          type: FieldType.SIGNATURE,
+          inserted: false,
+          customText: '',
+          positionX: 1,
+          positionY: 1,
+          width: 5,
+          height: 5,
+          envelopeId: template.id,
+          envelopeItemId: templateEnvelopeItem.id,
+          fieldMeta: { type: 'signature' },
+        },
+      },
     },
   });
 
