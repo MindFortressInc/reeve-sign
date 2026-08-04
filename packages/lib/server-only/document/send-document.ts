@@ -142,7 +142,16 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
   });
 
   // Validate that recipients who require fields (e.g., signers need signature fields) have them.
-  const recipientsWithMissingFields = getRecipientsWithMissingFields(envelope.recipients, envelope.fields);
+  //
+  // Recipients who have already signed are excluded: they no longer need a
+  // signature field to proceed. This matters for the direct-template flow,
+  // where the direct recipient signs (possibly with no fields) before
+  // `sendDocument` is called (DEV-4789).
+  const recipientsPendingSigning = envelope.recipients.filter(
+    (recipient) => recipient.signingStatus !== SigningStatus.SIGNED,
+  );
+
+  const recipientsWithMissingFields = getRecipientsWithMissingFields(recipientsPendingSigning, envelope.fields);
 
   if (recipientsWithMissingFields.length > 0) {
     const missingRecipientDescriptions = recipientsWithMissingFields
