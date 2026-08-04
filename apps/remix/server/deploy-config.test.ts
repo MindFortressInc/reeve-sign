@@ -88,7 +88,9 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     const offenders: string[] = [];
     for (const line of compose.split('\n')) {
       const match = line.match(assignmentLine);
-      if (!match) continue;
+      if (!match) {
+        continue;
+      }
       const [, name, value] = match;
       if (secretShapedName.test(name) && !/^\$\{[A-Z0-9_]+\}$/.test(value.trim())) {
         offenders.push(line.trim());
@@ -117,6 +119,11 @@ describe('deploy/nginx/sign.meetreeve.com.conf (repatriated from the box, DEV-58
 
   it('never embeds a literal credential (no inline user:pass@, Authorization/Bearer header, or key block)', () => {
     expect(nginx).not.toMatch(/Bearer\s+[A-Za-z0-9._-]{10,}/);
+    // A literal (non-variable) value on a proxy_set_header Authorization
+    // line -- e.g. `proxy_set_header Authorization "Basic <creds>";` --
+    // would be a credential baked into the vhost. `$`-prefixed values
+    // (nginx variables) are fine and excluded via the negative lookahead.
+    expect(nginx).not.toMatch(/^\s*proxy_set_header\s+Authorization\s+(?![^;]*\$)[^;]*\S[^;]*;/im);
     expect(nginx).not.toMatch(/:\/\/[^/\s]+:[^/\s@]+@/);
     expect(nginx).not.toMatch(/-----BEGIN/);
   });

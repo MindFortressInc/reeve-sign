@@ -6,7 +6,7 @@ Both files here existed in **no git repository at all** before DEV-5838 —
 only as hand-edited files on a single EC2 box
 (`ubuntu@reeve-ec2:/home/ubuntu/reeve-sign/`). Confirmed live:
 
-```
+```console
 $ ssh reeve-ec2 "cd /home/ubuntu/reeve-sign && git status"
 fatal: not a git repository (or any of the parent directories): .git
 ```
@@ -42,7 +42,7 @@ CI has no SSH access to the box, so live parity can't be enforced
 automatically today — that gap closes with the T1/T2 host-state
 collector/evaluator in DEV-4419. Until then, verify by hand:
 
-```
+```console
 ./deploy/check-drift.sh          # defaults to the reeve-ec2 SSH alias
 ./deploy/check-drift.sh <alias>  # override the SSH host alias
 ```
