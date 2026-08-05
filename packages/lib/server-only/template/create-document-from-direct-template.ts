@@ -722,18 +722,24 @@ export const createDocumentFromDirectTemplate = async ({
     });
   }
 
-  try {
-    // This handles sending emails and sealing the document if required.
-    await sendDocument({
-      id: {
-        type: 'envelopeId',
-        id: createdEnvelope.id,
-      },
-      userId: createdEnvelope.userId,
-      teamId: createdEnvelope.teamId,
-      requestMetadata,
-    });
+  // This handles sending emails and sealing the document if required.
+  //
+  // DEV-4789: deliberately NOT wrapped in a try/catch. A failed send (for
+  // example the fail-closed credits path in `meterDocumentSend`) must surface
+  // to the caller instead of silently reporting success while no document was
+  // ever sent. The created document remains, so a retry replays the same
+  // idempotent credits reservation and can complete the send.
+  await sendDocument({
+    id: {
+      type: 'envelopeId',
+      id: createdEnvelope.id,
+    },
+    userId: createdEnvelope.userId,
+    teamId: createdEnvelope.teamId,
+    requestMetadata,
+  });
 
+  try {
     // Refetch envelope so we get the final data.
     const refetchedEnvelope = await prisma.envelope.findFirstOrThrow({
       where: {
@@ -754,8 +760,9 @@ export const createDocumentFromDirectTemplate = async ({
   } catch (err) {
     console.error('[CREATE_DOCUMENT_FROM_DIRECT_TEMPLATE]:', err);
 
-    // Don't launch an error since the document has already been created.
-    // Log and reseal as required until we configure middleware.
+    // The document has been created and sent by this point; a refetch or
+    // webhook failure is a post-send side effect and shouldn't fail the
+    // whole request.
   }
 
   return {

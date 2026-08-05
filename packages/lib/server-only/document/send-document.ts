@@ -123,8 +123,50 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
     throw new Error('Missing envelope items');
   }
 
-  // DEV-2838: from here on we're doing the actual send — everything above
-  // this point is read-only validation that should never be charged. Wrapped
+  // Validate that recipients with auth requirements have a valid email.
+  envelope.recipients.forEach((recipient) => {
+    const auth = extractDocumentAuthMethods({
+      documentAuth: envelope.authOptions,
+      recipientAuth: recipient.authOptions,
+    });
+
+    if (
+      recipient.role !== RecipientRole.CC &&
+      (auth.recipientAccessAuthRequired || auth.recipientActionAuthRequired) &&
+      !isRecipientEmailValidForSending(recipient)
+    ) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: `Recipient ${recipient.id} requires an email because they have auth requirements.`,
+      });
+    }
+  });
+
+  // Validate that recipients who require fields (e.g., signers need signature fields) have them.
+  //
+  // Recipients who have already signed are excluded: they no longer need a
+  // signature field to proceed. This matters for the direct-template flow,
+  // where the direct recipient signs (possibly with no fields) before
+  // `sendDocument` is called (DEV-4789).
+  const recipientsPendingSigning = envelope.recipients.filter(
+    (recipient) => recipient.signingStatus !== SigningStatus.SIGNED,
+  );
+
+  const recipientsWithMissingFields = getRecipientsWithMissingFields(recipientsPendingSigning, envelope.fields);
+
+  if (recipientsWithMissingFields.length > 0) {
+    const missingRecipientDescriptions = recipientsWithMissingFields
+      .map((r) => (r.name ? `${r.name} (${r.email}, id: ${r.id})` : `${r.email} (id: ${r.id})`))
+      .join(', ');
+
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: `The following recipients are missing required fields: ${missingRecipientDescriptions}. Signers must have at least one signature field.`,
+    });
+  }
+
+  // DEV-2838: from here on we're doing the actual send; everything above
+  // this point is read-only validation that should never be charged (DEV-4789:
+  // the auth-email and missing-fields validations above deliberately run
+  // BEFORE the reservation so a rejected send never reserves/voids). Wrapped
   // so BOTH return paths below (the no-action-to-take auto-seal and the
   // normal transaction + notify + webhook path) reserve/commit/void credits
   // identically; see meterDocumentSend's docstring for the fail-closed /
@@ -138,37 +180,6 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
           await injectFormValuesIntoDocument(envelope, envelopeItem);
         }),
       );
-    }
-
-    // Validate that recipients with auth requirements have a valid email.
-    envelope.recipients.forEach((recipient) => {
-      const auth = extractDocumentAuthMethods({
-        documentAuth: envelope.authOptions,
-        recipientAuth: recipient.authOptions,
-      });
-
-      if (
-        recipient.role !== RecipientRole.CC &&
-        (auth.recipientAccessAuthRequired || auth.recipientActionAuthRequired) &&
-        !isRecipientEmailValidForSending(recipient)
-      ) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Recipient ${recipient.id} requires an email because they have auth requirements.`,
-        });
-      }
-    });
-
-    // Validate that recipients who require fields (e.g., signers need signature fields) have them.
-    const recipientsWithMissingFields = getRecipientsWithMissingFields(envelope.recipients, envelope.fields);
-
-    if (recipientsWithMissingFields.length > 0) {
-      const missingRecipientDescriptions = recipientsWithMissingFields
-        .map((r) => (r.name ? `${r.name} (${r.email}, id: ${r.id})` : `${r.email} (id: ${r.id})`))
-        .join(', ');
-
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `The following recipients are missing required fields: ${missingRecipientDescriptions}. Signers must have at least one signature field.`,
-      });
     }
 
     const allRecipientsHaveNoActionToTake = envelope.recipients.every(
