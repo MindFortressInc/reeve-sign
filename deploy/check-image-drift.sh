@@ -56,27 +56,35 @@ echo "Checking image digest drift on ${HOST} (read-only)..."
 echo
 
 # 1. The pinned image ref in the box's compose.yml (the deploy truth).
-PINNED_REF="$(ssh "${HOST}" "grep -Eo 'ghcr\.io/mindfortressinc/reeve-sign:[A-Za-z0-9._-]+' ${BOX_COMPOSE_DIR}/compose.yml" | head -n1)"
+PINNED_REF="$(ssh "${HOST}" "grep -Eo 'ghcr\.io/mindfortressinc/reeve-sign:[A-Za-z0-9._-]+' ${BOX_COMPOSE_DIR}/compose.yml" | head -n1)" ||
+  fail "could not read ${BOX_COMPOSE_DIR}/compose.yml over ssh to ${HOST} (transport or grep failure, NOT a no-drift result)"
 [ -n "${PINNED_REF}" ] || fail "could not find a ${IMAGE}:<tag> pin in ${HOST}:${BOX_COMPOSE_DIR}/compose.yml"
 TAG="${PINNED_REF##*:}"
 echo "pinned ref (box compose.yml):    ${PINNED_REF}"
 
 # 2. What is actually running: the ref the container was started from, and its
 #    image ID (config digest) — the only digest that survives docker load.
-CONTAINER_ID="$(ssh "${HOST}" "docker compose --project-directory ${BOX_COMPOSE_DIR} ps -q documenso")"
+CONTAINER_ID="$(ssh "${HOST}" "docker compose --project-directory ${BOX_COMPOSE_DIR} ps -q documenso")" ||
+  fail "'docker compose ps' failed over ssh to ${HOST} (transport or compose failure, NOT a no-drift result)"
 [ -n "${CONTAINER_ID}" ] || fail "no running 'documenso' container found via compose in ${BOX_COMPOSE_DIR}"
-RUNNING_REF="$(ssh "${HOST}" "docker inspect --format '{{.Config.Image}}' ${CONTAINER_ID}")"
-RUNNING_IMAGE_ID="$(ssh "${HOST}" "docker inspect --format '{{.Image}}' ${CONTAINER_ID}")"
+RUNNING_REF="$(ssh "${HOST}" "docker inspect --format '{{.Config.Image}}' ${CONTAINER_ID}")" ||
+  fail "could not inspect container ${CONTAINER_ID} on ${HOST} for its started-from ref"
+RUNNING_IMAGE_ID="$(ssh "${HOST}" "docker inspect --format '{{.Image}}' ${CONTAINER_ID}")" ||
+  fail "could not inspect container ${CONTAINER_ID} on ${HOST} for its image ID"
+[ -n "${RUNNING_REF}" ] && [ -n "${RUNNING_IMAGE_ID}" ] ||
+  fail "docker inspect on ${HOST} returned an empty ref/image ID for ${CONTAINER_ID}"
 echo "running ref (container):         ${RUNNING_REF}"
 echo "running image ID (config digest): ${RUNNING_IMAGE_ID}"
 
 # 3. Resolve the pinned tag to its config digest via the GHCR API at check time.
-REGISTRY_TOKEN="$(curl -fsS -u "x:${TOKEN}" "https://${REGISTRY}/token?scope=repository:${PACKAGE}:pull" | jq -r '.token')"
+REGISTRY_TOKEN="$(curl -fsS -u "x:${TOKEN}" "https://${REGISTRY}/token?scope=repository:${PACKAGE}:pull" | jq -r '.token')" ||
+  fail "GHCR token exchange failed (network error or the token cannot read ${PACKAGE})"
 [ -n "${REGISTRY_TOKEN}" ] && [ "${REGISTRY_TOKEN}" != "null" ] || fail "could not obtain a GHCR registry token"
 MANIFEST="$(curl -fsS \
   -H "Authorization: Bearer ${REGISTRY_TOKEN}" \
   -H "Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
-  "https://${REGISTRY}/v2/${PACKAGE}/manifests/${TAG}")"
+  "https://${REGISTRY}/v2/${PACKAGE}/manifests/${TAG}")" ||
+  fail "could not fetch the GHCR manifest for ${IMAGE}:${TAG} (network error, or the tag no longer exists)"
 EXPECTED_IMAGE_ID="$(jq -r '.config.digest // empty' <<<"${MANIFEST}")"
 [ -n "${EXPECTED_IMAGE_ID}" ] || fail "manifest for ${IMAGE}:${TAG} has no config digest (mediaType: $(jq -r '.mediaType' <<<"${MANIFEST}"))"
 echo "registry config digest for :${TAG}: ${EXPECTED_IMAGE_ID}"

@@ -44,12 +44,30 @@ the box as a tarball, never via a registry pull.
    The artifact contains `reeve-sign-image.digests` next to the tarball,
    recording the exact manifest digest and image ID that were exported.
 
-3. **Download the artifact** (`reeve-sign-image` → `reeve-sign-image.tar.gz`)
-   from the completed run, e.g. `gh run download <run-id> -n reeve-sign-image`.
+3. **Download the artifact** (`reeve-sign-image`, which contains both
+   `reeve-sign-image.tar.gz` and `reeve-sign-image.digests`) from the completed
+   run, e.g. `gh run download <run-id> -n reeve-sign-image`.
 
-4. **Copy to the box**: `scp reeve-sign-image.tar.gz <reeve-ec2-host>:`.
+4. **Copy both files to the box**:
 
-5. **Load it on the box**: `docker load < reeve-sign-image.tar.gz`.
+   ```bash
+   scp reeve-sign-image.tar.gz reeve-sign-image.digests <reeve-ec2-host>:
+   ```
+
+   The `.digests` file has to land next to the tarball, not stay in the CI
+   artifact: `docker load` does not preserve `RepoDigests`, so once the image
+   is on the box this file is the only record of which registry manifest
+   digest those bytes came from.
+
+5. **Load it on the box**, then confirm the loaded image ID matches the record
+   you copied (a registry-free check the box can run on its own):
+
+   ```bash
+   docker load < reeve-sign-image.tar.gz
+   cat reeve-sign-image.digests   # image=, tag=, manifest_digest=, image_id=
+   docker image inspect --format '{{.Id}}' ghcr.io/mindfortressinc/reeve-sign:<tag>
+   # must equal the image_id line above
+   ```
 
 6. **Bump the tag** in the box-local `compose.yml` to the exact image tag you
    loaded (prefer the immutable `sha-<shortsha>` tag so the running version is
