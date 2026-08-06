@@ -39,7 +39,7 @@ on:
         default: false
         type: boolean
       digest:
-        description: 'export_tarball only: expected manifest digest (sha256:...) from the publish run. Export fails if :tag no longer resolves to it.'
+        description: 'REQUIRED for export_tarball (ignored otherwise): expected manifest digest (sha256:...) from the publish run. Export fails if omitted, or if :tag no longer resolves to it.'
         required: false
         default: ''
         type: string
@@ -130,13 +130,25 @@ jobs:
           EXPECTED_DIGEST: ${{ inputs.digest }}
         run: |
           set -euo pipefail
+          # CR (CLI): fail BEFORE the pull when no expected digest was given.
+          # `digest` stays optional at the workflow level (publish-only runs
+          # never use it), but an export with it empty skipped the comparison
+          # below entirely and shipped whatever the moving tag happened to
+          # resolve to — exactly the drift DEV-7600 exists to prevent.
+          if [ -z "${EXPECTED_DIGEST}" ]; then
+            echo "::error::export_tarball requires the 'digest' input (sha256:... as printed by the publish run)." \
+              " Without it the moving :${TAG} tag could have been repointed since publish and this export would" \
+              " ship unverified bytes (DEV-7600)."
+            exit 1
+          fi
+
           docker pull "${IMAGE}:${TAG}"
 
           MANIFEST_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${TAG}")"
           MANIFEST_DIGEST="${MANIFEST_DIGEST#*@}"
           IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:${TAG}")"
 
-          if [ -n "${EXPECTED_DIGEST}" ] && [ "${MANIFEST_DIGEST}" != "${EXPECTED_DIGEST}" ]; then
+          if [ "${MANIFEST_DIGEST}" != "${EXPECTED_DIGEST}" ]; then
             echo "::error::${IMAGE}:${TAG} now resolves to ${MANIFEST_DIGEST}, expected ${EXPECTED_DIGEST}." \
               " The tag moved between publish and export; refusing to ship different bytes (DEV-7600)."
             exit 1
