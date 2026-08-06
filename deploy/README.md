@@ -80,6 +80,17 @@ the other way around.
 * The image is pinned by a moving `sha-<shortsha>` **tag**, not a
   `@sha256:` **digest**. A tag can be force-pushed to point at a different
   image; a digest can't. Flagged here per the ticket, not changed here.
+* `reeve-sign-gotenberg:8` has **no tracked acquisition path**: nothing in
+  this repo (or any registry reference) builds, pulls, or tags that exact
+  image name — it exists only in the box's local Docker image store, so a
+  fresh host cannot materialize it from this repo alone. Fixing this means
+  capturing the image's real provenance from the box (`docker image
+  inspect reeve-sign-gotenberg:8` — is it a re-tag of upstream
+  `gotenberg/gotenberg:8`, or a local build with modifications?) and
+  committing either a `build:` config or a registry reference under the
+  DEV-4419 `[[config]]` contract. Inventing a Dockerfile here without that
+  inspection could silently diverge from what production actually runs, so
+  it is flagged, not fixed, in this repatriation-only PR.
 * `deploy.toml`, `[[config]]`, and `[[runtime_env]]` (including the
   `NODE_ENV` `fail_boot` gap that caused prod Sentry to report
   `environment: development`) are DEV-5838's 5b half, deferred pending

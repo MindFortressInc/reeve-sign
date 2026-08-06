@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 // DEV-5838: `deploy/compose.yml` and `deploy/nginx/sign.meetreeve.com.conf`
 // are byte-faithful copies of the two production runtime-config files that,
@@ -26,9 +27,37 @@ const NGINX_PATH = resolve(REPO_ROOT, 'deploy/nginx/sign.meetreeve.com.conf');
 const compose = readFileSync(COMPOSE_PATH, 'utf8');
 const nginx = readFileSync(NGINX_PATH, 'utf8');
 
+// Compose-style `${VAR}` references resolved with non-secret placeholders,
+// so the *resulting* document (what compose would actually materialize)
+// can be parsed and structurally validated in CI -- not just the raw text.
+const resolvedCompose = compose.replace(/\$\{([A-Z0-9_]+)\}/g, 'placeholder-$1');
+
 describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
   it('contains no tab characters (YAML forbids tabs for indentation)', () => {
     expect(compose).not.toMatch(/\t/);
+  });
+
+  it('parses as valid YAML once ${...} references are resolved with placeholders', () => {
+    // CI has no docker binary, so `docker compose config` is out of reach;
+    // a strict YAML parse of the placeholder-resolved document is the
+    // CI-available validation, plus structural assertions on the result.
+    const parsed = parseYaml(resolvedCompose) as {
+      name?: string;
+      services?: Record<string, { image?: string; ports?: string[]; environment?: unknown }>;
+    };
+
+    expect(parsed.name).toBe('reeve-sign');
+    expect(parsed.services).toBeDefined();
+    expect(Object.keys(parsed.services ?? {}).sort()).toEqual(['documenso', 'gotenberg']);
+
+    const documenso = parsed.services?.documenso;
+    expect(documenso?.image).toMatch(/^ghcr\.io\/mindfortressinc\/reeve-sign:sha-[0-9a-f]{6,}$/);
+    expect(documenso?.ports).toEqual(['127.0.0.1:3000:3000']);
+
+    // No unresolved `${...}` may survive placeholder resolution -- an
+    // unresolved reference means a malformed interpolation the raw-text
+    // checks below would silently skip.
+    expect(resolvedCompose).not.toContain('${');
   });
 
   it('pins the reeve-sign image to a moving sha-<shortsha> tag', () => {
@@ -82,7 +111,10 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     // secret VALUE"): every env line whose NAME looks like a secret must
     // use ${...} interpolation, never a literal. Catches a future
     // hand-edit that pastes a real DSN/token/password into this file.
-    const secretShapedName = /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY)/;
+    // `ENCRYPTION` and the standalone `_KEY` suffix catch encryption keys
+    // (NEXT_PRIVATE_ENCRYPTION_KEY, NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY)
+    // that the named-credential words alone would miss.
+    const secretShapedName = /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|_KEY$)/;
     const assignmentLine = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
 
     const offenders: string[] = [];
