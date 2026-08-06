@@ -46,6 +46,21 @@ fail() {
 
 command -v jq >/dev/null 2>&1 || fail "jq is required"
 
+# Every remote call gets a deadline: a hung box or registry must fail the
+# check, not stall it forever. BatchMode forbids interactive auth prompts;
+# ConnectTimeout bounds the dial; the process-level `timeout` (when the
+# platform has coreutils timeout; macOS without it still gets the ssh-level
+# bounds) bounds the remote command itself.
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10)
+run_ssh() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 30 ssh "${SSH_OPTS[@]}" "$@"
+  else
+    ssh "${SSH_OPTS[@]}" "$@"
+  fi
+}
+CURL_OPTS=(--connect-timeout 10 --max-time 60)
+
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 if [ -z "${TOKEN}" ] && command -v gh >/dev/null 2>&1; then
   TOKEN="$(gh auth token 2>/dev/null || true)"
@@ -56,7 +71,7 @@ echo "Checking image digest drift on ${HOST} (read-only)..."
 echo
 
 # 1. The pinned image ref in the box's compose.yml (the deploy truth).
-PINNED_REF="$(ssh "${HOST}" "grep -Eo 'ghcr\.io/mindfortressinc/reeve-sign:[A-Za-z0-9._-]+' ${BOX_COMPOSE_DIR}/compose.yml" | head -n1)" ||
+PINNED_REF="$(run_ssh "${HOST}" "grep -Eo 'ghcr\.io/mindfortressinc/reeve-sign:[A-Za-z0-9._-]+' ${BOX_COMPOSE_DIR}/compose.yml" | head -n1)" ||
   fail "could not read ${BOX_COMPOSE_DIR}/compose.yml over ssh to ${HOST} (transport or grep failure, NOT a no-drift result)"
 [ -n "${PINNED_REF}" ] || fail "could not find a ${IMAGE}:<tag> pin in ${HOST}:${BOX_COMPOSE_DIR}/compose.yml"
 TAG="${PINNED_REF##*:}"
@@ -64,12 +79,18 @@ echo "pinned ref (box compose.yml):    ${PINNED_REF}"
 
 # 2. What is actually running: the ref the container was started from, and its
 #    image ID (config digest) — the only digest that survives docker load.
-CONTAINER_ID="$(ssh "${HOST}" "docker compose --project-directory ${BOX_COMPOSE_DIR} ps -q documenso")" ||
+CONTAINER_ID="$(run_ssh "${HOST}" "docker compose --project-directory ${BOX_COMPOSE_DIR} ps -q documenso")" ||
   fail "'docker compose ps' failed over ssh to ${HOST} (transport or compose failure, NOT a no-drift result)"
 [ -n "${CONTAINER_ID}" ] || fail "no running 'documenso' container found via compose in ${BOX_COMPOSE_DIR}"
-RUNNING_REF="$(ssh "${HOST}" "docker inspect --format '{{.Config.Image}}' ${CONTAINER_ID}")" ||
+# Exactly ONE well-formed hex container ID, or refuse to interpolate it into
+# the remote docker-inspect command lines: an empty, multi-line (scaled or
+# duplicated service), or malformed value would word-split into extra shell
+# arguments on the remote side.
+[[ "${CONTAINER_ID}" =~ ^[0-9a-f]{12,64}$ ]] ||
+  fail "expected exactly one hex container ID from 'docker compose ps -q documenso', got: '${CONTAINER_ID}'"
+RUNNING_REF="$(run_ssh "${HOST}" "docker inspect --format '{{.Config.Image}}' ${CONTAINER_ID}")" ||
   fail "could not inspect container ${CONTAINER_ID} on ${HOST} for its started-from ref"
-RUNNING_IMAGE_ID="$(ssh "${HOST}" "docker inspect --format '{{.Image}}' ${CONTAINER_ID}")" ||
+RUNNING_IMAGE_ID="$(run_ssh "${HOST}" "docker inspect --format '{{.Image}}' ${CONTAINER_ID}")" ||
   fail "could not inspect container ${CONTAINER_ID} on ${HOST} for its image ID"
 [ -n "${RUNNING_REF}" ] && [ -n "${RUNNING_IMAGE_ID}" ] ||
   fail "docker inspect on ${HOST} returned an empty ref/image ID for ${CONTAINER_ID}"
@@ -77,13 +98,21 @@ echo "running ref (container):         ${RUNNING_REF}"
 echo "running image ID (config digest): ${RUNNING_IMAGE_ID}"
 
 # 3. Resolve the pinned tag to its config digest via the GHCR API at check time.
-REGISTRY_TOKEN="$(curl -fsS -u "x:${TOKEN}" "https://${REGISTRY}/token?scope=repository:${PACKAGE}:pull" | jq -r '.token')" ||
+#    Credentials go to curl via `--config -` on stdin, never as command-line
+#    arguments — argv is world-readable in the process table for the lifetime
+#    of the call.
+REGISTRY_TOKEN="$(curl -fsS "${CURL_OPTS[@]}" --config - "https://${REGISTRY}/token?scope=repository:${PACKAGE}:pull" <<EOF | jq -r '.token'
+user = "x:${TOKEN}"
+EOF
+)" ||
   fail "GHCR token exchange failed (network error or the token cannot read ${PACKAGE})"
 [ -n "${REGISTRY_TOKEN}" ] && [ "${REGISTRY_TOKEN}" != "null" ] || fail "could not obtain a GHCR registry token"
-MANIFEST="$(curl -fsS \
-  -H "Authorization: Bearer ${REGISTRY_TOKEN}" \
+MANIFEST="$(curl -fsS "${CURL_OPTS[@]}" --config - \
   -H "Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
-  "https://${REGISTRY}/v2/${PACKAGE}/manifests/${TAG}")" ||
+  "https://${REGISTRY}/v2/${PACKAGE}/manifests/${TAG}" <<EOF
+header = "Authorization: Bearer ${REGISTRY_TOKEN}"
+EOF
+)" ||
   fail "could not fetch the GHCR manifest for ${IMAGE}:${TAG} (network error, or the tag no longer exists)"
 EXPECTED_IMAGE_ID="$(jq -r '.config.digest // empty' <<<"${MANIFEST}")"
 [ -n "${EXPECTED_IMAGE_ID}" ] || fail "manifest for ${IMAGE}:${TAG} has no config digest (mediaType: $(jq -r '.mediaType' <<<"${MANIFEST}"))"
