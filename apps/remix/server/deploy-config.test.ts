@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
@@ -20,7 +21,7 @@ import { parse as parseYaml } from 'yaml';
 // tag-not-digest image pin) -- that is deliberate scope, documented in
 // deploy/README.md's "Known pre-existing gaps" section.
 
-const REPO_ROOT = resolve(__dirname, '../../..');
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const COMPOSE_PATH = resolve(REPO_ROOT, 'deploy/compose.yml');
 const NGINX_PATH = resolve(REPO_ROOT, 'deploy/nginx/sign.meetreeve.com.conf');
 
@@ -32,6 +33,22 @@ const nginx = readFileSync(NGINX_PATH, 'utf8');
 // can be parsed and structurally validated in CI -- not just the raw text.
 const resolvedCompose = compose.replace(/\$\{([A-Z0-9_]+)\}/g, 'placeholder-$1');
 
+type ComposeDocument = {
+  name?: string;
+  services?: Record<
+    string,
+    {
+      image?: string;
+      ports?: string[];
+      environment?: unknown;
+      command?: string[];
+      healthcheck?: { test?: string[] };
+    }
+  >;
+};
+
+const parseCompose = () => parseYaml(resolvedCompose) as ComposeDocument;
+
 describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
   it('contains no tab characters (YAML forbids tabs for indentation)', () => {
     expect(compose).not.toMatch(/\t/);
@@ -41,10 +58,7 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     // CI has no docker binary, so `docker compose config` is out of reach;
     // a strict YAML parse of the placeholder-resolved document is the
     // CI-available validation, plus structural assertions on the result.
-    const parsed = parseYaml(resolvedCompose) as {
-      name?: string;
-      services?: Record<string, { image?: string; ports?: string[]; environment?: unknown }>;
-    };
+    const parsed = parseCompose();
 
     expect(parsed.name).toBe('reeve-sign');
     expect(parsed.services).toBeDefined();
@@ -89,6 +103,11 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
   });
 
   it('configures gotenberg with the required conversion flags', () => {
+    // Assert against the parsed gotenberg service's own `command` list, not
+    // the whole compose text, so a flag on some other service (or in a
+    // comment) can never satisfy this test.
+    const command = parseCompose().services?.gotenberg?.command;
+    expect(command?.[0]).toBe('gotenberg');
     for (const flag of [
       '--api-enable-basic-auth',
       '--libreoffice-deny-private-ips',
@@ -98,12 +117,14 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
       '--pdfengines-disable-routes',
       '--webhook-disable',
     ]) {
-      expect(compose).toContain(flag);
+      expect(command).toContain(flag);
     }
   });
 
   it('healthchecks gotenberg on /health', () => {
-    expect(compose).toMatch(/curl.*http:\/\/localhost:3000\/health/);
+    const healthcheckTest = parseCompose().services?.gotenberg?.healthcheck?.test ?? [];
+    expect(healthcheckTest).toContain('curl');
+    expect(healthcheckTest).toContain('http://localhost:3000/health');
   });
 
   it('never assigns a secret-shaped env var name to a literal value -- only variable-interpolation refs', () => {
@@ -113,8 +134,10 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     // hand-edit that pastes a real DSN/token/password into this file.
     // `ENCRYPTION` and the standalone `_KEY` suffix catch encryption keys
     // (NEXT_PRIVATE_ENCRYPTION_KEY, NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY)
-    // that the named-credential words alone would miss.
-    const secretShapedName = /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|_KEY$)/;
+    // that the named-credential words alone would miss. The `_URL` suffixes
+    // catch connection strings (DATABASE_URL/REDIS_URL/SMTP_URL) whose
+    // literal values typically embed user:password credentials.
+    const secretShapedName = /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
     const assignmentLine = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
 
     const offenders: string[] = [];
