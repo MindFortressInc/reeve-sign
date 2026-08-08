@@ -1,0 +1,68 @@
+name: reeve-sign
+
+services:
+  documenso:
+    image: ghcr.io/mindfortressinc/reeve-sign:sha-8ff686f0
+    restart: unless-stopped
+    dns:
+      - 169.254.169.253  # AWS VPC resolver — ensures RDS hostname resolves to private VPC IP
+    environment:
+      - PORT=3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXT_PRIVATE_ENCRYPTION_KEY=${NEXT_PRIVATE_ENCRYPTION_KEY}
+      - NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY=${NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY}
+      - NEXT_PUBLIC_WEBAPP_URL=${NEXT_PUBLIC_WEBAPP_URL}
+      - NEXT_PRIVATE_DATABASE_URL=${NEXT_PRIVATE_DATABASE_URL}
+      - NEXT_PRIVATE_DIRECT_DATABASE_URL=${NEXT_PRIVATE_DATABASE_URL}
+      - NEXT_PUBLIC_UPLOAD_TRANSPORT=${NEXT_PUBLIC_UPLOAD_TRANSPORT}
+      - NEXT_PRIVATE_UPLOAD_ENDPOINT=${NEXT_PRIVATE_UPLOAD_ENDPOINT}
+      - NEXT_PRIVATE_UPLOAD_REGION=${NEXT_PRIVATE_UPLOAD_REGION}
+      - NEXT_PRIVATE_UPLOAD_BUCKET=${NEXT_PRIVATE_UPLOAD_BUCKET}
+      - NEXT_PRIVATE_UPLOAD_ACCESS_KEY_ID=${NEXT_PRIVATE_UPLOAD_ACCESS_KEY_ID}
+      - NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY=${NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY}
+      - NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE=${NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE}
+      - NEXT_PRIVATE_SMTP_TRANSPORT=resend
+      - NEXT_PRIVATE_RESEND_API_KEY=${NEXT_PRIVATE_RESEND_API_KEY}
+      - NEXT_PRIVATE_SMTP_FROM_NAME=${NEXT_PRIVATE_SMTP_FROM_NAME}
+      - NEXT_PRIVATE_SMTP_FROM_ADDRESS=${NEXT_PRIVATE_SMTP_FROM_ADDRESS}
+      - NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH=/opt/documenso/cert.p12
+      - NEXT_PRIVATE_SIGNING_PASSPHRASE=${NEXT_PRIVATE_SIGNING_PASSPHRASE}
+      - NEXT_PRIVATE_OIDC_CLIENT_ID=${NEXT_PRIVATE_OIDC_CLIENT_ID}
+      - NEXT_PRIVATE_OIDC_CLIENT_SECRET=${NEXT_PRIVATE_OIDC_CLIENT_SECRET}
+      - NEXT_PRIVATE_OIDC_WELL_KNOWN=${NEXT_PRIVATE_OIDC_WELL_KNOWN}
+      - NEXT_PRIVATE_OIDC_PROVIDER_LABEL=${NEXT_PRIVATE_OIDC_PROVIDER_LABEL}
+      # DEV-2839 — Sentry error monitoring
+      - SENTRY_DSN=${SENTRY_DSN}
+      - NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}
+      # DEV-3002 — Gotenberg document conversion (.docx/.doc -> PDF)
+      - NEXT_PRIVATE_DOCUMENT_CONVERSION_URL=${NEXT_PRIVATE_DOCUMENT_CONVERSION_URL}
+      - NEXT_PRIVATE_DOCUMENT_CONVERSION_USERNAME=${NEXT_PRIVATE_DOCUMENT_CONVERSION_USERNAME}
+      - NEXT_PRIVATE_DOCUMENT_CONVERSION_PASSWORD=${NEXT_PRIVATE_DOCUMENT_CONVERSION_PASSWORD}
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - /home/ubuntu/reeve-sign/cert.p12:/opt/documenso/cert.p12:ro
+
+  # DEV-3002 — headless LibreOffice conversion sidecar. NO host port mapping:
+  # reachable only on the compose-internal network, never via nginx.
+  gotenberg:
+    image: reeve-sign-gotenberg:8
+    restart: unless-stopped
+    environment:
+      GOTENBERG_API_BASIC_AUTH_USERNAME: ${GOTENBERG_API_BASIC_AUTH_USERNAME}
+      GOTENBERG_API_BASIC_AUTH_PASSWORD: ${GOTENBERG_API_BASIC_AUTH_PASSWORD}
+    command:
+      - gotenberg
+      - --api-enable-basic-auth
+      - --libreoffice-deny-private-ips
+      - --api-timeout=500s
+      - --libreoffice-auto-start
+      - --libreoffice-start-timeout=300s
+      - --pdfengines-disable-routes
+      - --webhook-disable
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:3000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
