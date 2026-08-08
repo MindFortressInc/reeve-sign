@@ -13,6 +13,17 @@ name: Publish Reeve.Sign image (GHCR)
 # GITHUB_TOKEN can read same-org packages) and uploads it as a downloadable
 # artifact, so the image can be `docker load`ed onto the host without a registry
 # login. Trigger: `gh workflow run publish.yml --ref <branch> -f export_tarball=true`.
+#
+# Digests (DEV-7600): tags are strings and can move; digests are the truth.
+# Both jobs print and record two digests:
+#   - manifest digest: what the registry serves for the tag (registry-side pin);
+#   - image ID (config digest): the only digest that survives `docker save` /
+#     `docker load`, i.e. the only one the box can ever report. The drift
+#     assertion compares the running container's image ID against the config
+#     digest the pinned tag resolves to (see deploy/check-image-drift.sh).
+# `export_tarball` accepts an optional `digest` input and fails if the tag no
+# longer resolves to it, so a tag that moved between publish and export cannot
+# silently ship different bytes.
 
 on:
   workflow_dispatch:
@@ -27,6 +38,11 @@ on:
         required: false
         default: false
         type: boolean
+      digest:
+        description: 'REQUIRED for export_tarball (ignored otherwise): expected manifest digest (sha256:...) from the publish run. Export fails if omitted, or if :tag no longer resolves to it.'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -71,7 +87,26 @@ jobs:
           docker push "${IMAGE}:${TAG}"
           docker push "${IMAGE}:sha-${GIT_SHA}"
 
+          # Record the digests (DEV-7600). RepoDigests is populated by the push.
+          MANIFEST_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:sha-${GIT_SHA}")"
+          MANIFEST_DIGEST="${MANIFEST_DIGEST#*@}"
+          IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:sha-${GIT_SHA}")"
+
           echo "Published ${IMAGE}:${TAG} and ${IMAGE}:sha-${GIT_SHA}"
+          echo "manifest digest: ${MANIFEST_DIGEST}"
+          echo "image ID (config digest, survives docker load): ${IMAGE_ID}"
+
+          {
+            echo "### Published \`${IMAGE}\`"
+            echo ""
+            echo "| ref | value |"
+            echo "| --- | --- |"
+            echo "| tags | \`${TAG}\`, \`sha-${GIT_SHA}\` |"
+            echo "| manifest digest | \`${MANIFEST_DIGEST}\` |"
+            echo "| image ID (config digest) | \`${IMAGE_ID}\` |"
+            echo ""
+            echo "Pass the manifest digest as \`-f digest=...\` to the export_tarball run."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   export_tarball:
     name: Export reeve-sign image as a tarball artifact (arm64)
@@ -88,19 +123,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull, save and compress the image
+      - name: Pull, verify digest, save and compress the image
         env:
           IMAGE: ghcr.io/mindfortressinc/reeve-sign
           TAG: ${{ inputs.tag || 'dev' }}
+          EXPECTED_DIGEST: ${{ inputs.digest }}
         run: |
           set -euo pipefail
+          # CR (CLI): fail BEFORE the pull when no expected digest was given.
+          # `digest` stays optional at the workflow level (publish-only runs
+          # never use it), but an export with it empty skipped the comparison
+          # below entirely and shipped whatever the moving tag happened to
+          # resolve to — exactly the drift DEV-7600 exists to prevent.
+          if [ -z "${EXPECTED_DIGEST}" ]; then
+            echo "::error::export_tarball requires the 'digest' input (sha256:... as printed by the publish run)." \
+              " Without it the moving :${TAG} tag could have been repointed since publish and this export would" \
+              " ship unverified bytes (DEV-7600)."
+            exit 1
+          fi
+
           docker pull "${IMAGE}:${TAG}"
+
+          MANIFEST_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${TAG}")"
+          MANIFEST_DIGEST="${MANIFEST_DIGEST#*@}"
+          IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:${TAG}")"
+
+          if [ "${MANIFEST_DIGEST}" != "${EXPECTED_DIGEST}" ]; then
+            echo "::error::${IMAGE}:${TAG} now resolves to ${MANIFEST_DIGEST}, expected ${EXPECTED_DIGEST}." \
+              " The tag moved between publish and export; refusing to ship different bytes (DEV-7600)."
+            exit 1
+          fi
+
           docker save "${IMAGE}:${TAG}" | gzip > reeve-sign-image.tar.gz
           ls -lh reeve-sign-image.tar.gz
+
+          # Shipped alongside the tarball: `docker load` preserves the image ID
+          # but NOT the manifest digest, so this file is the only record on the
+          # box side of exactly which registry bytes were deployed.
+          {
+            echo "image=${IMAGE}"
+            echo "tag=${TAG}"
+            echo "manifest_digest=${MANIFEST_DIGEST}"
+            echo "image_id=${IMAGE_ID}"
+          } | tee reeve-sign-image.digests
 
       - name: Upload tarball artifact
         uses: actions/upload-artifact@v4
         with:
           name: reeve-sign-image
-          path: reeve-sign-image.tar.gz
+          path: |
+            reeve-sign-image.tar.gz
+            reeve-sign-image.digests
           retention-days: 1

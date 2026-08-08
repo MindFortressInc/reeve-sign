@@ -30,25 +30,79 @@ the box as a tarball, never via a registry pull.
    gh workflow run publish.yml --ref main -f tag=<tag>
    ```
 
+   The run's step summary prints the **manifest digest** and the **image ID
+   (config digest)** of what was pushed. Keep the manifest digest for step 2.
+
 2. **Export the tarball** (runs inside CI where `GITHUB_TOKEN` can read
-   same-org packages):
+   same-org packages), pinning the digest from step 1 so a moved tag cannot
+   silently ship different bytes:
 
    ```bash
-   gh workflow run publish.yml --ref main -f export_tarball=true -f tag=<tag>
+   gh workflow run publish.yml --ref main -f export_tarball=true -f tag=<tag> -f digest=sha256:<manifest-digest>
    ```
 
-3. **Download the artifact** (`reeve-sign-image` → `reeve-sign-image.tar.gz`)
-   from the completed run, e.g. `gh run download <run-id> -n reeve-sign-image`.
+   The artifact contains `reeve-sign-image.digests` next to the tarball,
+   recording the exact manifest digest and image ID that were exported.
 
-4. **Copy to the box**: `scp reeve-sign-image.tar.gz <reeve-ec2-host>:`.
+3. **Download the artifact** (`reeve-sign-image`, which contains both
+   `reeve-sign-image.tar.gz` and `reeve-sign-image.digests`) from the completed
+   run, e.g. `gh run download <run-id> -n reeve-sign-image`.
 
-5. **Load it on the box**: `docker load < reeve-sign-image.tar.gz`.
+4. **Copy both files to the box**:
+
+   ```bash
+   scp reeve-sign-image.tar.gz reeve-sign-image.digests <reeve-ec2-host>:
+   ```
+
+   The `.digests` file has to land next to the tarball, not stay in the CI
+   artifact: `docker load` does not preserve `RepoDigests`, so once the image
+   is on the box this file is the only record of which registry manifest
+   digest those bytes came from.
+
+5. **Load it on the box**, then confirm the loaded image ID matches the record
+   you copied (a registry-free check the box can run on its own):
+
+   ```bash
+   docker load < reeve-sign-image.tar.gz
+   cat reeve-sign-image.digests   # image=, tag=, manifest_digest=, image_id=
+   docker image inspect --format '{{.Id}}' ghcr.io/mindfortressinc/reeve-sign:<tag>
+   # must equal the image_id line above
+   ```
 
 6. **Bump the tag** in the box-local `compose.yml` to the exact image tag you
    loaded (prefer the immutable `sha-<shortsha>` tag so the running version is
    auditable).
 
 7. **Restart**: `docker compose up -d`.
+
+8. **Verify by digest**: `deploy/check-image-drift.sh` confirms the running
+   container's image ID matches the config digest the pinned tag resolves to
+   in GHCR (see "Digest pinning" below).
+
+## Digest pinning (DEV-7600)
+
+Tags are strings and can move; the drift assertion must compare **digests**.
+Two constraints shape how, both consequences of the GHCR-unauthorized
+tarball path above:
+
+- compose **cannot** pin `image@sha256:<manifest digest>` — satisfying a
+  digest reference requires a registry pull, which the box cannot do;
+- the box **cannot** report a manifest digest — `docker load` does not
+  preserve `RepoDigests`.
+
+The digest that survives `docker save`/`docker load` byte-identically is the
+**image ID** (the config digest, sha256 of the image config JSON), and it is
+also resolvable registry-side as the manifest's `config.digest`. So the
+deliberate resolution is: **the assertion resolves tag→config-digest at check
+time** rather than the pipeline pinning by manifest digest.
+
+- `publish.yml` prints both digests at publish, verifies an optional expected
+  digest at export, and ships a `.digests` record in the tarball artifact.
+- `deploy/check-image-drift.sh` implements the assertion: it resolves the
+  box-pinned tag to its config digest via the GHCR API and compares it to the
+  running container's image ID (`docker inspect --format '{{.Image}}'`).
+  A moving tag serving different bytes fails this check; a tag-string
+  comparison would pass it.
 
 ## The staleness monitor (`.github/workflows/image-staleness.yml`)
 
