@@ -131,19 +131,19 @@ export default function DocumentsPage() {
       <div className="mx-auto w-full max-w-screen-xl px-4 md:px-8">
         <FolderGrid type={FolderType.DOCUMENT} parentId={folderId ?? null} />
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-8">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-4 md:mt-8 md:gap-y-8">
           <div className="flex flex-row items-center">
-            <Avatar className="mr-3 h-12 w-12 border-2 border-white border-solid dark:border-border">
+            <Avatar className="mr-2 h-9 w-9 border-2 border-white border-solid md:mr-3 md:h-12 md:w-12 dark:border-border">
               {team.avatarImageId && <AvatarImage src={formatAvatarUrl(team.avatarImageId)} />}
               <AvatarFallback className="text-muted-foreground text-xs">{team.name.slice(0, 1)}</AvatarFallback>
             </Avatar>
 
-            <h2 className="font-semibold text-4xl">
+            <h2 className="font-semibold text-2xl md:text-4xl">
               <Trans>Documents</Trans>
             </h2>
           </div>
 
-          <div className="-m-1 flex flex-wrap gap-x-4 gap-y-6 overflow-hidden p-1">
+          <div className="-m-1 flex w-full flex-wrap gap-x-4 gap-y-3 overflow-hidden p-1 md:w-auto md:gap-y-6">
             <div className="relative max-w-full">
               <Tabs value={findDocumentSearchParams.status || 'ALL'} className="overflow-x-auto">
                 <TabsList>
@@ -183,12 +183,16 @@ export default function DocumentsPage() {
               />
             </div>
 
-            {team && <DocumentsTableSenderFilter teamId={team.id} />}
+            {team && (
+              <div className="w-full sm:w-48">
+                <DocumentsTableSenderFilter teamId={team.id} />
+              </div>
+            )}
 
-            <div className="flex w-48 flex-wrap items-center justify-between gap-x-2 gap-y-4">
+            <div className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-4 sm:w-48">
               <PeriodSelector />
             </div>
-            <div className="flex w-48 flex-wrap items-center justify-between gap-x-2 gap-y-4">
+            <div className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-4 sm:w-48">
               <DocumentSearch initialValue={findDocumentSearchParams.query} />
             </div>
           </div>

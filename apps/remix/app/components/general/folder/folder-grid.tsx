@@ -14,7 +14,7 @@ import { FolderDeleteDialog } from '~/components/dialogs/folder-delete-dialog';
 import { FolderMoveDialog } from '~/components/dialogs/folder-move-dialog';
 import { FolderUpdateDialog } from '~/components/dialogs/folder-update-dialog';
 import { DocumentUploadButtonLegacy } from '~/components/general/document/document-upload-button-legacy';
-import { FolderCard, FolderCardEmpty } from '~/components/general/folder/folder-card';
+import { FolderCard } from '~/components/general/folder/folder-card';
 import { useCurrentTeam } from '~/providers/team';
 
 import { EnvelopeUploadButton } from '../envelope/envelope-upload-button';
@@ -126,15 +126,8 @@ export const FolderGrid = ({ type, parentId }: FolderGridProps) => {
           ))}
         </div>
       ) : foldersData && foldersData.folders.length === 0 ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          <FolderCreateDialog
-            type={type}
-            trigger={
-              <button>
-                <FolderCardEmpty type={type} />
-              </button>
-            }
-          />
+        <div className="text-center text-muted-foreground text-sm">
+          <Trans>No folders yet.</Trans>
         </div>
       ) : (
         foldersData && (

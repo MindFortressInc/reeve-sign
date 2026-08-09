@@ -442,7 +442,7 @@ export const DocumentEditForm = ({ className, initialDocument, documentRootPath 
       </Card>
 
       <div className="col-span-12 lg:col-span-6 xl:col-span-5">
-        <DocumentFlowFormContainer className="lg:h-[calc(100vh-6rem)]" onSubmit={(e) => e.preventDefault()}>
+        <DocumentFlowFormContainer className="lg:h-[calc(100dvh-6rem)]" onSubmit={(e) => e.preventDefault()}>
           <Stepper
             currentStep={currentDocumentFlow.stepIndex}
             setCurrentStep={(step) => setStep(EditDocumentSteps[step - 1])}

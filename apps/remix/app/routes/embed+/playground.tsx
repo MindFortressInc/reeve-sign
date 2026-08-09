@@ -389,7 +389,7 @@ export default function EmbedPlaygroundPage() {
   );
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'monospace' }}>
+    <div style={{ display: 'flex', height: '100dvh', fontFamily: 'monospace' }}>
       {/* Left panel: controls */}
       <div
         style={{
