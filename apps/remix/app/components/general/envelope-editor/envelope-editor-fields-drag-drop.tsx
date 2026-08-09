@@ -88,11 +88,21 @@ export const fieldButtonList = [
 type EnvelopeEditorFieldDragDropProps = {
   selectedRecipientId: number | null;
   selectedEnvelopeItemId: string | null;
+
+  /**
+   * Fired when a field type is armed for placement.
+   *
+   * Placement finishes with a click on the document, so a caller rendering this
+   * palette inside an overlay has to dismiss that overlay here — otherwise it
+   * covers the page the user now has to click.
+   */
+  onFieldTypePicked?: () => void;
 };
 
 export const EnvelopeEditorFieldDragDrop = ({
   selectedRecipientId,
   selectedEnvelopeItemId,
+  onFieldTypePicked,
 }: EnvelopeEditorFieldDragDropProps) => {
   const { envelope, editorFields, isTemplate, getRecipientColorKey } = useCurrentEnvelopeEditor();
 
@@ -237,6 +247,17 @@ export const EnvelopeEditorFieldDragDrop = ({
     [selectedRecipientId, getRecipientColorKey],
   );
 
+  // Both onClick and onMouseDown arm placement (mousedown gives the drag its
+  // immediacy on a pointer device, click is what a tap reliably produces), so
+  // this runs twice per desktop interaction. Both effects are idempotent.
+  const onPickFieldType = useCallback(
+    (fieldType: FieldType) => {
+      setSelectedField(fieldType);
+      onFieldTypePicked?.();
+    },
+    [onFieldTypePicked],
+  );
+
   return (
     <>
       <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
@@ -245,8 +266,8 @@ export const EnvelopeEditorFieldDragDrop = ({
             disabled={isFieldsDisabled}
             key={field.type}
             type="button"
-            onClick={() => setSelectedField(field.type)}
-            onMouseDown={() => setSelectedField(field.type)}
+            onClick={() => onPickFieldType(field.type)}
+            onMouseDown={() => onPickFieldType(field.type)}
             data-selected={selectedField === field.type ? true : undefined}
             className={cn(
               'group flex h-12 cursor-pointer items-center justify-center rounded-lg border border-border px-4 transition-colors',

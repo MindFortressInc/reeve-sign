@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 
-import { openDocumentEnvelopeEditor } from '../fixtures/envelope-editor';
+import { clickAddMyselfButton, openDocumentEnvelopeEditor } from '../fixtures/envelope-editor';
 
 test.use({
   storageState: {
@@ -76,6 +76,47 @@ test.describe('document editor', () => {
     // Navigate back to the upload step through the drawer.
     await clickMobileEnvelopeEditorStep(page, 'upload');
     await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
+  });
+
+  test('mobile reaches the fields control panel that is a sidebar at lg', async ({ page }) => {
+    await openDocumentEnvelopeEditor(page);
+
+    await page.setViewportSize(MOBILE_VIEWPORT);
+
+    // The panel only exists once the envelope has a recipient to place fields for.
+    await clickAddMyselfButton(page);
+
+    await clickMobileEnvelopeEditorStep(page, 'addFields');
+    await expect(page.locator('.react-pdf__Page').first()).toBeVisible();
+
+    // The regression this covers: below lg the control panel was `hidden` with no
+    // replacement, so the recipient selector, the field palette and the per-field
+    // settings forms were unreachable — the step was navigable but not usable.
+    await expect(page.getByRole('heading', { name: 'Selected Recipient' })).toBeHidden();
+
+    const panelTrigger = page.locator('[data-testid="envelope-editor-mobile-fields-panel-trigger"]');
+
+    await expect(panelTrigger).toBeVisible();
+    await panelTrigger.click();
+
+    // Scope to the sheet: the lg sidebar renders the same content from the same
+    // source, so it is present-but-hidden in the DOM and would otherwise make
+    // these locators ambiguous under Playwright's strict mode.
+    const panel = page.getByRole('dialog');
+
+    await expect(panel.getByRole('heading', { name: 'Selected Recipient' })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Add Fields' })).toBeVisible();
+
+    const signatureFieldButton = panel.getByRole('button', { name: 'Signature' });
+
+    await expect(signatureFieldButton).toBeVisible();
+
+    // Placement is completed by clicking the document, so arming a field type has
+    // to dismiss the sheet — otherwise it covers the page the user must click.
+    await signatureFieldButton.click();
+    await expect(panel).toBeHidden();
+
+    await expectNoHorizontalPageScroll(page, MOBILE_VIEWPORT.width);
   });
 
   test('mobile shell keeps the document canvas usable at 320px', async ({ page }) => {
