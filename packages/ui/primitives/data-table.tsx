@@ -144,37 +144,6 @@ export function DataTable<TData, TValue>({
 
   return (
     <>
-      {renderMobileCard && (
-        <div className="space-y-4 md:hidden">
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <div
-                key={row.id}
-                data-state={row.getIsSelected() && 'selected'}
-                className={cn('rounded-md border p-4', rowClassName)}
-                onClick={() => onRowClick?.(row.original)}
-              >
-                {renderMobileCard(row)}
-              </div>
-            ))
-          ) : error?.enable ? (
-            <div className="rounded-md border p-8 text-center">
-              <Trans>Something went wrong.</Trans>
-            </div>
-          ) : skeleton?.enable ? (
-            Array.from({ length: skeleton.rows }).map((_, i) => (
-              <div key={`mobile-skeleton-card-${i}`} className="space-y-3 rounded-md border p-4">
-                <Skeleton className="h-4 w-40 rounded-full" />
-                <Skeleton className="h-4 w-24 rounded-full" />
-                <Skeleton className="h-10 w-32 rounded" />
-              </div>
-            ))
-          ) : (
-            <div className="rounded-md border p-8 text-center">{emptyState ?? defaultEmptyState}</div>
-          )}
-        </div>
-      )}
-
       <div className={cn('rounded-md border', renderMobileCard && 'hidden md:block')}>
         <Table>
           <TableHeader>
@@ -233,6 +202,40 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
+
+      {/* Rendered after the table so locators that take the first match of a
+          duplicated element (e.g. row action buttons) resolve to the visible
+          desktop table copy rather than this hidden-on-desktop card list. */}
+      {renderMobileCard && (
+        <div className="space-y-4 md:hidden">
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <div
+                key={row.id}
+                data-state={row.getIsSelected() && 'selected'}
+                className={cn('rounded-md border p-4', rowClassName)}
+                onClick={() => onRowClick?.(row.original)}
+              >
+                {renderMobileCard(row)}
+              </div>
+            ))
+          ) : error?.enable ? (
+            <div className="rounded-md border p-8 text-center">
+              <Trans>Something went wrong.</Trans>
+            </div>
+          ) : skeleton?.enable ? (
+            Array.from({ length: skeleton.rows }).map((_, i) => (
+              <div key={`mobile-skeleton-card-${i}`} className="space-y-3 rounded-md border p-4">
+                <Skeleton className="h-4 w-40 rounded-full" />
+                <Skeleton className="h-4 w-24 rounded-full" />
+                <Skeleton className="h-10 w-32 rounded" />
+              </div>
+            ))
+          ) : (
+            <div className="rounded-md border p-8 text-center">{emptyState ?? defaultEmptyState}</div>
+          )}
+        </div>
+      )}
 
       {children && <div className="mt-8 w-full">{children(table)}</div>}
     </>
