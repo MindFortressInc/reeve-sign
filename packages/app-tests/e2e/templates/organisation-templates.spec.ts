@@ -147,7 +147,7 @@ test.describe('Organisation Templates - Listing', () => {
     await page.getByTestId('template-tab-organisation').click();
 
     // Should see the org template from teamA.
-    await expect(page.getByText(orgTemplate.title)).toBeVisible();
+    await expect(page.getByRole('row', { name: orgTemplate.title })).toBeVisible();
   });
 
   test('should not show private templates from other teams under Organisation tab', async ({ page }) => {
@@ -184,7 +184,7 @@ test.describe('Organisation Templates - Detail Page', () => {
     });
 
     // Click into the org template.
-    await page.getByText(orgTemplate.title).click();
+    await page.getByRole('row', { name: orgTemplate.title }).getByText(orgTemplate.title).click();
 
     // Should see the template title.
     await expect(page.getByRole('heading', { name: orgTemplate.title })).toBeVisible();

@@ -152,6 +152,27 @@ export const InboxTable = () => {
             </>
           ),
         }}
+        renderMobileCard={(row) => (
+          <div className="flex flex-col gap-y-3">
+            <div className="flex items-start justify-between gap-x-2">
+              <span className="block min-w-0 truncate font-medium">{row.original.title}</span>
+
+              <DocumentStatus status={row.original.status} />
+            </div>
+
+            <div className="flex items-center justify-between gap-x-2">
+              <StackAvatarsWithTooltip recipients={row.original.recipients} documentStatus={row.original.status} />
+
+              <span className="text-muted-foreground text-xs">
+                {DateTime.fromJSDate(row.original.createdAt).toRelative()}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-x-4">
+              <InboxTableActionButton row={row.original} />
+            </div>
+          </div>
+        )}
       >
         {(table) =>
           results.totalPages > 1 && <DataTablePagination additionalInformation="VisibleCount" table={table} />

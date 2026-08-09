@@ -14,7 +14,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@documenso/ui/primitive
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
+import { DocumentStatus } from '@prisma/client';
 import { AlertTriangle, Building2Icon, Globe2Icon, InfoIcon, Link2Icon, Loader, LockIcon } from 'lucide-react';
+import { DateTime } from 'luxon';
 import { useMemo, useTransition } from 'react';
 import { Link } from 'react-router';
 
@@ -22,6 +24,7 @@ import { TemplateType } from '~/components/general/template/template-type';
 import { useCurrentTeam } from '~/providers/team';
 
 import { TemplateUseDialog } from '../dialogs/template-use-dialog';
+import { StackAvatarsWithTooltip } from '../general/stack-avatars-with-tooltip';
 import { TemplateDirectLinkBadge } from '../general/template/template-direct-link-badge';
 import { TemplatesTableActionDropdown } from './templates-table-action-dropdown';
 
@@ -305,6 +308,52 @@ export const TemplatesTable = ({
             </>
           ),
         }}
+        renderMobileCard={(row) => (
+          <div className="flex flex-col gap-y-3">
+            <div className="flex items-start justify-between gap-x-2">
+              <div className="flex min-w-0 items-center gap-x-3">
+                {enableSelection && (
+                  <Checkbox
+                    checked={row.getIsSelected()}
+                    onCheckedChange={(value) => row.toggleSelected(!!value)}
+                    aria-label={_(msg`Select row`)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+
+                <Link
+                  to={formatTemplateLink(row.original)}
+                  className="block min-w-0 cursor-pointer truncate font-medium hover:underline"
+                >
+                  {row.original.title}
+                </Link>
+              </div>
+
+              <TemplateType type={row.original.type} />
+            </div>
+
+            <div className="flex items-center justify-between gap-x-2">
+              <StackAvatarsWithTooltip recipients={row.original.recipients} documentStatus={DocumentStatus.DRAFT} />
+
+              <span className="text-muted-foreground text-xs">
+                {DateTime.fromJSDate(row.original.createdAt).toRelative()}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-x-4">
+              <TemplateUseDialog
+                envelopeId={row.original.envelopeId}
+                templateId={row.original.id}
+                templateSigningOrder={row.original.templateMeta?.signingOrder}
+                documentDistributionMethod={row.original.templateMeta?.distributionMethod}
+                recipients={row.original.recipients}
+                documentRootPath={documentRootPath}
+              />
+
+              <TemplatesTableActionDropdown row={row.original} teamId={team?.id} templateRootPath={templateRootPath} />
+            </div>
+          </div>
+        )}
       >
         {(table) => <DataTablePagination additionalInformation="VisibleCount" table={table} />}
       </DataTable>
