@@ -179,11 +179,12 @@ export const EnvelopeEditor = () => {
   const currentStepData = envelopeEditorSteps.find((step) => step.id === searchParamsStep) || envelopeEditorSteps[0];
 
   return (
-    <div className="h-dvh w-screen bg-envelope-editor-background">
+    <div className="flex h-dvh w-screen flex-col bg-envelope-editor-background">
       <EnvelopeEditorHeader />
 
-      {/* Main Content Area */}
-      <div className="flex h-[calc(100dvh-4rem)] w-screen flex-col lg:flex-row">
+      {/* Main Content Area — flexes into whatever the header leaves, so there is no
+          hardcoded header-height contract to drift out of sync with. */}
+      <div className="flex min-h-0 w-screen flex-1 flex-col lg:flex-row">
         {/* Mobile step navigation bar, replaced by the left sidebar at lg and above. */}
         <div className="flex flex-shrink-0 items-center gap-2 border-border border-b bg-background px-4 py-2 lg:hidden">
           <Sheet open={isMobileStepNavOpen} onOpenChange={setIsMobileStepNavOpen}>
