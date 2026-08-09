@@ -425,31 +425,48 @@ export const ConfigureFieldsView = ({
    *
    * The parent element is included because some viewers overlay the interactive
    * layer as a sibling of the page element inside a shared wrapper.
+   *
+   * The viewer virtualises its pages, so the armed surfaces are re-scanned on
+   * every DOM mutation: a page that mounts after the field type is armed would
+   * otherwise keep panning the document out from under the finger.
    */
   useEffect(() => {
     if (!selectedField) {
       return;
     }
 
-    const $touchSurfaces = new Set<HTMLElement>();
-
-    document.querySelectorAll<HTMLElement>(PDF_VIEWER_PAGE_SELECTOR).forEach(($page) => {
-      $touchSurfaces.add($page);
-
-      if ($page.parentElement) {
-        $touchSurfaces.add($page.parentElement);
-      }
-    });
-
     const previousTouchActions = new Map<HTMLElement, string>();
 
-    for (const $surface of $touchSurfaces) {
+    const disableTouchPanning = ($surface: HTMLElement) => {
+      // Guarded so a re-scan never records our own 'none' as the value to restore.
+      if (previousTouchActions.has($surface)) {
+        return;
+      }
+
       previousTouchActions.set($surface, $surface.style.touchAction);
 
       $surface.style.touchAction = 'none';
-    }
+    };
+
+    const armTouchSurfaces = () => {
+      document.querySelectorAll<HTMLElement>(PDF_VIEWER_PAGE_SELECTOR).forEach(($page) => {
+        disableTouchPanning($page);
+
+        if ($page.parentElement) {
+          disableTouchPanning($page.parentElement);
+        }
+      });
+    };
+
+    armTouchSurfaces();
+
+    const observer = new MutationObserver(() => armTouchSurfaces());
+
+    observer.observe(document.body, { childList: true, subtree: true });
 
     return () => {
+      observer.disconnect();
+
       for (const [$surface, previousTouchAction] of previousTouchActions) {
         $surface.style.touchAction = previousTouchAction;
       }
