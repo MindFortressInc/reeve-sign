@@ -144,37 +144,44 @@ export default function DocumentsPage() {
           </div>
 
           <div className="-m-1 flex flex-wrap gap-x-4 gap-y-6 overflow-hidden p-1">
-            <Tabs value={findDocumentSearchParams.status || 'ALL'} className="overflow-x-auto">
-              <TabsList>
-                {[
-                  ExtendedDocumentStatus.INBOX,
-                  ExtendedDocumentStatus.PENDING,
-                  ExtendedDocumentStatus.COMPLETED,
-                  ExtendedDocumentStatus.DRAFT,
-                  ExtendedDocumentStatus.ALL,
-                ]
-                  .filter((value) => {
-                    if (organisation.type === OrganisationType.PERSONAL) {
-                      return value !== ExtendedDocumentStatus.INBOX;
-                    }
+            <div className="relative max-w-full">
+              <Tabs value={findDocumentSearchParams.status || 'ALL'} className="overflow-x-auto">
+                <TabsList>
+                  {[
+                    ExtendedDocumentStatus.INBOX,
+                    ExtendedDocumentStatus.PENDING,
+                    ExtendedDocumentStatus.COMPLETED,
+                    ExtendedDocumentStatus.DRAFT,
+                    ExtendedDocumentStatus.ALL,
+                  ]
+                    .filter((value) => {
+                      if (organisation.type === OrganisationType.PERSONAL) {
+                        return value !== ExtendedDocumentStatus.INBOX;
+                      }
 
-                    return true;
-                  })
-                  .map((value) => (
-                    <TabsTrigger key={value} className="min-w-[60px] hover:text-foreground" value={value} asChild>
-                      <Link to={getTabHref(value)} preventScrollReset>
-                        <DocumentStatus status={value} />
+                      return true;
+                    })
+                    .map((value) => (
+                      <TabsTrigger key={value} className="min-w-[60px] hover:text-foreground" value={value} asChild>
+                        <Link to={getTabHref(value)} preventScrollReset>
+                          <DocumentStatus status={value} />
 
-                        {value !== ExtendedDocumentStatus.ALL && (
-                          <span className="ml-1 inline-block opacity-50">
-                            {stats[value] >= STATS_COUNT_CAP ? `${STATS_COUNT_CAP.toLocaleString()}+` : stats[value]}
-                          </span>
-                        )}
-                      </Link>
-                    </TabsTrigger>
-                  ))}
-              </TabsList>
-            </Tabs>
+                          {value !== ExtendedDocumentStatus.ALL && (
+                            <span className="ml-1 inline-block opacity-50">
+                              {stats[value] >= STATS_COUNT_CAP ? `${STATS_COUNT_CAP.toLocaleString()}+` : stats[value]}
+                            </span>
+                          )}
+                        </Link>
+                      </TabsTrigger>
+                    ))}
+                </TabsList>
+              </Tabs>
+
+              <div
+                className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden"
+                aria-hidden="true"
+              />
+            </div>
 
             {team && <DocumentsTableSenderFilter teamId={team.id} />}
 

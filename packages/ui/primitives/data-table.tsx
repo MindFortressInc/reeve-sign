@@ -2,6 +2,7 @@ import { Trans } from '@lingui/react/macro';
 import type {
   ColumnDef,
   PaginationState,
+  Row,
   RowSelectionState,
   Table as TTable,
   Updater,
@@ -11,6 +12,7 @@ import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-tabl
 import type React from 'react';
 import { useMemo } from 'react';
 
+import { cn } from '../lib/utils';
 import { Skeleton } from './skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 
@@ -45,6 +47,13 @@ export interface DataTableProps<TData, TValue> {
   rowSelection?: RowSelectionState;
   onRowSelectionChange?: (selection: RowSelectionState) => void;
   getRowId?: (row: TData) => string;
+
+  /**
+   * When provided, the table is hidden below the `md` breakpoint and each row is
+   * rendered as a stacked card using this renderer instead. The table renders
+   * unchanged at `md` and above.
+   */
+  renderMobileCard?: (row: Row<TData>) => React.ReactNode;
 }
 
 export function DataTable<TData, TValue>({
@@ -67,6 +76,7 @@ export function DataTable<TData, TValue>({
   rowSelection,
   onRowSelectionChange,
   getRowId,
+  renderMobileCard,
 }: DataTableProps<TData, TValue>) {
   const pagination = useMemo<PaginationState>(() => {
     if (currentPage !== undefined && perPage !== undefined) {
@@ -118,9 +128,54 @@ export function DataTable<TData, TValue>({
     getRowId,
   });
 
+  const defaultEmptyState = (
+    <>
+      <p>
+        <Trans>No results found</Trans>
+      </p>
+
+      {hasFilters && onClearFilters !== undefined && (
+        <button onClick={() => onClearFilters()} className="mt-1 text-foreground text-sm">
+          <Trans>Clear filters</Trans>
+        </button>
+      )}
+    </>
+  );
+
   return (
     <>
-      <div className="rounded-md border">
+      {renderMobileCard && (
+        <div className="space-y-4 md:hidden">
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <div
+                key={row.id}
+                data-state={row.getIsSelected() && 'selected'}
+                className={cn('rounded-md border p-4', rowClassName)}
+                onClick={() => onRowClick?.(row.original)}
+              >
+                {renderMobileCard(row)}
+              </div>
+            ))
+          ) : error?.enable ? (
+            <div className="rounded-md border p-8 text-center">
+              <Trans>Something went wrong.</Trans>
+            </div>
+          ) : skeleton?.enable ? (
+            Array.from({ length: skeleton.rows }).map((_, i) => (
+              <div key={`mobile-skeleton-card-${i}`} className="space-y-3 rounded-md border p-4">
+                <Skeleton className="h-4 w-40 rounded-full" />
+                <Skeleton className="h-4 w-24 rounded-full" />
+                <Skeleton className="h-10 w-32 rounded" />
+              </div>
+            ))
+          ) : (
+            <div className="rounded-md border p-8 text-center">{emptyState ?? defaultEmptyState}</div>
+          )}
+        </div>
+      )}
+
+      <div className={cn('rounded-md border', renderMobileCard && 'hidden md:block')}>
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -171,19 +226,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-32 text-center">
-                  {emptyState ?? (
-                    <>
-                      <p>
-                        <Trans>No results found</Trans>
-                      </p>
-
-                      {hasFilters && onClearFilters !== undefined && (
-                        <button onClick={() => onClearFilters()} className="mt-1 text-foreground text-sm">
-                          <Trans>Clear filters</Trans>
-                        </button>
-                      )}
-                    </>
-                  )}
+                  {emptyState ?? defaultEmptyState}
                 </TableCell>
               </TableRow>
             )}

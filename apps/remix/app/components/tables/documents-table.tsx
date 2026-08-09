@@ -192,6 +192,44 @@ export const DocumentsTable = ({
         rowSelection={rowSelection}
         onRowSelectionChange={onRowSelectionChange}
         getRowId={(row) => row.envelopeId}
+        renderMobileCard={(row) => (
+          <div className="flex flex-col gap-y-3">
+            <div className="flex items-start justify-between gap-x-2">
+              <div className="flex min-w-0 items-center gap-x-3">
+                {enableSelection && (
+                  <Checkbox
+                    checked={row.getIsSelected()}
+                    onCheckedChange={(value) => row.toggleSelected(!!value)}
+                    aria-label={_(msg`Select row`)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+
+                <DataTableTitle row={row.original} teamUrl={team?.url} teamEmail={team?.teamEmail?.email} />
+              </div>
+
+              <DocumentStatus status={row.original.status} />
+            </div>
+
+            <div className="flex items-center justify-between gap-x-2">
+              <StackAvatarsWithTooltip recipients={row.original.recipients} documentStatus={row.original.status} />
+
+              <span className="text-muted-foreground text-xs">
+                {DateTime.fromJSDate(row.original.createdAt).toRelative()}
+              </span>
+            </div>
+
+            {(!row.original.deletedAt || isDocumentCompleted(row.original.status)) && (
+              <div className="flex items-center gap-x-4">
+                <DocumentsTableActionButton row={row.original} />
+                <DocumentsTableActionDropdown
+                  row={row.original}
+                  onMoveDocument={onMoveDocument ? () => onMoveDocument(row.original.id) : undefined}
+                />
+              </div>
+            )}
+          </div>
+        )}
       >
         {(table) => <DataTablePagination additionalInformation="VisibleCount" table={table} />}
       </DataTable>
