@@ -52,7 +52,9 @@ test.describe('document editor', () => {
     // asserts that placement works purely from the pointerup coordinates.
     await canvas.tap({ position: { x: 150, y: 150 } });
 
-    await expect.poll(async () => await getFieldCountForFirstPage(page)).toBeGreaterThan(0);
+    // Exactly one — the page started empty and a single tap must not place twice,
+    // which is the duplicate-placement regression this spec exists to catch.
+    await expect.poll(async () => await getFieldCountForFirstPage(page)).toBe(1);
   });
 
   test('desktop mouse click placement still places a field', async ({ page }) => {
