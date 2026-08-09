@@ -220,9 +220,11 @@ export function DataTable<TData, TValue>({
               </div>
             ))
           ) : error?.enable ? (
-            <div className="rounded-md border p-8 text-center">
-              <Trans>Something went wrong.</Trans>
-            </div>
+            error.component ?? (
+              <div className="rounded-md border p-8 text-center">
+                <Trans>Something went wrong.</Trans>
+              </div>
+            )
           ) : skeleton?.enable ? (
             Array.from({ length: skeleton.rows }).map((_, i) => (
               <div key={`mobile-skeleton-card-${i}`} className="space-y-3 rounded-md border p-4">
