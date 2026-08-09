@@ -125,9 +125,12 @@ export const FolderGrid = ({ type, parentId }: FolderGridProps) => {
             </div>
           ))}
         </div>
+      ) : foldersData && foldersData.folders.length === 0 ? (
+        <div className="text-center text-muted-foreground text-sm">
+          <Trans>No folders yet.</Trans>
+        </div>
       ) : (
-        foldersData &&
-        foldersData.folders.length > 0 && (
+        foldersData && (
           <div key="content" className="space-y-4">
             {pinnedFolders.length > 0 && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
