@@ -257,7 +257,10 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
     try {
       await updateEnvelopeAsync({
         data: {
-          title: canConfigureTitle && data.title !== envelope.title ? data.title : undefined,
+          // Only include the title key when it changes, since in embedded mode the
+          // editor provider spreads this payload into local state and an explicit
+          // `title: undefined` would wipe the envelope title.
+          ...(canConfigureTitle && data.title !== envelope.title ? { title: data.title } : {}),
           templateType: envelope.type === EnvelopeType.TEMPLATE ? data.templateType : undefined,
           externalId: data.externalId || null,
           visibility: data.visibility,
