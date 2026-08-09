@@ -154,11 +154,11 @@ export const DocumentDropzone = ({
           ) : (
             <>
               <p className="mt-1 hidden text-center text-muted-foreground/80 text-sm md:block">
-                {_(msg`Drag & drop your document here.`)}
+                <Trans>Drag & drop your document here.</Trans>
               </p>
 
               <p className="mt-1 text-center text-muted-foreground/80 text-sm md:hidden">
-                {_(msg`Tap to choose a file`)}
+                <Trans>Tap to choose a file</Trans>
               </p>
 
               <Button

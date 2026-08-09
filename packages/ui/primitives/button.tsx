@@ -34,12 +34,14 @@ const buttonVariants = cva(
   },
 );
 
-const loaderVariants = cva('mr-2 animate-spin', {
+const loaderVariants = cva('animate-spin', {
   variants: {
     size: {
-      default: 'h-5 w-5',
-      sm: 'h-4 w-4',
-      lg: 'h-5 w-5',
+      default: 'mr-2 h-5 w-5',
+      sm: 'mr-2 h-4 w-4',
+      lg: 'mr-2 h-5 w-5',
+      // Icon buttons are a fixed square with no label, so the spinner is
+      // centred rather than sitting to the left of children.
       icon: 'h-5 w-5',
     },
   },
@@ -70,8 +72,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     return (
       <button className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} disabled={isDisabled}>
-        {isLoading && <Loader className={cn('mr-2 animate-spin', loaderVariants({ size }))} />}
-        {props.children}
+        {isLoading && <Loader className={cn(loaderVariants({ size }))} />}
+        {isLoading && size === 'icon' ? null : props.children}
       </button>
     );
   },

@@ -231,6 +231,22 @@
     textarea {
       font-size: max(1rem, 1em);
     }
+
+    /*
+     * A single utility class (`.text-sm`, `.text-xs`) outranks the bare element
+     * selectors above, so the floor has to be re-asserted at higher specificity
+     * for the sub-16px utilities. Only those are targeted, so intentionally
+     * larger sizes -- and the `md:text-sm` desktop variant, which never matches
+     * below 768px -- are left alone.
+     */
+    input.text-xs,
+    input.text-sm,
+    select.text-xs,
+    select.text-sm,
+    textarea.text-xs,
+    textarea.text-sm {
+      font-size: 1rem;
+    }
   }
 }
 
