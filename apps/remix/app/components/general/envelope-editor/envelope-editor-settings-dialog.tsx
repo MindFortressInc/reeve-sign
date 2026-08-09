@@ -16,10 +16,12 @@ import {
   ZDocumentMetaTimezoneSchema,
 } from '@documenso/lib/types/document-meta';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
+import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
 import { isValidRedirectUrl } from '@documenso/lib/utils/is-valid-redirect-url';
 import { canAccessTeamDocument, DocumentSignatureType, extractTeamSignatureSettings } from '@documenso/lib/utils/teams';
 import { zEmail } from '@documenso/lib/utils/zod';
 import { trpc } from '@documenso/trpc/react';
+import { ZDocumentTitleSchema } from '@documenso/trpc/server/document-router/schema';
 import { DocumentEmailCheckboxes } from '@documenso/ui/components/document/document-email-checkboxes';
 import {
   DocumentGlobalAuthAccessSelect,
@@ -70,7 +72,7 @@ import {
 } from '@prisma/client';
 import type * as DialogPrimitive from '@radix-ui/react-dialog';
 import { BellRingIcon, InfoIcon, MailIcon, SettingsIcon, ShieldIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { match } from 'ts-pattern';
 import { z } from 'zod';
@@ -78,6 +80,7 @@ import { z } from 'zod';
 import { useCurrentTeam } from '~/providers/team';
 
 export const ZAddSettingsFormSchema = z.object({
+  title: ZDocumentTitleSchema,
   templateType: z.nativeEnum(TemplateType).optional(),
   externalId: z.string().optional(),
   visibility: z.nativeEnum(DocumentVisibility).optional(),
@@ -155,7 +158,10 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
 
   const { envelope, updateEnvelopeAsync, editorConfig, isEmbedded, organisationEmails } = useCurrentEnvelopeEditor();
 
-  const { settings } = editorConfig;
+  const {
+    settings,
+    general: { allowConfigureEnvelopeTitle },
+  } = editorConfig;
 
   const team = useCurrentTeam();
   const organisation = useCurrentOrganisation();
@@ -167,8 +173,16 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
     documentAuth: envelope.authOptions,
   });
 
+  const envelopeItemPermissions = useMemo(
+    () => getEnvelopeItemPermissions(envelope, envelope.recipients),
+    [envelope, envelope.recipients],
+  );
+
+  const canConfigureTitle = allowConfigureEnvelopeTitle && envelopeItemPermissions.canTitleBeChanged;
+
   const createDefaultValues = () => {
     return {
+      title: envelope.title,
       templateType: envelope.templateType || TemplateType.PRIVATE,
       externalId: envelope.externalId || '',
       visibility: envelope.visibility || '',
@@ -243,6 +257,7 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
     try {
       await updateEnvelopeAsync({
         data: {
+          title: canConfigureTitle && data.title !== envelope.title ? data.title : undefined,
           templateType: envelope.type === EnvelopeType.TEMPLATE ? data.templateType : undefined,
           externalId: data.externalId || null,
           visibility: data.visibility,
@@ -376,6 +391,30 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
                 {match({ activeTab, settings })
                   .with({ activeTab: 'general' }, () => (
                     <>
+                      {allowConfigureEnvelopeTitle && (
+                        <FormField
+                          control={form.control}
+                          name="title"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                <Trans>Title</Trans>
+                              </FormLabel>
+
+                              <FormControl>
+                                <Input
+                                  className="bg-background"
+                                  {...field}
+                                  disabled={!envelopeItemPermissions.canTitleBeChanged}
+                                />
+                              </FormControl>
+
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
                       {settings.allowConfigureLanguage && (
                         <FormField
                           control={form.control}
