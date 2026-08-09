@@ -4,6 +4,7 @@ import { mapSecondaryIdToTemplateId } from '@documenso/lib/utils/envelope';
 import { cn } from '@documenso/ui/lib/utils';
 import { Button } from '@documenso/ui/primitives/button';
 import { Separator } from '@documenso/ui/primitives/separator';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@documenso/ui/primitives/sheet';
 import { SpinnerBox } from '@documenso/ui/primitives/spinner';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
@@ -18,6 +19,7 @@ import {
   FileOutputIcon,
   LinkIcon,
   type LucideIcon,
+  MenuIcon,
   MousePointerIcon,
   SendIcon,
   SettingsIcon,
@@ -142,6 +144,8 @@ export const EnvelopeEditor = () => {
 
   const [pageToRender, setPageToRender] = useState<EnvelopeEditorStep | 'loading'>(searchParamsStep);
 
+  const [isMobileStepNavOpen, setIsMobileStepNavOpen] = useState(false);
+
   const latestStepChangeTime = useRef(0);
 
   const handleStepChange = async (step: EnvelopeEditorStep) => {
@@ -175,16 +179,91 @@ export const EnvelopeEditor = () => {
   const currentStepData = envelopeEditorSteps.find((step) => step.id === searchParamsStep) || envelopeEditorSteps[0];
 
   return (
-    <div className="h-screen w-screen bg-envelope-editor-background">
+    <div className="h-dvh w-screen bg-envelope-editor-background">
       <EnvelopeEditorHeader />
 
       {/* Main Content Area */}
-      <div className="flex h-[calc(100vh-4rem)] w-screen">
+      <div className="flex h-[calc(100dvh-4rem)] w-screen flex-col lg:flex-row">
+        {/* Mobile step navigation bar, replaced by the left sidebar at lg and above. */}
+        <div className="flex flex-shrink-0 items-center gap-2 border-border border-b bg-background px-4 py-2 lg:hidden">
+          <Sheet open={isMobileStepNavOpen} onOpenChange={setIsMobileStepNavOpen}>
+            <SheetTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="envelope-editor-mobile-step-nav-trigger"
+                title={t(msg`Steps`)}
+              >
+                <MenuIcon className="h-4 w-4" />
+
+                <span className="ml-2">
+                  <Trans context="The step counter">
+                    Step {currentStepData.order}/{envelopeEditorSteps.length}
+                  </Trans>
+                </span>
+              </Button>
+            </SheetTrigger>
+
+            <SheetContent position="bottom" size="content" className="overflow-y-auto">
+              <SheetTitle>{isDocument ? <Trans>Document Editor</Trans> : <Trans>Template Editor</Trans>}</SheetTitle>
+
+              <div className="mt-4 space-y-2 pb-2">
+                {envelopeEditorSteps.map((step) => {
+                  const Icon = step.icon;
+                  const isActive = searchParamsStep === step.id;
+
+                  return (
+                    <button
+                      key={step.id}
+                      data-testid={`envelope-editor-mobile-step-${step.id}`}
+                      type="button"
+                      className={cn(
+                        'flex w-full cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                        isActive
+                          ? 'border-green-200 bg-green-50 dark:border-green-500/20 dark:bg-green-500/10'
+                          : 'border-gray-200 hover:bg-gray-50 dark:border-gray-400/20 dark:hover:bg-gray-400/10',
+                      )}
+                      onClick={() => {
+                        setIsMobileStepNavOpen(false);
+                        void navigateToStep(step.id as EnvelopeEditorStep);
+                      }}
+                    >
+                      <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-green-600' : 'text-gray-600'}`} />
+
+                      <span
+                        className={`font-medium text-sm ${
+                          isActive
+                            ? 'text-green-900 dark:text-green-400'
+                            : 'text-foreground dark:text-muted-foreground'
+                        }`}
+                      >
+                        {t(step.title)}
+                      </span>
+
+                      <span className="ml-auto text-muted-foreground text-xs">
+                        <Trans context="The step counter">
+                          {step.order}/{envelopeEditorSteps.length}
+                        </Trans>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          <span className="truncate font-medium text-foreground text-sm">{t(currentStepData.title)}</span>
+        </div>
+
         {/* Left Section - Step Navigation */}
         <div
-          className={cn('flex w-80 flex-shrink-0 flex-col overflow-y-auto border-border border-r bg-background py-4', {
-            'w-14': minimizeLeftSidebar,
-          })}
+          className={cn(
+            'hidden w-80 flex-shrink-0 flex-col overflow-y-auto border-border border-r bg-background py-4 lg:flex',
+            {
+              'w-14': minimizeLeftSidebar,
+            },
+          )}
         >
           {/* Left section step selector. */}
           {minimizeLeftSidebar ? (
@@ -519,7 +598,7 @@ export const EnvelopeEditor = () => {
         </div>
 
         {/* Main Content - Changes based on current step */}
-        <div className="flex-1 overflow-y-auto">
+        <div data-testid="envelope-editor-content" className="min-h-0 flex-1 overflow-y-auto">
           {match({
             pageToRender,
             allowUploadAndRecipientStep,
