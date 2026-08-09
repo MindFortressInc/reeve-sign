@@ -387,7 +387,7 @@ export const EnvelopeEditorSettingsDialog = ({ trigger, ...props }: EnvelopeEdit
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onFormSubmit)}>
               <fieldset
-                className="flex h-[45rem] max-h-[calc(100vh-14rem)] w-full flex-col space-y-6 overflow-y-auto px-6 py-6"
+                className="flex h-[45rem] max-h-[calc(100dvh-14rem)] w-full flex-col space-y-6 overflow-y-auto px-6 py-6"
                 disabled={form.formState.isSubmitting}
                 key={activeTab}
               >

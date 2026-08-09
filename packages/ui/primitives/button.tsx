@@ -24,6 +24,7 @@ const buttonVariants = cva(
         default: 'h-10 py-2 px-4',
         sm: 'h-9 px-3 rounded-md',
         lg: 'h-11 px-8 rounded-md',
+        icon: 'h-11 w-11 rounded-md',
       },
     },
     defaultVariants: {
@@ -39,6 +40,7 @@ const loaderVariants = cva('mr-2 animate-spin', {
       default: 'h-5 w-5',
       sm: 'h-4 w-4',
       lg: 'h-5 w-5',
+      icon: 'h-5 w-5',
     },
   },
   defaultVariants: {

@@ -54,7 +54,7 @@ export const DocumentDropzone = ({
 
   const organisation = useCurrentOrganisation();
 
-  const { getRootProps, getInputProps } = useDropzone({
+  const { getRootProps, getInputProps, open } = useDropzone({
     accept: getAllowedUploadMimeTypes(),
     multiple: allowMultiple,
     disabled,
@@ -149,9 +149,31 @@ export const DocumentDropzone = ({
 
           <p className="mt-6 font-medium text-foreground">{_(heading[type])}</p>
 
-          <p className="mt-1 text-center text-muted-foreground/80 text-sm">
-            {_(disabled ? disabledMessage : msg`Drag & drop your document here.`)}
-          </p>
+          {disabled ? (
+            <p className="mt-1 text-center text-muted-foreground/80 text-sm">{_(disabledMessage)}</p>
+          ) : (
+            <>
+              <p className="mt-1 hidden text-center text-muted-foreground/80 text-sm md:block">
+                {_(msg`Drag & drop your document here.`)}
+              </p>
+
+              <p className="mt-1 text-center text-muted-foreground/80 text-sm md:hidden">
+                {_(msg`Tap to choose a file`)}
+              </p>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-4"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  open();
+                }}
+              >
+                <Trans>Choose file</Trans>
+              </Button>
+            </>
+          )}
 
           {disabled && IS_BILLING_ENABLED() && (
             <Button className="mt-4 w-32 bg-warning hover:bg-warning/80" asChild>

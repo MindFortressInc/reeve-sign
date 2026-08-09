@@ -444,7 +444,7 @@ export const ConfigureFieldsView = ({
         {/* Desktop sidebar */}
         {!isMobile && (
           <div className="order-2 col-span-12 md:order-1 md:col-span-4">
-            <div className="sticky top-4 max-h-[calc(100vh-2rem)] rounded-lg border border-border bg-widget p-4 pb-6">
+            <div className="sticky top-4 max-h-[calc(100dvh-2rem)] rounded-lg border border-border bg-widget p-4 pb-6">
               <h2 className="mb-1 font-medium text-lg">
                 <Trans>Configure Fields</Trans>
               </h2>

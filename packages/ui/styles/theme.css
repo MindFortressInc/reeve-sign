@@ -218,6 +218,20 @@
       "rlig" 1,
       "calt" 1;
   }
+
+  /*
+   * DEV-8189: defensive floor against iOS Safari auto-zoom, which fires when a
+   * focused form control has a font-size below 16px. Scoped to small viewports
+   * so desktop density is unaffected. Component-level `text-base md:text-sm`
+   * remains the primary mechanism; this catches ad-hoc `text-sm` controls.
+   */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: max(1rem, 1em);
+    }
+  }
 }
 
 /*

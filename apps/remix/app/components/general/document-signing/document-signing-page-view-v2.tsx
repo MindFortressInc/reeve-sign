@@ -81,7 +81,7 @@ export const DocumentSigningPageViewV2 = () => {
   }, [recipientFieldsRemaining, selectedAssistantRecipientFields, currentEnvelopeItem]);
 
   return (
-    <div className="min-h-screen w-screen bg-gray-50 dark:bg-background">
+    <div className="min-h-dvh w-screen bg-gray-50 dark:bg-background">
       <SignFieldEmailDialog.Root />
       <SignFieldTextDialog.Root />
       <SignFieldNumberDialog.Root />
@@ -94,7 +94,7 @@ export const DocumentSigningPageViewV2 = () => {
       <EnvelopeSignerHeader />
 
       {/* Main Content Area */}
-      <div className="flex h-[calc(100vh-4rem)] w-screen">
+      <div className="flex h-[calc(100dvh-4rem)] w-screen">
         {/* Left Section - Step Navigation */}
         <div
           className={cn(
@@ -298,7 +298,7 @@ export const DocumentSigningPageViewV2 = () => {
 
               {/* AGPL-3.0 source offer (Reeve.Sign fork) — always present on every
                   breakpoint, not gated by hidePoweredBy. See AgplSourceLink. */}
-              <AgplSourceLink className="fixed bottom-0 left-0 z-40 block rounded-tr bg-muted px-1.5 py-0.5 text-[10px] opacity-40 hover:opacity-80" />
+              <AgplSourceLink className="fixed bottom-[env(safe-area-inset-bottom)] left-0 z-40 block rounded-tr bg-muted px-1.5 py-0.5 text-[10px] opacity-40 hover:opacity-80" />
             </div>
           </div>
         </div>
