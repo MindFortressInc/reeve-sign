@@ -289,8 +289,8 @@ test('[TEAMS]: document folder and its contents can be deleted', async ({ page }
   await page.goto(`/t/${team.url}/documents`);
 
   await expect(page.locator(`[data-folder-id="${folder.id}"]`)).not.toBeVisible();
-  await expect(page.getByText(proposal.title)).toBeVisible();
-  await expect(page.getByText(report.title)).toBeVisible();
+  await expect(page.getByRole('row', { name: proposal.title })).toBeVisible();
+  await expect(page.getByRole('row', { name: report.title })).toBeVisible();
 });
 
 test('[TEAMS]: create folder button is visible on templates page', async ({ page }) => {
