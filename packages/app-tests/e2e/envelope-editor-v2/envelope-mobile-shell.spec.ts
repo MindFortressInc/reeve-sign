@@ -21,6 +21,27 @@ const SMALL_MOBILE_VIEWPORT = { width: 320, height: 700 };
  */
 const MINIMUM_USABLE_PANE_WIDTH = 340;
 
+/**
+ * The 10 field types rendered by the field palette, in `fieldButtonList` order.
+ */
+const FIELD_PALETTE_TYPES = [
+  'SIGNATURE',
+  'EMAIL',
+  'NAME',
+  'INITIALS',
+  'DATE',
+  'TEXT',
+  'NUMBER',
+  'RADIO',
+  'CHECKBOX',
+  'DROPDOWN',
+] as const;
+
+/**
+ * The minimum touch target size for the mobile palette buttons.
+ */
+const MINIMUM_TOUCH_TARGET_PX = 44;
+
 const getEditorContentPane = (root: Page) => root.locator('[data-testid="envelope-editor-content"]');
 
 const getMobileStepNavTrigger = (root: Page) => root.locator('[data-testid="envelope-editor-mobile-step-nav-trigger"]');
@@ -129,6 +150,47 @@ test.describe('document editor', () => {
     expect(await getKonvaElementCountForPage(page, 1, '.field-group')).toBe(1);
 
     await expectNoHorizontalPageScroll(page, MOBILE_VIEWPORT.width);
+  });
+
+  test('mobile field palette keeps all 10 field types reachable at 393x852', async ({ page }) => {
+    const surface = await openDocumentEnvelopeEditor(page);
+
+    // A recipient is required for the field palette to render.
+    await clickAddMyselfButton(surface.root);
+
+    await page.setViewportSize(MOBILE_VIEWPORT);
+
+    await clickMobileEnvelopeEditorStep(page, 'addFields');
+    await expect(page.locator('.react-pdf__Page').first()).toBeVisible();
+
+    // The recipient selector must be reachable outside of the hidden desktop panel.
+    await expect(page.locator('[data-testid="envelope-editor-mobile-recipient-selector"]')).toBeVisible();
+
+    const palette = page.locator('[data-testid="envelope-editor-mobile-field-palette"]');
+
+    await expect(palette).toBeVisible();
+    await expect(palette.locator('[data-testid^="field-palette-button-"]')).toHaveCount(
+      FIELD_PALETTE_TYPES.length,
+    );
+
+    for (const fieldType of FIELD_PALETTE_TYPES) {
+      const button = palette.locator(`[data-testid="field-palette-button-${fieldType}"]`);
+
+      await button.scrollIntoViewIfNeeded();
+      await expect(button).toBeVisible();
+
+      const boundingBox = await button.boundingBox();
+
+      expect(boundingBox).not.toBeNull();
+
+      // Once scrolled into view, the button must sit fully within the viewport width.
+      expect(boundingBox!.x).toBeGreaterThanOrEqual(0);
+      expect(boundingBox!.x + boundingBox!.width).toBeLessThanOrEqual(MOBILE_VIEWPORT.width);
+
+      // The button must be a usable touch target.
+      expect(boundingBox!.width).toBeGreaterThanOrEqual(MINIMUM_TOUCH_TARGET_PX);
+      expect(boundingBox!.height).toBeGreaterThanOrEqual(MINIMUM_TOUCH_TARGET_PX);
+    }
   });
 
   test('mobile shell keeps the document canvas usable at 320px', async ({ page }) => {
