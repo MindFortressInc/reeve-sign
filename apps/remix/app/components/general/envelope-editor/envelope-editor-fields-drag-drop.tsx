@@ -98,12 +98,21 @@ type EnvelopeEditorFieldPaletteProps = {
   selectedRecipientId: number | null;
   armedFieldType: FieldType | null;
   onPickFieldType: (fieldType: FieldType) => void;
+
+  /**
+   * The layout of the field palette.
+   *
+   * - `grid`: Two column grid used inside the desktop right panel.
+   * - `toolbar`: Horizontally scrollable row used on the mobile toolbar below lg.
+   */
+  variant?: 'grid' | 'toolbar';
 };
 
 export const EnvelopeEditorFieldPalette = ({
   selectedRecipientId,
   armedFieldType,
   onPickFieldType,
+  variant = 'grid',
 }: EnvelopeEditorFieldPaletteProps) => {
   const { envelope, isTemplate, getRecipientColorKey } = useCurrentEnvelopeEditor();
 
@@ -131,7 +140,12 @@ export const EnvelopeEditorFieldPalette = ({
   );
 
   return (
-    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
+    <div
+      data-testid={variant === 'toolbar' ? 'envelope-editor-mobile-field-palette' : 'envelope-editor-field-palette'}
+      className={cn(
+        variant === 'toolbar' ? 'flex items-center gap-2 overflow-x-auto' : 'grid grid-cols-2 gap-x-2 gap-y-2.5',
+      )}
+    >
       {fieldButtonList.map((field) => (
         <button
           disabled={isFieldsDisabled}
@@ -144,8 +158,10 @@ export const EnvelopeEditorFieldPalette = ({
           onClick={() => onPickFieldType(field.type)}
           onMouseDown={() => onPickFieldType(field.type)}
           data-selected={armedFieldType === field.type ? true : undefined}
+          data-testid={`field-palette-button-${field.type}`}
           className={cn(
             'group flex h-12 cursor-pointer items-center justify-center rounded-lg border border-border px-4 transition-colors',
+            variant === 'toolbar' && 'min-w-[44px] flex-shrink-0 whitespace-nowrap',
             selectedRecipientStyles.fieldButton,
           )}
         >

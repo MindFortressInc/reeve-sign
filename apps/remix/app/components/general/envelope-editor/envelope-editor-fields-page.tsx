@@ -421,80 +421,105 @@ export const EnvelopeEditorFieldsPage = () => {
 
   return (
     <div className="relative flex h-full">
-      <div className="flex h-full w-full flex-col overflow-y-auto px-2" ref={scrollableContainerRef}>
-        {/* Horizontal envelope item selector */}
-        <EnvelopeRendererFileSelector
-          className="px-0"
-          fields={editorFields.localFields}
-          renderItemAction={
-            editorConfig.envelopeItems !== null &&
-            editorConfig.envelopeItems.allowReplace &&
-            envelopeItemPermissions.canFileBeChanged
-              ? (item) => (
-                  <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
-                    <div
-                      className={cn('h-2 w-2 rounded-full transition-opacity duration-150 group-hover:opacity-0', {
-                        'bg-green-500': currentEnvelopeItem?.id === item.id,
-                      })}
-                    />
-                    <EnvelopeItemEditDialog
-                      envelopeItem={item}
-                      allowConfigureTitle={editorConfig.envelopeItems?.allowConfigureTitle ?? false}
-                      trigger={
-                        <span
-                          className="absolute inset-0 flex cursor-pointer items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`envelope-item-edit-button-${item.id}`}
-                        >
-                          <PencilIcon className="h-3.5 w-3.5" />
-                        </span>
-                      }
-                    />
-                  </div>
-                )
-              : undefined
-          }
-        />
-
-        {/* Document View */}
-        <div className="mt-4 flex h-full flex-col items-center justify-center">
-          {envelope.recipients.length === 0 && (
-            <Alert
-              variant="neutral"
-              className="mb-4 flex max-w-[800px] flex-row items-center justify-between space-y-0 rounded-sm border border-border bg-background"
-            >
-              <div className="flex flex-col gap-1">
-                <AlertTitle>
-                  <Trans>Missing Recipients</Trans>
-                </AlertTitle>
-                <AlertDescription>
-                  <Trans>You need at least one recipient to add fields</Trans>
-                </AlertDescription>
-              </div>
-
-              <Button variant="outline" onClick={() => void navigateToStep('upload')}>
-                <Trans>Add Recipients</Trans>
-              </Button>
-            </Alert>
-          )}
-
-          {currentEnvelopeItem !== null ? (
-            <EnvelopePdfViewer
-              customPageRenderer={EnvelopeEditorFieldsPageRenderer}
-              scrollParentRef={scrollableContainerRef}
-              errorMessage={PDF_VIEWER_ERROR_MESSAGES.editor}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-32">
-              <FileTextIcon className="h-10 w-10 text-muted-foreground" />
-              <p className="mt-1 text-foreground text-sm">
-                <Trans>No documents found</Trans>
-              </p>
-              <p className="mt-1 text-muted-foreground text-sm">
-                <Trans>Please upload a document to continue</Trans>
-              </p>
+      <div className="flex h-full w-full min-w-0 flex-col">
+        {/* Mobile field toolbar, replaced by the right panel at lg and above. */}
+        {currentEnvelopeItem && envelope.recipients.length > 0 && (
+          <div className="flex flex-shrink-0 flex-col gap-2 border-border border-b bg-background px-2 py-2 lg:hidden">
+            <div data-testid="envelope-editor-mobile-recipient-selector">
+              <EnvelopeRecipientSelector
+                selectedRecipient={editorFields.selectedRecipient}
+                onSelectedRecipientChange={(recipient) => editorFields.setSelectedRecipient(recipient.id)}
+                recipients={envelope.recipients}
+                fields={envelope.fields}
+                className="h-9 w-full"
+                align="start"
+              />
             </div>
-          )}
+
+            <EnvelopeEditorFieldPalette
+              variant="toolbar"
+              selectedRecipientId={editorFields.selectedRecipient?.id ?? null}
+              armedFieldType={armedFieldType}
+              onPickFieldType={onPickFieldType}
+            />
+          </div>
+        )}
+
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-2" ref={scrollableContainerRef}>
+          {/* Horizontal envelope item selector */}
+          <EnvelopeRendererFileSelector
+            className="px-0"
+            fields={editorFields.localFields}
+            renderItemAction={
+              editorConfig.envelopeItems !== null &&
+              editorConfig.envelopeItems.allowReplace &&
+              envelopeItemPermissions.canFileBeChanged
+                ? (item) => (
+                    <div className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
+                      <div
+                        className={cn('h-2 w-2 rounded-full transition-opacity duration-150 group-hover:opacity-0', {
+                          'bg-green-500': currentEnvelopeItem?.id === item.id,
+                        })}
+                      />
+                      <EnvelopeItemEditDialog
+                        envelopeItem={item}
+                        allowConfigureTitle={editorConfig.envelopeItems?.allowConfigureTitle ?? false}
+                        trigger={
+                          <span
+                            className="absolute inset-0 flex cursor-pointer items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                            onClick={(e) => e.stopPropagation()}
+                            data-testid={`envelope-item-edit-button-${item.id}`}
+                          >
+                            <PencilIcon className="h-3.5 w-3.5" />
+                          </span>
+                        }
+                      />
+                    </div>
+                  )
+                : undefined
+            }
+          />
+
+          {/* Document View */}
+          <div className="mt-4 flex h-full flex-col items-center justify-center">
+            {envelope.recipients.length === 0 && (
+              <Alert
+                variant="neutral"
+                className="mb-4 flex max-w-[800px] flex-row items-center justify-between space-y-0 rounded-sm border border-border bg-background"
+              >
+                <div className="flex flex-col gap-1">
+                  <AlertTitle>
+                    <Trans>Missing Recipients</Trans>
+                  </AlertTitle>
+                  <AlertDescription>
+                    <Trans>You need at least one recipient to add fields</Trans>
+                  </AlertDescription>
+                </div>
+
+                <Button variant="outline" onClick={() => void navigateToStep('upload')}>
+                  <Trans>Add Recipients</Trans>
+                </Button>
+              </Alert>
+            )}
+
+            {currentEnvelopeItem !== null ? (
+              <EnvelopePdfViewer
+                customPageRenderer={EnvelopeEditorFieldsPageRenderer}
+                scrollParentRef={scrollableContainerRef}
+                errorMessage={PDF_VIEWER_ERROR_MESSAGES.editor}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-32">
+                <FileTextIcon className="h-10 w-10 text-muted-foreground" />
+                <p className="mt-1 text-foreground text-sm">
+                  <Trans>No documents found</Trans>
+                </p>
+                <p className="mt-1 text-muted-foreground text-sm">
+                  <Trans>Please upload a document to continue</Trans>
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Mobile affordance for the panel that is a static sidebar at lg.
