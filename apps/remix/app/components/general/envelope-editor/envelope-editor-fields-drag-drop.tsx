@@ -85,32 +85,29 @@ export const fieldButtonList = [
   },
 ];
 
-type EnvelopeEditorFieldDragDropProps = {
+/**
+ * Placement is a two-step gesture that spans two surfaces: arm a field type in
+ * the palette, then click the document to drop it. Below lg the palette lives
+ * in a sheet that has to close before the document is reachable, so the armed
+ * type and the window listeners CANNOT live in the palette — closing the sheet
+ * unmounts it and disarms placement, which is why the two are separate
+ * components here. The parent owns the armed type and keeps the placement
+ * layer mounted at all times.
+ */
+type EnvelopeEditorFieldPaletteProps = {
   selectedRecipientId: number | null;
-  selectedEnvelopeItemId: string | null;
-
-  /**
-   * Fired when a field type is armed for placement.
-   *
-   * Placement finishes with a click on the document, so a caller rendering this
-   * palette inside an overlay has to dismiss that overlay here — otherwise it
-   * covers the page the user now has to click.
-   */
-  onFieldTypePicked?: () => void;
+  armedFieldType: FieldType | null;
+  onPickFieldType: (fieldType: FieldType) => void;
 };
 
-export const EnvelopeEditorFieldDragDrop = ({
+export const EnvelopeEditorFieldPalette = ({
   selectedRecipientId,
-  selectedEnvelopeItemId,
-  onFieldTypePicked,
-}: EnvelopeEditorFieldDragDropProps) => {
-  const { envelope, editorFields, isTemplate, getRecipientColorKey } = useCurrentEnvelopeEditor();
+  armedFieldType,
+  onPickFieldType,
+}: EnvelopeEditorFieldPaletteProps) => {
+  const { envelope, isTemplate, getRecipientColorKey } = useCurrentEnvelopeEditor();
 
   const { t } = useLingui();
-
-  const [selectedField, setSelectedField] = useState<FieldType | null>(null);
-
-  const { isWithinPageBounds, getPage } = useDocumentElement();
 
   const isFieldsDisabled = useMemo(() => {
     const selectedSigner = envelope.recipients.find((recipient) => recipient.id === selectedRecipientId);
@@ -127,6 +124,70 @@ export const EnvelopeEditorFieldDragDrop = ({
 
     return !canRecipientFieldsBeModified(selectedSigner, fields);
   }, [selectedRecipientId, envelope.recipients, envelope.fields]);
+
+  const selectedRecipientStyles = useMemo(
+    () => getRecipientColorStyles(getRecipientColorKey(selectedRecipientId ?? -1)),
+    [selectedRecipientId, getRecipientColorKey],
+  );
+
+  return (
+    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
+      {fieldButtonList.map((field) => (
+        <button
+          disabled={isFieldsDisabled}
+          key={field.type}
+          type="button"
+          // Both onClick and onMouseDown arm placement (mousedown gives the drag
+          // its immediacy on a pointer device, click is what a tap reliably
+          // produces), so this runs twice per desktop interaction. Both effects
+          // are idempotent.
+          onClick={() => onPickFieldType(field.type)}
+          onMouseDown={() => onPickFieldType(field.type)}
+          data-selected={armedFieldType === field.type ? true : undefined}
+          className={cn(
+            'group flex h-12 cursor-pointer items-center justify-center rounded-lg border border-border px-4 transition-colors',
+            selectedRecipientStyles.fieldButton,
+          )}
+        >
+          <p
+            className={cn(
+              'flex items-center justify-center gap-x-1.5 font-normal font-noto text-muted-foreground text-sm group-data-[selected]:text-foreground',
+              field.className,
+              selectedRecipientStyles.fieldButtonText,
+            )}
+          >
+            {field.type !== FieldType.SIGNATURE && <field.icon className="h-4 w-4" />}
+            {t(field.name)}
+          </p>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+type EnvelopeEditorFieldPlacementLayerProps = {
+  selectedRecipientId: number | null;
+  selectedEnvelopeItemId: string | null;
+  armedFieldType: FieldType | null;
+  onArmedFieldTypeChange: (fieldType: FieldType | null) => void;
+};
+
+/**
+ * Owns the document-side half of placement: the drag ghost and the window
+ * listeners that commit the field. Must stay mounted wherever the palette is,
+ * including while a mobile sheet is closed.
+ */
+export const EnvelopeEditorFieldPlacementLayer = ({
+  selectedRecipientId,
+  selectedEnvelopeItemId,
+  armedFieldType,
+  onArmedFieldTypeChange,
+}: EnvelopeEditorFieldPlacementLayerProps) => {
+  const { editorFields, getRecipientColorKey } = useCurrentEnvelopeEditor();
+
+  const { t } = useLingui();
+
+  const { isWithinPageBounds, getPage } = useDocumentElement();
 
   const [isFieldWithinBounds, setIsFieldWithinBounds] = useState(false);
   const [coords, setCoords] = useState({
@@ -155,7 +216,7 @@ export const EnvelopeEditorFieldDragDrop = ({
 
   const onMouseClick = useCallback(
     (event: MouseEvent) => {
-      if (!selectedField || !selectedRecipientId || !selectedEnvelopeItemId) {
+      if (!armedFieldType || !selectedRecipientId || !selectedEnvelopeItemId) {
         return;
       }
 
@@ -165,7 +226,7 @@ export const EnvelopeEditorFieldDragDrop = ({
         !$page ||
         !isWithinPageBounds(event, PDF_VIEWER_PAGE_SELECTOR, fieldBounds.current.width, fieldBounds.current.height)
       ) {
-        setSelectedField(null);
+        onArmedFieldTypeChange(null);
         return;
       }
 
@@ -188,22 +249,30 @@ export const EnvelopeEditorFieldDragDrop = ({
       const field = {
         formId: nanoid(12),
         envelopeItemId: selectedEnvelopeItemId,
-        type: selectedField,
+        type: armedFieldType,
         page: pageNumber,
         positionX: pageX,
         positionY: pageY,
         width: fieldPageWidth,
         height: fieldPageHeight,
         recipientId: selectedRecipientId,
-        fieldMeta: structuredClone(FIELD_META_DEFAULT_VALUES[selectedField]),
+        fieldMeta: structuredClone(FIELD_META_DEFAULT_VALUES[armedFieldType]),
       };
 
       editorFields.addField(field);
 
       setIsFieldWithinBounds(false);
-      setSelectedField(null);
+      onArmedFieldTypeChange(null);
     },
-    [isWithinPageBounds, selectedField, selectedRecipientId, selectedEnvelopeItemId, getPage, editorFields],
+    [
+      isWithinPageBounds,
+      armedFieldType,
+      selectedRecipientId,
+      selectedEnvelopeItemId,
+      getPage,
+      editorFields,
+      onArmedFieldTypeChange,
+    ],
   );
 
   useEffect(() => {
@@ -231,7 +300,7 @@ export const EnvelopeEditorFieldDragDrop = ({
   }, []);
 
   useEffect(() => {
-    if (selectedField) {
+    if (armedFieldType) {
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseClick);
     }
@@ -240,75 +309,36 @@ export const EnvelopeEditorFieldDragDrop = ({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseClick);
     };
-  }, [onMouseClick, onMouseMove, selectedField]);
+  }, [onMouseClick, onMouseMove, armedFieldType]);
 
   const selectedRecipientStyles = useMemo(
     () => getRecipientColorStyles(getRecipientColorKey(selectedRecipientId ?? -1)),
     [selectedRecipientId, getRecipientColorKey],
   );
 
-  // Both onClick and onMouseDown arm placement (mousedown gives the drag its
-  // immediacy on a pointer device, click is what a tap reliably produces), so
-  // this runs twice per desktop interaction. Both effects are idempotent.
-  const onPickFieldType = useCallback(
-    (fieldType: FieldType) => {
-      setSelectedField(fieldType);
-      onFieldTypePicked?.();
-    },
-    [onFieldTypePicked],
-  );
+  if (!armedFieldType) {
+    return null;
+  }
 
   return (
-    <>
-      <div className="grid grid-cols-2 gap-x-2 gap-y-2.5">
-        {fieldButtonList.map((field) => (
-          <button
-            disabled={isFieldsDisabled}
-            key={field.type}
-            type="button"
-            onClick={() => onPickFieldType(field.type)}
-            onMouseDown={() => onPickFieldType(field.type)}
-            data-selected={selectedField === field.type ? true : undefined}
-            className={cn(
-              'group flex h-12 cursor-pointer items-center justify-center rounded-lg border border-border px-4 transition-colors',
-              selectedRecipientStyles.fieldButton,
-            )}
-          >
-            <p
-              className={cn(
-                'flex items-center justify-center gap-x-1.5 font-normal font-noto text-muted-foreground text-sm group-data-[selected]:text-foreground',
-                field.className,
-                selectedRecipientStyles.fieldButtonText,
-              )}
-            >
-              {field.type !== FieldType.SIGNATURE && <field.icon className="h-4 w-4" />}
-              {t(field.name)}
-            </p>
-          </button>
-        ))}
-      </div>
-
-      {selectedField && (
-        <div
-          className={cn(
-            'pointer-events-none fixed z-50 flex cursor-pointer flex-col items-center justify-center rounded-[2px] bg-white font-noto text-muted-foreground ring-2 transition duration-200 [container-type:size] dark:text-muted-background',
-            selectedRecipientStyles.base,
-            selectedField === FieldType.SIGNATURE && 'font-signature',
-            {
-              '-rotate-6 scale-90 opacity-50 dark:bg-black/20': !isFieldWithinBounds,
-              'dark:text-black/60': isFieldWithinBounds,
-            },
-          )}
-          style={{
-            top: coords.y,
-            left: coords.x,
-            height: fieldBounds.current.height,
-            width: fieldBounds.current.width,
-          }}
-        >
-          <span className="text-[clamp(0.425rem,25cqw,0.825rem)]">{t(FRIENDLY_FIELD_TYPE[selectedField])}</span>
-        </div>
+    <div
+      className={cn(
+        'pointer-events-none fixed z-50 flex cursor-pointer flex-col items-center justify-center rounded-[2px] bg-white font-noto text-muted-foreground ring-2 transition duration-200 [container-type:size] dark:text-muted-background',
+        selectedRecipientStyles.base,
+        armedFieldType === FieldType.SIGNATURE && 'font-signature',
+        {
+          '-rotate-6 scale-90 opacity-50 dark:bg-black/20': !isFieldWithinBounds,
+          'dark:text-black/60': isFieldWithinBounds,
+        },
       )}
-    </>
+      style={{
+        top: coords.y,
+        left: coords.x,
+        height: fieldBounds.current.height,
+        width: fieldBounds.current.width,
+      }}
+    >
+      <span className="text-[clamp(0.425rem,25cqw,0.825rem)]">{t(FRIENDLY_FIELD_TYPE[armedFieldType])}</span>
+    </div>
   );
 };

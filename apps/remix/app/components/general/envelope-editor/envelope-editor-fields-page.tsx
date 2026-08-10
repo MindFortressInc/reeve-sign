@@ -52,7 +52,7 @@ import { EditorFieldTextForm } from '~/components/forms/editor/editor-field-text
 import { EnvelopePdfViewer } from '~/components/general/pdf-viewer/envelope-pdf-viewer';
 import { useCurrentTeam } from '~/providers/team';
 
-import { EnvelopeEditorFieldDragDrop } from './envelope-editor-fields-drag-drop';
+import { EnvelopeEditorFieldPalette, EnvelopeEditorFieldPlacementLayer } from './envelope-editor-fields-drag-drop';
 import { EnvelopeEditorFieldsPageRenderer } from './envelope-editor-fields-page-renderer';
 import { EnvelopeRendererFileSelector } from './envelope-file-selector';
 import { EnvelopeRecipientSelector } from './envelope-recipient-selector';
@@ -169,6 +169,23 @@ export const EnvelopeEditorFieldsPage = () => {
   const autoOpenedForFormId = useRef<string | null>(null);
 
   /**
+   * Placement spans two surfaces — arm a type in the palette, click the page to
+   * drop it — and below lg the palette's sheet must close in between. So the
+   * armed type lives here, not in the palette: the palette unmounts with the
+   * sheet, and an armed type that unmounts is a placement the user can never
+   * finish.
+   */
+  const [armedFieldType, setArmedFieldType] = useState<FieldType | null>(null);
+
+  const onPickFieldType = (fieldType: FieldType) => {
+    setArmedFieldType(fieldType);
+
+    // The document is what gets clicked next, and below lg the sheet is on top
+    // of it.
+    setIsMobileFieldsPanelOpen(false);
+  };
+
+  /**
    * Below lg the settings form lives in a sheet, so tapping a field on the
    * document would otherwise change something the user cannot see. Open the
    * sheet on selection so tapping a field reveals its settings — the sidebar
@@ -245,10 +262,10 @@ export const EnvelopeEditorFieldsPage = () => {
           <Trans>Add Fields</Trans>
         </h3>
 
-        <EnvelopeEditorFieldDragDrop
+        <EnvelopeEditorFieldPalette
           selectedRecipientId={editorFields.selectedRecipient?.id ?? null}
-          selectedEnvelopeItemId={currentEnvelopeItem?.id ?? null}
-          onFieldTypePicked={() => setIsMobileFieldsPanelOpen(false)}
+          armedFieldType={armedFieldType}
+          onPickFieldType={onPickFieldType}
         />
 
         {editorConfig.fields?.allowAIDetection && (
@@ -530,6 +547,16 @@ export const EnvelopeEditorFieldsPage = () => {
           </SheetContent>
         </Sheet>
       )}
+
+      {/* The placement layer is a root-level sibling of both panel hosts, so a
+          field armed in the palette survives the sheet closing — closing it is
+          exactly what makes the document clickable below lg. */}
+      <EnvelopeEditorFieldPlacementLayer
+        selectedRecipientId={editorFields.selectedRecipient?.id ?? null}
+        selectedEnvelopeItemId={currentEnvelopeItem?.id ?? null}
+        armedFieldType={armedFieldType}
+        onArmedFieldTypeChange={setArmedFieldType}
+      />
 
       {/* The AI dialogs live at the root, NOT inside `fieldsPanelContent`.
           Below lg that content is a child of the sheet, so a dialog rendered

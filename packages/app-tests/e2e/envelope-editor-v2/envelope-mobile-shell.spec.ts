@@ -1,6 +1,7 @@
 import { expect, type Page, test } from '@playwright/test';
 
 import { clickAddMyselfButton, openDocumentEnvelopeEditor } from '../fixtures/envelope-editor';
+import { getKonvaElementCountForPage } from '../fixtures/konva';
 
 test.use({
   storageState: {
@@ -116,6 +117,16 @@ test.describe('document editor', () => {
     // to dismiss the sheet — otherwise it covers the page the user must click.
     await signatureFieldButton.click();
     await expect(panel).toBeHidden();
+
+    // …and the armed field must SURVIVE that dismissal. Asserting the sheet
+    // closes is not enough: while the armed type lived inside the sheet, closing
+    // it disarmed placement, so mobile could arm a field and never place one.
+    const canvas = page.locator('.konva-container canvas').first();
+
+    await expect(canvas).toBeVisible();
+    await canvas.click({ position: { x: 120, y: 140 } });
+
+    expect(await getKonvaElementCountForPage(page, 1, '.field-group')).toBe(1);
 
     await expectNoHorizontalPageScroll(page, MOBILE_VIEWPORT.width);
   });
