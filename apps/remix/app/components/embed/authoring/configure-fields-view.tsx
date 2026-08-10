@@ -256,8 +256,8 @@ export const ConfigureFieldsView = ({
   useHotkeys(['ctrl+v', 'meta+v'], (evt) => onFieldPaste(evt));
   useHotkeys(['ctrl+d', 'meta+d'], (evt) => onFieldCopy(evt, { duplicate: true }));
 
-  const onMouseMove = useCallback(
-    (event: MouseEvent) => {
+  const onPointerMove = useCallback(
+    (event: PointerEvent) => {
       if (!selectedField) {
         return;
       }
@@ -274,8 +274,8 @@ export const ConfigureFieldsView = ({
     [isWithinPageBounds, selectedField],
   );
 
-  const onMouseClick = useCallback(
-    (event: MouseEvent) => {
+  const onPointerUp = useCallback(
+    (event: PointerEvent) => {
       if (!selectedField || !selectedRecipient) {
         return;
       }
@@ -330,6 +330,16 @@ export const ConfigureFieldsView = ({
     },
     [append, getPage, isWithinPageBounds, selectedField, selectedRecipient],
   );
+
+  /**
+   * Touch pointers fire `pointercancel` when the browser takes over the gesture,
+   * so disarm the selected field type and reset the preview instead of leaving a
+   * stale armed state behind.
+   */
+  const onPointerCancel = useCallback(() => {
+    setIsFieldWithinBounds(false);
+    setSelectedField(null);
+  }, []);
 
   const onFieldResize = useCallback(
     (node: HTMLElement, index: number) => {
@@ -397,15 +407,71 @@ export const ConfigureFieldsView = ({
 
   useEffect(() => {
     if (selectedField) {
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseClick);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerCancel);
     }
 
     return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseClick);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
     };
-  }, [onMouseClick, onMouseMove, selectedField]);
+  }, [onPointerUp, onPointerMove, onPointerCancel, selectedField]);
+
+  /**
+   * Disable touch panning on the document pages only while a field type is armed
+   * so that a tap or drag places the field instead of scrolling the document.
+   *
+   * The parent element is included because some viewers overlay the interactive
+   * layer as a sibling of the page element inside a shared wrapper.
+   *
+   * The viewer virtualises its pages, so the armed surfaces are re-scanned on
+   * every DOM mutation: a page that mounts after the field type is armed would
+   * otherwise keep panning the document out from under the finger.
+   */
+  useEffect(() => {
+    if (!selectedField) {
+      return;
+    }
+
+    const previousTouchActions = new Map<HTMLElement, string>();
+
+    const disableTouchPanning = ($surface: HTMLElement) => {
+      // Guarded so a re-scan never records our own 'none' as the value to restore.
+      if (previousTouchActions.has($surface)) {
+        return;
+      }
+
+      previousTouchActions.set($surface, $surface.style.touchAction);
+
+      $surface.style.touchAction = 'none';
+    };
+
+    const armTouchSurfaces = () => {
+      document.querySelectorAll<HTMLElement>(PDF_VIEWER_PAGE_SELECTOR).forEach(($page) => {
+        disableTouchPanning($page);
+
+        if ($page.parentElement) {
+          disableTouchPanning($page.parentElement);
+        }
+      });
+    };
+
+    armTouchSurfaces();
+
+    const observer = new MutationObserver(() => armTouchSurfaces());
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+
+      for (const [$surface, previousTouchAction] of previousTouchActions) {
+        $surface.style.touchAction = previousTouchAction;
+      }
+    };
+  }, [selectedField]);
 
   useEffect(() => {
     const observer = new MutationObserver((_mutations) => {
@@ -516,6 +582,7 @@ export const ConfigureFieldsView = ({
                   left: coords.x,
                   height: fieldBounds.current.height,
                   width: fieldBounds.current.width,
+                  touchAction: 'none',
                 }}
               >
                 <span className="text-[clamp(0.425rem,25cqw,0.825rem)]">{_(FRIENDLY_FIELD_TYPE[selectedField])}</span>

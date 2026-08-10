@@ -244,8 +244,8 @@ export const AddFieldsFormPartial = ({
     width: 0,
   });
 
-  const onMouseMove = useCallback(
-    (event: MouseEvent) => {
+  const onPointerMove = useCallback(
+    (event: PointerEvent) => {
       setIsFieldWithinBounds(
         isWithinPageBounds(event, PDF_VIEWER_PAGE_SELECTOR, fieldBounds.current.width, fieldBounds.current.height),
       );
@@ -258,8 +258,8 @@ export const AddFieldsFormPartial = ({
     [isWithinPageBounds],
   );
 
-  const onMouseClick = useCallback(
-    (event: MouseEvent) => {
+  const onPointerUp = useCallback(
+    (event: PointerEvent) => {
       if (!selectedField || !selectedSigner) {
         return;
       }
@@ -318,6 +318,16 @@ export const AddFieldsFormPartial = ({
     },
     [append, isWithinPageBounds, selectedField, selectedSigner, getPage],
   );
+
+  /**
+   * Touch pointers fire `pointercancel` when the browser takes over the gesture,
+   * so disarm the selected field type and reset the preview instead of leaving a
+   * stale armed state behind.
+   */
+  const onPointerCancel = useCallback(() => {
+    setIsFieldWithinBounds(false);
+    setSelectedField(null);
+  }, []);
 
   const onFieldResize = useCallback(
     (node: HTMLElement, index: number) => {
@@ -451,15 +461,54 @@ export const AddFieldsFormPartial = ({
 
   useEffect(() => {
     if (selectedField) {
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseClick);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerCancel);
     }
 
     return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseClick);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
     };
-  }, [onMouseClick, onMouseMove, selectedField]);
+  }, [onPointerUp, onPointerMove, onPointerCancel, selectedField]);
+
+  /**
+   * Disable touch panning on the document pages only while a field type is armed
+   * so that a tap or drag places the field instead of scrolling the document.
+   *
+   * The parent element is included because some viewers overlay the interactive
+   * layer as a sibling of the page element inside a shared wrapper.
+   */
+  useEffect(() => {
+    if (!selectedField) {
+      return;
+    }
+
+    const $touchSurfaces = new Set<HTMLElement>();
+
+    document.querySelectorAll<HTMLElement>(PDF_VIEWER_PAGE_SELECTOR).forEach(($page) => {
+      $touchSurfaces.add($page);
+
+      if ($page.parentElement) {
+        $touchSurfaces.add($page.parentElement);
+      }
+    });
+
+    const previousTouchActions = new Map<HTMLElement, string>();
+
+    for (const $surface of $touchSurfaces) {
+      previousTouchActions.set($surface, $surface.style.touchAction);
+
+      $surface.style.touchAction = 'none';
+    }
+
+    return () => {
+      for (const [$surface, previousTouchAction] of previousTouchActions) {
+        $surface.style.touchAction = previousTouchAction;
+      }
+    };
+  }, [selectedField]);
 
   useEffect(() => {
     const observer = new MutationObserver((_mutations) => {
@@ -589,6 +638,7 @@ export const AddFieldsFormPartial = ({
                     left: coords.x,
                     height: fieldBounds.current.height,
                     width: fieldBounds.current.width,
+                    touchAction: 'none',
                   }}
                 >
                   <span className="text-[clamp(0.425rem,25cqw,0.825rem)]">
@@ -667,7 +717,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.SIGNATURE)}
-                      onMouseDown={() => setSelectedField(FieldType.SIGNATURE)}
+                      onPointerDown={() => setSelectedField(FieldType.SIGNATURE)}
                       data-selected={selectedField === FieldType.SIGNATURE ? true : undefined}
                     >
                       <Card
@@ -691,7 +741,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.INITIALS)}
-                      onMouseDown={() => setSelectedField(FieldType.INITIALS)}
+                      onPointerDown={() => setSelectedField(FieldType.INITIALS)}
                       data-selected={selectedField === FieldType.INITIALS ? true : undefined}
                     >
                       <Card
@@ -716,7 +766,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.EMAIL)}
-                      onMouseDown={() => setSelectedField(FieldType.EMAIL)}
+                      onPointerDown={() => setSelectedField(FieldType.EMAIL)}
                       data-selected={selectedField === FieldType.EMAIL ? true : undefined}
                     >
                       <Card
@@ -741,7 +791,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.NAME)}
-                      onMouseDown={() => setSelectedField(FieldType.NAME)}
+                      onPointerDown={() => setSelectedField(FieldType.NAME)}
                       data-selected={selectedField === FieldType.NAME ? true : undefined}
                     >
                       <Card
@@ -766,7 +816,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.DATE)}
-                      onMouseDown={() => setSelectedField(FieldType.DATE)}
+                      onPointerDown={() => setSelectedField(FieldType.DATE)}
                       data-selected={selectedField === FieldType.DATE ? true : undefined}
                     >
                       <Card
@@ -791,7 +841,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.TEXT)}
-                      onMouseDown={() => setSelectedField(FieldType.TEXT)}
+                      onPointerDown={() => setSelectedField(FieldType.TEXT)}
                       data-selected={selectedField === FieldType.TEXT ? true : undefined}
                     >
                       <Card
@@ -816,7 +866,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.NUMBER)}
-                      onMouseDown={() => setSelectedField(FieldType.NUMBER)}
+                      onPointerDown={() => setSelectedField(FieldType.NUMBER)}
                       data-selected={selectedField === FieldType.NUMBER ? true : undefined}
                     >
                       <Card
@@ -841,7 +891,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.RADIO)}
-                      onMouseDown={() => setSelectedField(FieldType.RADIO)}
+                      onPointerDown={() => setSelectedField(FieldType.RADIO)}
                       data-selected={selectedField === FieldType.RADIO ? true : undefined}
                     >
                       <Card
@@ -866,7 +916,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.CHECKBOX)}
-                      onMouseDown={() => setSelectedField(FieldType.CHECKBOX)}
+                      onPointerDown={() => setSelectedField(FieldType.CHECKBOX)}
                       data-selected={selectedField === FieldType.CHECKBOX ? true : undefined}
                     >
                       <Card
@@ -891,7 +941,7 @@ export const AddFieldsFormPartial = ({
                       type="button"
                       className="group h-full w-full"
                       onClick={() => setSelectedField(FieldType.DROPDOWN)}
-                      onMouseDown={() => setSelectedField(FieldType.DROPDOWN)}
+                      onPointerDown={() => setSelectedField(FieldType.DROPDOWN)}
                       data-selected={selectedField === FieldType.DROPDOWN ? true : undefined}
                     >
                       <Card

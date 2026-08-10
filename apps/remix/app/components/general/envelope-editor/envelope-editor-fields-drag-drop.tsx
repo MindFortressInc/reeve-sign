@@ -151,12 +151,12 @@ export const EnvelopeEditorFieldPalette = ({
           disabled={isFieldsDisabled}
           key={field.type}
           type="button"
-          // Both onClick and onMouseDown arm placement (mousedown gives the drag
-          // its immediacy on a pointer device, click is what a tap reliably
-          // produces), so this runs twice per desktop interaction. Both effects
-          // are idempotent.
+          // Both onClick and onPointerDown arm placement (pointerdown gives the
+          // drag its immediacy on a pointer device, click is what a tap reliably
+          // produces), so this runs twice per interaction. Both effects are
+          // idempotent.
           onClick={() => onPickFieldType(field.type)}
-          onMouseDown={() => onPickFieldType(field.type)}
+          onPointerDown={() => onPickFieldType(field.type)}
           data-selected={armedFieldType === field.type ? true : undefined}
           data-testid={`field-palette-button-${field.type}`}
           className={cn(
@@ -216,8 +216,8 @@ export const EnvelopeEditorFieldPlacementLayer = ({
     width: 0,
   });
 
-  const onMouseMove = useCallback(
-    (event: MouseEvent) => {
+  const onPointerMove = useCallback(
+    (event: PointerEvent) => {
       setIsFieldWithinBounds(
         isWithinPageBounds(event, PDF_VIEWER_PAGE_SELECTOR, fieldBounds.current.width, fieldBounds.current.height),
       );
@@ -230,8 +230,8 @@ export const EnvelopeEditorFieldPlacementLayer = ({
     [isWithinPageBounds],
   );
 
-  const onMouseClick = useCallback(
-    (event: MouseEvent) => {
+  const onPointerUp = useCallback(
+    (event: PointerEvent) => {
       if (!armedFieldType || !selectedRecipientId || !selectedEnvelopeItemId) {
         return;
       }
@@ -291,6 +291,16 @@ export const EnvelopeEditorFieldPlacementLayer = ({
     ],
   );
 
+  /**
+   * Touch pointers fire `pointercancel` when the browser takes over the gesture,
+   * so disarm the selected field type and reset the preview instead of leaving a
+   * stale armed state behind.
+   */
+  const onPointerCancel = useCallback(() => {
+    setIsFieldWithinBounds(false);
+    onArmedFieldTypeChange(null);
+  }, [onArmedFieldTypeChange]);
+
   useEffect(() => {
     const observer = new MutationObserver((_mutations) => {
       const $page = document.querySelector(PDF_VIEWER_PAGE_SELECTOR);
@@ -317,15 +327,54 @@ export const EnvelopeEditorFieldPlacementLayer = ({
 
   useEffect(() => {
     if (armedFieldType) {
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseClick);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerCancel);
     }
 
     return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseClick);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
     };
-  }, [onMouseClick, onMouseMove, armedFieldType]);
+  }, [onPointerUp, onPointerMove, onPointerCancel, armedFieldType]);
+
+  /**
+   * Disable touch panning on the document pages only while a field type is armed
+   * so that a tap or drag places the field instead of scrolling the document.
+   *
+   * The parent element is included because the interactive konva layer overlays
+   * the page element as a sibling inside a shared wrapper.
+   */
+  useEffect(() => {
+    if (!armedFieldType) {
+      return;
+    }
+
+    const $touchSurfaces = new Set<HTMLElement>();
+
+    document.querySelectorAll<HTMLElement>(PDF_VIEWER_PAGE_SELECTOR).forEach(($page) => {
+      $touchSurfaces.add($page);
+
+      if ($page.parentElement) {
+        $touchSurfaces.add($page.parentElement);
+      }
+    });
+
+    const previousTouchActions = new Map<HTMLElement, string>();
+
+    for (const $surface of $touchSurfaces) {
+      previousTouchActions.set($surface, $surface.style.touchAction);
+
+      $surface.style.touchAction = 'none';
+    }
+
+    return () => {
+      for (const [$surface, previousTouchAction] of previousTouchActions) {
+        $surface.style.touchAction = previousTouchAction;
+      }
+    };
+  }, [armedFieldType]);
 
   const selectedRecipientStyles = useMemo(
     () => getRecipientColorStyles(getRecipientColorKey(selectedRecipientId ?? -1)),
@@ -352,6 +401,7 @@ export const EnvelopeEditorFieldPlacementLayer = ({
         left: coords.x,
         height: fieldBounds.current.height,
         width: fieldBounds.current.width,
+        touchAction: 'none',
       }}
     >
       <span className="text-[clamp(0.425rem,25cqw,0.825rem)]">{t(FRIENDLY_FIELD_TYPE[armedFieldType])}</span>
