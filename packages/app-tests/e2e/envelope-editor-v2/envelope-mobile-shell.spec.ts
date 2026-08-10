@@ -99,9 +99,10 @@ test.describe('document editor', () => {
     await expect(panelTrigger).toBeVisible();
     await panelTrigger.click();
 
-    // Scope to the sheet: the lg sidebar renders the same content from the same
-    // source, so it is present-but-hidden in the DOM and would otherwise make
-    // these locators ambiguous under Playwright's strict mode.
+    // Scope to the sheet so these locators name the surface under test and stay
+    // unambiguous under strict mode even if the lg sidebar is ever changed to
+    // mount below lg as well. Today it is not: the two render sites are
+    // mutually exclusive on `isBelowLg`.
     const panel = page.getByRole('dialog');
 
     await expect(panel.getByRole('heading', { name: 'Selected Recipient' })).toBeVisible();

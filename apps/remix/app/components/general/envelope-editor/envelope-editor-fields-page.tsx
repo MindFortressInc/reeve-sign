@@ -142,6 +142,10 @@ export const EnvelopeEditorFieldsPage = () => {
   }, []);
 
   const onDetectClick = () => {
+    // Below lg the button that got us here is inside the sheet; leaving the
+    // sheet up would stack a dialog on it and lock body scroll twice.
+    setIsMobileFieldsPanelOpen(false);
+
     if (!team.preferences.aiFeaturesEnabled) {
       setIsAiEnableDialogOpen(true);
       return;
@@ -161,17 +165,48 @@ export const EnvelopeEditorFieldsPage = () => {
 
   const selectedFieldFormId = editorFields.selectedField?.formId ?? null;
 
+  const knownFieldFormIds = useRef<Set<string>>(new Set());
+  const autoOpenedForFormId = useRef<string | null>(null);
+
   /**
-   * Below lg the settings form lives in a sheet, so selecting a field on the
+   * Below lg the settings form lives in a sheet, so tapping a field on the
    * document would otherwise change something the user cannot see. Open the
    * sheet on selection so tapping a field reveals its settings — the sidebar
    * equivalent at lg needs no such nudge because it is always on screen.
+   *
+   * Placement is the exception: `addField` selects the field it just created,
+   * so opening here would cover the document after every tap-to-place and
+   * break placing several fields in a row. A field that was not on the page
+   * before this render is a placement, not a tap — skip it. The sticky
+   * trigger bar stays on screen either way, so the panel is always one tap
+   * away for the field that was just placed.
    */
   useEffect(() => {
-    if (isBelowLg && selectedFieldFormId) {
-      setIsMobileFieldsPanelOpen(true);
+    const knownBeforeThisRender = knownFieldFormIds.current;
+
+    knownFieldFormIds.current = new Set(editorFields.localFields.map((field) => field.formId));
+
+    if (!isBelowLg || !selectedFieldFormId) {
+      // Selection cleared — the next tap on this same field is a new intent.
+      autoOpenedForFormId.current = null;
+      return;
     }
-  }, [isBelowLg, selectedFieldFormId]);
+
+    // `localFields` also changes on move/resize/meta edits. Acting on those
+    // would reopen a sheet the user just dismissed mid-drag, so each selection
+    // gets exactly one chance to open the panel.
+    if (autoOpenedForFormId.current === selectedFieldFormId) {
+      return;
+    }
+
+    autoOpenedForFormId.current = selectedFieldFormId;
+
+    if (!knownBeforeThisRender.has(selectedFieldFormId)) {
+      return;
+    }
+
+    setIsMobileFieldsPanelOpen(true);
+  }, [isBelowLg, selectedFieldFormId, editorFields.localFields]);
 
   const fieldsPanelContent = (
     <>
@@ -217,38 +252,22 @@ export const EnvelopeEditorFieldsPage = () => {
         />
 
         {editorConfig.fields?.allowAIDetection && (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-4 w-full"
-              onClick={onDetectClick}
-              disabled={envelope.status !== DocumentStatus.DRAFT}
-              title={
-                envelope.status !== DocumentStatus.DRAFT
-                  ? _(msg`You can only detect fields in draft envelopes`)
-                  : undefined
-              }
-            >
-              <SparklesIcon className="mr-2 -ml-1 h-4 w-4" />
-              <Trans>Detect with AI</Trans>
-            </Button>
-
-            <AiFieldDetectionDialog
-              open={isAiFieldDialogOpen}
-              onOpenChange={setIsAiFieldDialogOpen}
-              onComplete={onFieldDetectionComplete}
-              envelopeId={envelope.id}
-              teamId={envelope.teamId}
-            />
-
-            <AiFeaturesEnableDialog
-              open={isAiEnableDialogOpen}
-              onOpenChange={setIsAiEnableDialogOpen}
-              onEnabled={onAiFeaturesEnabled}
-            />
-          </>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-4 w-full"
+            onClick={onDetectClick}
+            disabled={envelope.status !== DocumentStatus.DRAFT}
+            title={
+              envelope.status !== DocumentStatus.DRAFT
+                ? _(msg`You can only detect fields in draft envelopes`)
+                : undefined
+            }
+          >
+            <SparklesIcon className="mr-2 -ml-1 h-4 w-4" />
+            <Trans>Detect with AI</Trans>
+          </Button>
         )}
       </section>
 
@@ -510,6 +529,29 @@ export const EnvelopeEditorFieldsPage = () => {
             <div className="mt-4 pb-2">{fieldsPanelContent}</div>
           </SheetContent>
         </Sheet>
+      )}
+
+      {/* The AI dialogs live at the root, NOT inside `fieldsPanelContent`.
+          Below lg that content is a child of the sheet, so a dialog rendered
+          from it would unmount the moment the sheet closes — taking an
+          in-flight detection with it. They are open-state controlled, so the
+          root is the natural home and nothing about lg changes. */}
+      {editorConfig.fields?.allowAIDetection && (
+        <>
+          <AiFieldDetectionDialog
+            open={isAiFieldDialogOpen}
+            onOpenChange={setIsAiFieldDialogOpen}
+            onComplete={onFieldDetectionComplete}
+            envelopeId={envelope.id}
+            teamId={envelope.teamId}
+          />
+
+          <AiFeaturesEnableDialog
+            open={isAiEnableDialogOpen}
+            onOpenChange={setIsAiEnableDialogOpen}
+            onEnabled={onAiFeaturesEnabled}
+          />
+        </>
       )}
     </div>
   );
