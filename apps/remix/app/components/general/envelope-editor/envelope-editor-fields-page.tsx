@@ -490,8 +490,11 @@ export const EnvelopeEditorFieldsPage = () => {
       {/* Right Section - Form Fields Panel.
           Rendered from a single `fieldsPanelContent`: at lg and above as the
           static sidebar, below lg inside a sheet reached from the bar above.
-          Two render sites, one implementation — the panel must not fork. */}
-      {hasFieldsPanel && (
+          Two render sites, one implementation — the panel must not fork.
+          The two sites are mutually exclusive on `isBelowLg`, not on CSS: a
+          `hidden lg:block` sidebar stays MOUNTED below lg, so the panel's
+          dialogs and field forms would mount twice against the same state. */}
+      {hasFieldsPanel && !isBelowLg && (
         <div className="sticky top-0 hidden h-full w-80 flex-shrink-0 overflow-y-auto border-border border-l bg-background py-4 lg:block">
           {fieldsPanelContent}
         </div>
@@ -499,7 +502,7 @@ export const EnvelopeEditorFieldsPage = () => {
 
       {hasFieldsPanel && isBelowLg && (
         <Sheet open={isMobileFieldsPanelOpen} onOpenChange={setIsMobileFieldsPanelOpen}>
-          <SheetContent position="bottom" size="lg" className="overflow-y-auto lg:hidden">
+          <SheetContent position="bottom" size="lg" className="overflow-y-auto">
             <SheetTitle>
               <Trans>Fields</Trans>
             </SheetTitle>
