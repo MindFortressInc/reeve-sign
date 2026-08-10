@@ -59,10 +59,11 @@ export const EnvelopeItemTitleInput = ({
 
   return (
     <div className="relative min-w-0 max-w-full shrink">
-      {/* Hidden span to measure text width */}
+      {/* Hidden span to measure text width. Positioned off to the left so its
+          natural width never expands the page's horizontal scroll area. */}
       <span
         ref={measureRef}
-        className="pointer-events-none absolute top-0 left-0 whitespace-nowrap font-medium text-gray-600 text-sm opacity-0"
+        className="pointer-events-none absolute top-0 right-full whitespace-nowrap font-medium text-gray-600 text-sm opacity-0"
         style={{ font: 'inherit' }}
       >
         {envelopeItemTitle || placeholder}
