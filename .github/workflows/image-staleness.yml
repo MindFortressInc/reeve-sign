@@ -89,7 +89,9 @@ jobs:
             else
               PIN_TAG="$PIN_REF"
               PIN_SHORT="${PIN_REF#sha-}"
-              if PIN_COMMIT="$(git rev-parse --verify --quiet "${PIN_SHORT}^{commit}")"; then
+              if ! printf '%s' "$PIN_SHORT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+                add_blind "the committed deploy pin ${PIN_TAG} is not a valid commit sha"
+              elif PIN_COMMIT="$(git rev-parse --verify --quiet "${PIN_SHORT}^{commit}")"; then
                 PIN_BEHIND="$(git rev-list --count "${PIN_COMMIT}..origin/main")"
                 PIN_TS="$(git log -1 --format=%ct "$PIN_COMMIT")"
                 PIN_AGE_DAYS=$(( (MAIN_TS - PIN_TS) / 86400 ))
@@ -281,16 +283,21 @@ jobs:
             HEADLINE="reeve-sign's image-staleness monitor is BLIND (not a staleness finding)"
           fi
           TEXT="${HEADLINE}: ${REASONS}. ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # Deliberately NOT `curl -f`: with -f curl discards the body on a
+          # non-2xx and exits non-zero, so under `pipefail` the step would die
+          # here and the operator would see a bare exit code instead of Slack's
+          # own diagnostic. Let the response check below decide instead.
           RESPONSE="$(jq -n --arg channel "$SLACK_ALERT_CHANNEL" --arg text "$TEXT" \
               '{channel: $channel, text: $text}' \
-            | curl -fsS -X POST https://slack.com/api/chat.postMessage \
+            | curl -sS -X POST https://slack.com/api/chat.postMessage \
                 -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
                 -H 'Content-type: application/json; charset=utf-8' \
-                --data @-)"
+                --data @- || true)"
+          [ -n "$RESPONSE" ] || RESPONSE='{}'
           # Slack answers 200 with {"ok":false} on failure, so the HTTP status
           # alone proves nothing.
-          if [ "$(jq -r '.ok' <<<"$RESPONSE")" != "true" ]; then
-            echo "::error::Slack rejected the alert: $(jq -r '.error // "unknown"' <<<"$RESPONSE")"
+          if [ "$(jq -r '.ok // false' <<<"$RESPONSE" 2>/dev/null)" != "true" ]; then
+            echo "::error::Slack rejected the alert (response: ${RESPONSE})"
             exit 1
           fi
 
