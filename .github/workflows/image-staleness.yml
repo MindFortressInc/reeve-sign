@@ -197,6 +197,18 @@ jobs:
           gh label create "$ISSUE_LABEL" --repo "$GITHUB_REPOSITORY" --force \
             --color D93F0B --description "reeve-sign's deployed image lags behind main"
 
+          # Title and remediation must match the incident. A blind probe is not
+          # a stale image: telling an on-call to "bump the pin" when the pin is
+          # already current sends them to do a pointless deploy while the real
+          # fault (a permission, a missing file) stays put.
+          if [ "$STALE" = "true" ]; then
+            TITLE="$ISSUE_TITLE"
+            REMEDY="To fix, follow the deploy runbook in \`docs/deployment-staleness.md\`, then bump the pin in \`deploy/compose.yml\` so this check clears."
+          else
+            TITLE="reeve-sign image-staleness monitor is BLIND"
+            REMEDY="**Nothing is known to be stale.** One or more probes could not run, so this alarm currently proves nothing either way. Fix the probe named in the reason above — do NOT deploy in response to this issue."
+          fi
+
           # Keep every heredoc line at this block's base indentation: YAML strips
           # only the common indent, so an extra-indented line reaches the shell
           # with leading spaces and GitHub renders it as a code block.
@@ -212,9 +224,7 @@ jobs:
           | Committed deploy pin (\`deploy/compose.yml\`) | \`${PIN_TAG:-unresolved}\` | ${PIN_BEHIND:-unknown} |
           | Newest published image (GHCR) | \`${PUBLISHED_TAG:-unresolved}\` | ${PUBLISHED_BEHIND:-unknown} |
 
-          To fix, follow the deploy runbook in \`docs/deployment-staleness.md\`, then bump the pin in \`deploy/compose.yml\` so this check clears.
-
-          **Blind ≠ stale.** If "Monitor blind" is true, at least one probe could not run and the reason above says which; that is its own incident — do not read it as an old image.
+          ${REMEDY}
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
@@ -223,10 +233,12 @@ jobs:
           NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$ISSUE_LABEL" \
             --state open --json number --jq '.[0].number // empty')"
           if [ -n "$NUMBER" ]; then
-            gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            # Retitle too: an issue opened as "blind" that becomes genuine
+            # staleness (or vice versa) must not keep the old headline.
+            gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
             echo "Updated existing issue #$NUMBER"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" \
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
               --label "$ISSUE_LABEL" --body "$BODY"
           fi
 
