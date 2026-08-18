@@ -127,7 +127,11 @@ jobs:
               PUB_SHORT="${NEWEST%% *}"
               PUB_AT="${NEWEST##* }"
               PUB_TAG="sha-${PUB_SHORT}"
-              if PUB_COMMIT="$(git rev-parse --verify --quiet "${PUB_SHORT}^{commit}")"; then
+              # Registry tags are attacker-shaped input in principle; a sha-*
+              # tag that is not hex is malformed, not a commit to look up.
+              if ! printf '%s' "$PUB_SHORT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+                add_blind "the newest published image tag ${PUB_TAG} is not a valid commit sha"
+              elif PUB_COMMIT="$(git rev-parse --verify --quiet "${PUB_SHORT}^{commit}")"; then
                 PUB_BEHIND="$(git rev-list --count "${PUB_COMMIT}..origin/main")"
                 if [ "$PUB_BEHIND" -gt "$COMMITS_THRESHOLD" ]; then
                   add_stale "the newest published image ${PUB_TAG} is ${PUB_BEHIND} commits behind main (threshold: ${COMMITS_THRESHOLD})"
@@ -144,6 +148,12 @@ jobs:
           ALERT=false
           if [ "$STALE" = true ] || [ "$BLIND" = true ]; then ALERT=true; fi
 
+          # State the alerting mode out loud. The issue/Slack steps only act on
+          # refs/heads/main; without this line a run that skipped them because
+          # of the ref looks identical to one that skipped them because it was
+          # clean — and an alarm you cannot tell apart from silence is the bug
+          # this whole ticket is about.
+          echo "::notice::ref=${GITHUB_REF} alerting=$([ "$GITHUB_REF" = refs/heads/main ] && echo enabled || echo 'disabled (non-main ref: diagnostic run, issue/Slack suppressed)')"
           echo "::notice::main=${MAIN_SHA} pin=${PIN_TAG:-n/a} pin_behind=${PIN_BEHIND:-n/a} published=${PUB_TAG:-n/a} pub_behind=${PUB_BEHIND:-n/a} stale=${STALE} blind=${BLIND}"
           echo "reasons: ${REASONS:-none}"
           {
@@ -157,7 +167,11 @@ jobs:
             echo "published_tag=${PUB_TAG}"
             echo "published_at=${PUB_AT}"
             echo "published_behind=${PUB_BEHIND}"
-            echo "reasons=${REASONS}"
+            # Delimiter form: REASONS embeds registry- and API-derived text, and
+            # a newline in a bare key=value would corrupt $GITHUB_OUTPUT.
+            echo "reasons<<__REASONS_EOF__"
+            echo "${REASONS}"
+            echo "__REASONS_EOF__"
           } >> "$GITHUB_OUTPUT"
 
       # The issue lifecycle is scoped to the default branch on purpose.
@@ -167,7 +181,7 @@ jobs:
       # alert while main was still red). The run's own pass/fail below is
       # unscoped, so a branch dispatch still gives a truthful red/green.
       - name: Create or update the staleness issue
-        if: steps.check.outputs.alert == 'true' && github.ref_name == github.event.repository.default_branch
+        if: steps.check.outputs.alert == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REASONS: ${{ steps.check.outputs.reasons }}
@@ -217,7 +231,7 @@ jobs:
           fi
 
       - name: Close the staleness issue when every probe passes
-        if: steps.check.outputs.alert != 'true' && github.ref_name == github.event.repository.default_branch
+        if: steps.check.outputs.alert != 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PIN_TAG: ${{ steps.check.outputs.pin_tag }}
@@ -237,7 +251,7 @@ jobs:
       # standalone-curl shape as deploy/systemd/alert-slack.sh and
       # reeve-services' prod-health.yml.
       - name: Notify Slack
-        if: steps.check.outputs.alert == 'true' && github.ref_name == github.event.repository.default_branch
+        if: steps.check.outputs.alert == 'true' && github.ref == 'refs/heads/main'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_ALERT_CHANNEL: ${{ secrets.SLACK_ALERT_CHANNEL }}

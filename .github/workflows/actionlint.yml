@@ -40,4 +40,4 @@ jobs:
         # new release's added rules turn an unrelated PR red.
         run: |
           docker run --rm -v "${PWD}:/repo" --workdir /repo \
-            rhysd/actionlint:1.7.7 -color
+            rhysd/actionlint:1.7.12 -color
