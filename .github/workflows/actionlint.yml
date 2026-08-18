@@ -1,0 +1,43 @@
+name: Lint workflows
+
+# DEV-8818: image-staleness.yml sat broken for 14 days because nothing in this
+# repo validates workflow files. The failure mode is silent by construction —
+# an uncompilable workflow produces a run with ZERO jobs, so no check run is
+# created and the PR reads as "no CI configured" rather than red.
+#
+# `yaml.safe_load` cannot catch it: the YAML is well-formed, it is invalid as
+# an *Actions workflow* (a context used where it is not available). actionlint
+# is the check that distinguishes them.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        # Pinned image: the linter's own version must not drift silently, or a
+        # new release's added rules turn an unrelated PR red.
+        run: |
+          docker run --rm -v "${PWD}:/repo" --workdir /repo \
+            rhysd/actionlint:1.7.7 -color
