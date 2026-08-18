@@ -78,8 +78,8 @@ jobs:
           if [ ! -f deploy/compose.yml ]; then
             add_blind "deploy/compose.yml is missing — the deploy-pin check cannot run"
           else
-            PIN_REF="$(sed -n 's#^[[:space:]]*image:[[:space:]]*ghcr\.io/[^:]*reeve-sign:\([^[:space:]]*\).*#\1#p' \
-              deploy/compose.yml | head -1)"
+            PIN_REF="$(sed -n '/^[[:space:]]*image:[[:space:]]*ghcr\.io\/[^:]*reeve-sign:/{s#^[[:space:]]*image:[[:space:]]*ghcr\.io/[^:]*reeve-sign:\([^[:space:]]*\).*#\1#p;q;}' \
+              deploy/compose.yml)"
             if [ -z "$PIN_REF" ]; then
               add_blind "no ghcr.io/…/reeve-sign image pin found in deploy/compose.yml — the deploy-pin check cannot run"
             elif [ "${PIN_REF#sha-}" = "$PIN_REF" ]; then
@@ -116,7 +116,14 @@ jobs:
           PUB_AT=""
           PUB_BEHIND=""
           GHCR_ERR=""
-          if VERSIONS_JSON="$(gh api "/orgs/${OWNER}/packages/container/reeve-sign/versions?per_page=100" 2>/tmp/ghcr.err)"; then
+          PKG_QUERY="packages/container/reeve-sign/versions?per_page=100"
+          VERSIONS_JSON=""
+          if ! VERSIONS_JSON="$(gh api "/orgs/${OWNER}/${PKG_QUERY}" 2>/tmp/ghcr.err)"; then
+            # /orgs/ 404s when the owner is a personal account; fall back to
+            # /users/ before declaring the probe blind.
+            VERSIONS_JSON="$(gh api "/users/${OWNER}/${PKG_QUERY}" 2>>/tmp/ghcr.err)" || VERSIONS_JSON=""
+          fi
+          if [ -n "$VERSIONS_JSON" ]; then
             NEWEST="$(jq -r '
               [ .[] | select((.metadata.container.tags // []) | any(startswith("sha-"))) ]
               | sort_by(.created_at) | reverse | .[0] // empty
