@@ -86,7 +86,15 @@ const placeFieldOnPdf = async (root: Page, fieldName: FieldButtonName, position:
 };
 
 const selectRecipientInFieldsStep = async (root: Page, recipientIdentifier: string) => {
-  await root.locator('button[role="combobox"]').click();
+  // The fields step mounts two recipient selectors at every viewport: the mobile
+  // toolbar's (`lg:hidden`, DEV-8186) and the desktop sidebar's. `lg:hidden` only
+  // hides via CSS, so the element stays in the DOM and an unscoped
+  // `button[role="combobox"]` matches both, tripping Playwright strict mode.
+  // Exactly one is ever visible, so scope to that one rather than to a viewport.
+  const recipientSelector = root.locator('button[role="combobox"]').filter({ visible: true });
+
+  await expect(recipientSelector).toHaveCount(1);
+  await recipientSelector.click();
   await root.getByText(recipientIdentifier).click();
 };
 
