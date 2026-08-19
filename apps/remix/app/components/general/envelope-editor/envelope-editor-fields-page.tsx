@@ -233,14 +233,18 @@ export const EnvelopeEditorFieldsPage = () => {
           <Trans>Selected Recipient</Trans>
         </h3>
 
-        <EnvelopeRecipientSelector
-          selectedRecipient={editorFields.selectedRecipient}
-          onSelectedRecipientChange={(recipient) => editorFields.setSelectedRecipient(recipient.id)}
-          recipients={envelope.recipients}
-          fields={envelope.fields}
-          className="w-full"
-          align="end"
-        />
+        {/* Mirrors `envelope-editor-mobile-recipient-selector` so a test can name
+            either selector without depending on DOM order. */}
+        <div data-testid="envelope-editor-desktop-recipient-selector">
+          <EnvelopeRecipientSelector
+            selectedRecipient={editorFields.selectedRecipient}
+            onSelectedRecipientChange={(recipient) => editorFields.setSelectedRecipient(recipient.id)}
+            recipients={envelope.recipients}
+            fields={envelope.fields}
+            className="w-full"
+            align="end"
+          />
+        </div>
 
         {editorFields.selectedRecipient &&
           !canRecipientFieldsBeModified(editorFields.selectedRecipient, envelope.fields) && (

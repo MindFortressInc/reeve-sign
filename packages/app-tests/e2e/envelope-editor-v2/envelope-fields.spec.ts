@@ -90,8 +90,14 @@ const selectRecipientInFieldsStep = async (root: Page, recipientIdentifier: stri
   // toolbar's (`lg:hidden`, DEV-8186) and the desktop sidebar's. `lg:hidden` only
   // hides via CSS, so the element stays in the DOM and an unscoped
   // `button[role="combobox"]` matches both, tripping Playwright strict mode.
-  // Exactly one is ever visible, so scope to that one rather than to a viewport.
-  const recipientSelector = root.locator('button[role="combobox"]').filter({ visible: true });
+  //
+  // Anchor on the two selectors by name so we never depend on DOM order, then
+  // scope to whichever is visible: exactly one is, at any viewport (desktop ->
+  // sidebar visible, toolbar CSS-hidden; mobile -> toolbar visible, sidebar
+  // unmounted). Scoping to only the desktop one would match nothing below `lg`.
+  const recipientSelector = root
+    .locator('[data-testid$="recipient-selector"] button[role="combobox"]')
+    .filter({ visible: true });
 
   await expect(recipientSelector).toHaveCount(1);
   await recipientSelector.click();
