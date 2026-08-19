@@ -39,7 +39,16 @@ for path in metadata:
         print(f"{path}: top level must be a mapping, got {type(data).__name__}")
         status = 1
         continue
-    runs = data.get("runs") or {}
+    # `data.get("runs") or {}` coerced a falsy NON-mapping (`runs: []`, `""`,
+    # `0`, `null`) into `{}`, which then passed the mapping check below and the
+    # file was accepted as if it simply had no steps — the malformed metadata
+    # this validator exists to catch bypassed it (CR PR #33). Keep the original
+    # value so the type check sees it, while still treating an ABSENT `runs`
+    # key as a skip rather than a finding: a metadata file with no `runs` at
+    # all is not a composite action, which is not an error.
+    if "runs" not in data:
+        continue
+    runs = data["runs"]
     if not isinstance(runs, dict):
         print(f"{path}: `runs` must be a mapping, got {type(runs).__name__}")
         status = 1
