@@ -25,15 +25,40 @@ if not metadata:
     sys.exit(0)
 
 for path in metadata:
-    data = yaml.safe_load(path.read_text()) or {}
+    # A malformed file is a lint FINDING, not a crash: an unhandled YAMLError
+    # or AttributeError aborts the whole run on the first bad file, so the
+    # remaining actions go unchecked and the log shows a traceback instead of
+    # the offending path (CR CLI #33).
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as exc:
+        print(f"{path}: not valid YAML: {exc}")
+        status = 1
+        continue
+    if not isinstance(data, dict):
+        print(f"{path}: top level must be a mapping, got {type(data).__name__}")
+        status = 1
+        continue
     runs = data.get("runs") or {}
+    if not isinstance(runs, dict):
+        print(f"{path}: `runs` must be a mapping, got {type(runs).__name__}")
+        status = 1
+        continue
     steps = runs.get("steps")
     if steps is None:
+        continue
+    if not isinstance(steps, list):
+        print(f"{path}: `runs.steps` must be a list, got {type(steps).__name__}")
+        status = 1
         continue
     if runs.get("using") != "composite":
         print(f"{path}: runs.steps requires `using: composite`, got {runs.get('using')!r}")
         status = 1
     for i, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            print(f"{path}: step {i} must be a mapping, got {type(step).__name__}")
+            status = 1
+            continue
         where = f"{path}: step {i} ({step.get('name', 'unnamed')})"
         has_run, has_uses = "run" in step, "uses" in step
         if has_run and has_uses:

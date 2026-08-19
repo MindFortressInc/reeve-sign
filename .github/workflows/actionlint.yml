@@ -14,11 +14,13 @@ on:
     paths:
       - '.github/workflows/**'
       - '.github/actions/**'
+      - '.github/scripts/**'
   push:
     branches: [main]
     paths:
       - '.github/workflows/**'
       - '.github/actions/**'
+      - '.github/scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -42,11 +44,19 @@ jobs:
           docker run --rm -v "${PWD}:/repo" --workdir /repo \
             rhysd/actionlint:1.7.12 -color
 
+      - name: Set up Python
+        # Pinned interpreter, not the runner's system python3: the image's
+        # default version moves without notice, which is the same silent-drift
+        # class DEV-8818 exists to close (CR CLI #33).
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Lint composite-action steps
         # actionlint reads the referenced local-action METADATA but does not
         # lint the `runs.steps` bodies under `.github/actions/**` (CR PR #33).
         # This workflow triggers on that path, so without this the filter
         # promises coverage the linter does not deliver.
         run: |
-          python3 -m pip install --quiet pyyaml
-          python3 .github/scripts/lint_composite_actions.py
+          python -m pip install --quiet pyyaml
+          python .github/scripts/lint_composite_actions.py
