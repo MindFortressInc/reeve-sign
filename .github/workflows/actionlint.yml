@@ -41,3 +41,12 @@ jobs:
         run: |
           docker run --rm -v "${PWD}:/repo" --workdir /repo \
             rhysd/actionlint:1.7.12 -color
+
+      - name: Lint composite-action steps
+        # actionlint reads the referenced local-action METADATA but does not
+        # lint the `runs.steps` bodies under `.github/actions/**` (CR PR #33).
+        # This workflow triggers on that path, so without this the filter
+        # promises coverage the linter does not deliver.
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 .github/scripts/lint_composite_actions.py
