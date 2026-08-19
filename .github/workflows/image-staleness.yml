@@ -78,10 +78,26 @@ jobs:
           if [ ! -f deploy/compose.yml ]; then
             add_blind "deploy/compose.yml is missing — the deploy-pin check cannot run"
           else
-            PIN_REF="$(sed -n '/^[[:space:]]*image:[[:space:]]*ghcr\.io\/[^:]*reeve-sign:/{s#^[[:space:]]*image:[[:space:]]*ghcr\.io/[^:]*reeve-sign:\([^[:space:]]*\).*#\1#p;q;}' \
-              deploy/compose.yml)"
-            if [ -z "$PIN_REF" ]; then
+            # Take the whole image VALUE first, then classify it. Matching the
+            # tag straight out of the line silently missed two real shapes —
+            # a quoted value (`image: "ghcr.io/…"`) and a digest pin
+            # (`…/reeve-sign@sha256:…`) — and both fell through to the "no pin
+            # found" blind reason, which reads as "nobody pinned anything"
+            # when in fact the pin was there and we simply could not parse it
+            # (CR CLI #33). tr strips quotes by octal (\042 = ", \047 = ');
+            # awk's $1 drops any trailing inline comment.
+            PIN_IMAGE="$(sed -n 's#^[[:space:]]*image:[[:space:]]*##p' deploy/compose.yml \
+              | tr -d '\042\047' \
+              | awk '/ghcr\.io\/[^[:space:]]*reeve-sign[:@]/ { print $1; exit }')"
+            PIN_REF="${PIN_IMAGE##*:}"
+            if [ -z "$PIN_IMAGE" ]; then
               add_blind "no ghcr.io/…/reeve-sign image pin found in deploy/compose.yml — the deploy-pin check cannot run"
+            elif [ "${PIN_IMAGE#*@sha256:}" != "$PIN_IMAGE" ]; then
+              # A registry digest is immutable, so this is not drift-prone the
+              # way a moving tag is — but it names a MANIFEST, and nothing in
+              # the repo maps it back to a commit. We cannot measure distance
+              # from main, so it is a blind spot with its own reason.
+              add_blind "deploy/compose.yml pins the registry digest '@sha256:${PIN_IMAGE##*@sha256:}' instead of an immutable sha-* tag — the deploy-pin check cannot resolve a commit"
             elif [ "${PIN_REF#sha-}" = "$PIN_REF" ]; then
               # A moving tag (:dev, :latest) tells us nothing about which commit
               # is deployed. That is a blind spot, not a clean bill of health.

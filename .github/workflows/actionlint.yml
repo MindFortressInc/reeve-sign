@@ -58,5 +58,7 @@ jobs:
         # This workflow triggers on that path, so without this the filter
         # promises coverage the linter does not deliver.
         run: |
-          python -m pip install --quiet pyyaml
+          # Pinned like the interpreter above: an unpinned pyyaml lets a
+          # dependency release change what this gate accepts (CR CLI #33).
+          python -m pip install --quiet 'pyyaml==6.0.2'
           python .github/scripts/lint_composite_actions.py
