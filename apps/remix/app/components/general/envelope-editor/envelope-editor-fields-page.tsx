@@ -177,6 +177,13 @@ export const EnvelopeEditorFieldsPage = () => {
    */
   const [armedFieldType, setArmedFieldType] = useState<FieldType | null>(null);
 
+  // Mirror the armed state into the shared editor state so the canvas renderer
+  // can react to it. Derived from `armedFieldType` in one place so the two
+  // cannot drift.
+  useEffect(() => {
+    editorFields.setIsPlacementArmed(armedFieldType !== null);
+  }, [armedFieldType]);
+
   const onPickFieldType = (fieldType: FieldType) => {
     setArmedFieldType(fieldType);
 

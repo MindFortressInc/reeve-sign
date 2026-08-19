@@ -78,5 +78,13 @@ test.describe('document editor', () => {
     await canvas.click({ position: { x: 150, y: 150 } });
 
     await expect.poll(async () => await getFieldCountForFirstPage(page)).toBe(1);
+
+    // Placing a field selects it, so its settings render immediately in the
+    // desktop sidebar and it can be configured without a second click to select
+    // it first. Counting the field is not enough on its own: DEV-8929 shipped a
+    // placed-but-deselected field, which looks identical by count and leaves the
+    // settings panel empty — unusable to an agent driving the editor, and an
+    // extra click for a person.
+    await expect(page.locator('[data-testid="field-form-fontSize"]')).toBeVisible();
   });
 });
