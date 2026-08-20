@@ -1,0 +1,64 @@
+name: Lint workflows
+
+# DEV-8818: image-staleness.yml sat broken for 14 days because nothing in this
+# repo validates workflow files. The failure mode is silent by construction —
+# an uncompilable workflow produces a run with ZERO jobs, so no check run is
+# created and the PR reads as "no CI configured" rather than red.
+#
+# `yaml.safe_load` cannot catch it: the YAML is well-formed, it is invalid as
+# an *Actions workflow* (a context used where it is not available). actionlint
+# is the check that distinguishes them.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        # Pinned image: the linter's own version must not drift silently, or a
+        # new release's added rules turn an unrelated PR red.
+        run: |
+          docker run --rm -v "${PWD}:/repo" --workdir /repo \
+            rhysd/actionlint:1.7.12 -color
+
+      - name: Set up Python
+        # Pinned interpreter, not the runner's system python3: the image's
+        # default version moves without notice, which is the same silent-drift
+        # class DEV-8818 exists to close (CR CLI #33).
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Lint composite-action steps
+        # actionlint reads the referenced local-action METADATA but does not
+        # lint the `runs.steps` bodies under `.github/actions/**` (CR PR #33).
+        # This workflow triggers on that path, so without this the filter
+        # promises coverage the linter does not deliver.
+        run: |
+          # Pinned like the interpreter above: an unpinned pyyaml lets a
+          # dependency release change what this gate accepts (CR CLI #33).
+          python -m pip install --quiet 'pyyaml==6.0.2'
+          python .github/scripts/lint_composite_actions.py

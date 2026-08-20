@@ -1,9 +1,28 @@
 name: Image staleness monitor
 
-# DEV-5793 Option 3 (the floor): alert when the newest reeve-sign image
-# published to GHCR falls behind main. See docs/deployment-staleness.md for
-# the deploy runbook and this monitor's known blind spot (it compares merged
-# vs PUBLISHED, not published vs RUNNING on the box).
+# DEV-5793 Option 3 (the floor): alert when reeve-sign's deployed image falls
+# behind main. See docs/deployment-staleness.md for the deploy runbook.
+#
+# DEV-8818 — this workflow shipped BROKEN and stayed broken for 14 days: it
+# gated a step on `secrets.SLACK_WEBHOOK_URL` inside an `if:`, where the
+# `secrets` context is not available. That does not evaluate to empty, it
+# fails to COMPILE, and an uncompilable workflow:
+#   - emits a zero-job `startup_failure` run on every push, regardless of the
+#     `on:` block (52 runs, 100% failure, all `push`, none scheduled);
+#   - never registers its cron, so the alarm never once fired.
+# `yaml.safe_load` cannot catch that class; `actionlint` can, and now runs in
+# CI (.github/workflows/actionlint.yml) so it cannot recur silently.
+#
+# Two independent probes, deliberately kept separate because they fail for
+# different reasons and mean different things:
+#   1. PIN vs main (primary)       — the committed deploy/compose.yml pin,
+#      in-repo since DEV-5838. Needs NO credentials, and tracks what is
+#      supposed to be RUNNING rather than merely what was published. This is
+#      the probe that would have caught the DEV-8817 incident.
+#   2. PUBLISHED vs main (secondary) — the newest sha-* image in GHCR. Needs
+#      package read access; when it cannot read, it reports BLINDNESS, never
+#      staleness. "The monitor cannot see" and "the image is old" are
+#      different incidents and must not share a message.
 
 on:
   schedule:
@@ -23,8 +42,9 @@ env:
 
 jobs:
   check:
-    name: Compare newest published image against main
+    name: Compare the deployed image against main
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout (full history, needed to resolve image shas)
         uses: actions/checkout@v4
@@ -32,129 +52,284 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Find newest published sha-* image and measure drift
+      - name: Measure drift
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
-          # Newest GHCR package version carrying an immutable sha-<shortsha>
-          # tag (publish.yml always pushes one alongside the moving tag).
-          VERSIONS_JSON="$(gh api \
-            "/orgs/MindFortressInc/packages/container/reeve-sign/versions?per_page=100" \
-            2>/dev/null || echo '[]')"
-          NEWEST="$(jq -r '
-            [ .[] | select((.metadata.container.tags // []) | any(startswith("sha-"))) ]
-            | sort_by(.created_at) | reverse | .[0] // empty
-            | ((.metadata.container.tags | map(select(startswith("sha-")))[0]
-                | sub("^sha-"; "")) + " " + .created_at)
-          ' <<<"$VERSIONS_JSON")"
-
           STALE=false
+          BLIND=false
           REASONS=""
-          add_reason() { REASONS="${REASONS:+${REASONS}; }$1"; STALE=true; }
+          add_stale() { REASONS="${REASONS:+${REASONS}; }$1"; STALE=true; }
+          add_blind() { REASONS="${REASONS:+${REASONS}; }$1"; BLIND=true; }
 
-          SHORT_SHA="(unknown)"
-          PUBLISHED_AT="(unknown)"
-          BEHIND=""
-          if [ -z "$NEWEST" ]; then
-            add_reason "no sha-* tagged image version found in GHCR (package unreadable or never published)"
+          MAIN_SHA="$(git rev-parse --short origin/main)"
+          MAIN_TS="$(git log -1 --format=%ct origin/main)"
+
+          # ---------- Probe 1 (PRIMARY): committed deploy pin vs main --------
+          # deploy/compose.yml is the in-repo source of truth for what the box
+          # is meant to run (DEV-5838). No registry, no credentials, no SSH.
+          PIN_TAG=""
+          PIN_BEHIND=""
+          PIN_AGE_DAYS=""
+          if [ ! -f deploy/compose.yml ]; then
+            add_blind "deploy/compose.yml is missing — the deploy-pin check cannot run"
           else
-            SHORT_SHA="${NEWEST%% *}"
-            PUBLISHED_AT="${NEWEST##* }"
-            if IMAGE_SHA="$(git rev-parse --verify --quiet "${SHORT_SHA}^{commit}")"; then
-              BEHIND="$(git rev-list --count "${IMAGE_SHA}..origin/main")"
-              MAIN_TS="$(git log -1 --format=%ct origin/main)"
-              PUB_TS="$(date -d "$PUBLISHED_AT" +%s)"
-              AGE_DAYS=$(( (MAIN_TS - PUB_TS) / 86400 ))
-              if [ "$BEHIND" -gt "$COMMITS_THRESHOLD" ]; then
-                add_reason "main is ${BEHIND} commits ahead of the newest published image sha-${SHORT_SHA} (threshold: ${COMMITS_THRESHOLD})"
-              fi
-              if [ "$AGE_DAYS" -gt "$DAYS_THRESHOLD" ]; then
-                add_reason "newest image was published ${AGE_DAYS} days before the latest main commit (threshold: ${DAYS_THRESHOLD} days)"
-              fi
+            # Take the whole image VALUE first, then classify it. Matching the
+            # tag straight out of the line silently missed two real shapes —
+            # a quoted value (`image: "ghcr.io/…"`) and a digest pin
+            # (`…/reeve-sign@sha256:…`) — and both fell through to the "no pin
+            # found" blind reason, which reads as "nobody pinned anything"
+            # when in fact the pin was there and we simply could not parse it
+            # (CR CLI #33). tr strips quotes by octal (\042 = ", \047 = ');
+            # awk's $1 drops any trailing inline comment.
+            PIN_IMAGE="$(sed -n 's#^[[:space:]]*image:[[:space:]]*##p' deploy/compose.yml \
+              | tr -d '\042\047' \
+              | awk '/ghcr\.io\/[^[:space:]]*reeve-sign[:@]/ { print $1; exit }')"
+            PIN_REF="${PIN_IMAGE##*:}"
+            if [ -z "$PIN_IMAGE" ]; then
+              add_blind "no ghcr.io/…/reeve-sign image pin found in deploy/compose.yml — the deploy-pin check cannot run"
+            elif [ "${PIN_IMAGE#*@sha256:}" != "$PIN_IMAGE" ]; then
+              # A registry digest is immutable, so this is not drift-prone the
+              # way a moving tag is — but it names a MANIFEST, and nothing in
+              # the repo maps it back to a commit. We cannot measure distance
+              # from main, so it is a blind spot with its own reason.
+              add_blind "deploy/compose.yml pins the registry digest '@sha256:${PIN_IMAGE##*@sha256:}' instead of an immutable sha-* tag — the deploy-pin check cannot resolve a commit"
+            elif [ "${PIN_REF#sha-}" = "$PIN_REF" ]; then
+              # A moving tag (:dev, :latest) tells us nothing about which commit
+              # is deployed. That is a blind spot, not a clean bill of health.
+              add_blind "deploy/compose.yml pins the moving tag '${PIN_REF}' instead of an immutable sha-* tag — the deploy-pin check cannot resolve a commit"
             else
-              add_reason "newest published image tag sha-${SHORT_SHA} does not resolve to any commit in this repository"
+              PIN_TAG="$PIN_REF"
+              PIN_SHORT="${PIN_REF#sha-}"
+              if ! printf '%s' "$PIN_SHORT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+                add_blind "the committed deploy pin ${PIN_TAG} is not a valid commit sha"
+              elif PIN_COMMIT="$(git rev-parse --verify --quiet "${PIN_SHORT}^{commit}")"; then
+                PIN_BEHIND="$(git rev-list --count "${PIN_COMMIT}..origin/main")"
+                PIN_TS="$(git log -1 --format=%ct "$PIN_COMMIT")"
+                PIN_AGE_DAYS=$(( (MAIN_TS - PIN_TS) / 86400 ))
+                if [ "$PIN_BEHIND" -gt "$COMMITS_THRESHOLD" ]; then
+                  add_stale "the committed deploy pin ${PIN_TAG} is ${PIN_BEHIND} commits behind main (threshold: ${COMMITS_THRESHOLD})"
+                fi
+                if [ "$PIN_AGE_DAYS" -gt "$DAYS_THRESHOLD" ]; then
+                  add_stale "the committed deploy pin ${PIN_TAG} is ${PIN_AGE_DAYS} days older than main's head (threshold: ${DAYS_THRESHOLD} days)"
+                fi
+              else
+                add_blind "the committed deploy pin ${PIN_TAG} does not resolve to any commit in this repository"
+              fi
             fi
           fi
 
-          echo "stale=${STALE}, short_sha=${SHORT_SHA}, published_at=${PUBLISHED_AT}, behind=${BEHIND:-n/a}, reasons=${REASONS:-none}"
+          # ---------- Probe 2 (SECONDARY): newest published image vs main ----
+          # An unreadable package makes this probe BLIND. It must never be
+          # reported as "the image is stale" — that is what the pre-DEV-8818
+          # `2>/dev/null || echo '[]'` did, turning any auth failure into a
+          # confident, wrong staleness alert.
+          PUB_TAG=""
+          PUB_AT=""
+          PUB_BEHIND=""
+          GHCR_ERR=""
+          PKG_QUERY="packages/container/reeve-sign/versions?per_page=100"
+          VERSIONS_JSON=""
+          if ! VERSIONS_JSON="$(gh api "/orgs/${OWNER}/${PKG_QUERY}" 2>/tmp/ghcr.err)"; then
+            # /orgs/ 404s when the owner is a personal account; fall back to
+            # /users/ before declaring the probe blind.
+            VERSIONS_JSON="$(gh api "/users/${OWNER}/${PKG_QUERY}" 2>>/tmp/ghcr.err)" || VERSIONS_JSON=""
+          fi
+          if [ -n "$VERSIONS_JSON" ]; then
+            NEWEST="$(jq -r '
+              [ .[] | select((.metadata.container.tags // []) | any(startswith("sha-"))) ]
+              | sort_by(.created_at) | reverse | .[0] // empty
+              | ((.metadata.container.tags | map(select(startswith("sha-")))[0]
+                  | sub("^sha-"; "")) + " " + .created_at)
+            ' <<<"$VERSIONS_JSON")"
+            if [ -z "$NEWEST" ]; then
+              add_blind "the GHCR package is readable but holds no sha-* tagged version — cannot tell what is published"
+            else
+              PUB_SHORT="${NEWEST%% *}"
+              PUB_AT="${NEWEST##* }"
+              PUB_TAG="sha-${PUB_SHORT}"
+              # Registry tags are attacker-shaped input in principle; a sha-*
+              # tag that is not hex is malformed, not a commit to look up.
+              if ! printf '%s' "$PUB_SHORT" | grep -Eq '^[0-9a-f]{7,40}$'; then
+                add_blind "the newest published image tag ${PUB_TAG} is not a valid commit sha"
+              elif PUB_COMMIT="$(git rev-parse --verify --quiet "${PUB_SHORT}^{commit}")"; then
+                PUB_BEHIND="$(git rev-list --count "${PUB_COMMIT}..origin/main")"
+                if [ "$PUB_BEHIND" -gt "$COMMITS_THRESHOLD" ]; then
+                  add_stale "the newest published image ${PUB_TAG} is ${PUB_BEHIND} commits behind main (threshold: ${COMMITS_THRESHOLD})"
+                fi
+              else
+                add_blind "the newest published image tag ${PUB_TAG} does not resolve to any commit in this repository"
+              fi
+            fi
+          else
+            GHCR_ERR="$(tr '\n' ' ' < /tmp/ghcr.err | cut -c1-300)"
+            add_blind "cannot read the GHCR package versions API as GITHUB_TOKEN (${GHCR_ERR:-no error text}) — the published-image check is BLIND, this is NOT a staleness finding"
+          fi
+
+          ALERT=false
+          if [ "$STALE" = true ] || [ "$BLIND" = true ]; then ALERT=true; fi
+
+          # State the alerting mode out loud. The issue/Slack steps only act on
+          # refs/heads/main; without this line a run that skipped them because
+          # of the ref looks identical to one that skipped them because it was
+          # clean — and an alarm you cannot tell apart from silence is the bug
+          # this whole ticket is about.
+          echo "::notice::ref=${GITHUB_REF} alerting=$([ "$GITHUB_REF" = refs/heads/main ] && echo enabled || echo 'disabled (non-main ref: diagnostic run, issue/Slack suppressed)')"
+          echo "::notice::main=${MAIN_SHA} pin=${PIN_TAG:-n/a} pin_behind=${PIN_BEHIND:-n/a} published=${PUB_TAG:-n/a} pub_behind=${PUB_BEHIND:-n/a} stale=${STALE} blind=${BLIND}"
+          echo "reasons: ${REASONS:-none}"
           {
+            echo "alert=${ALERT}"
             echo "stale=${STALE}"
-            echo "short_sha=${SHORT_SHA}"
-            echo "published_at=${PUBLISHED_AT}"
-            echo "behind=${BEHIND}"
-            echo "reasons=${REASONS}"
+            echo "blind=${BLIND}"
+            echo "main_sha=${MAIN_SHA}"
+            echo "pin_tag=${PIN_TAG}"
+            echo "pin_behind=${PIN_BEHIND}"
+            echo "pin_age_days=${PIN_AGE_DAYS}"
+            echo "published_tag=${PUB_TAG}"
+            echo "published_at=${PUB_AT}"
+            echo "published_behind=${PUB_BEHIND}"
+            # Delimiter form: REASONS embeds registry- and API-derived text, and
+            # a newline in a bare key=value would corrupt $GITHUB_OUTPUT.
+            echo "reasons<<__REASONS_EOF__"
+            echo "${REASONS}"
+            echo "__REASONS_EOF__"
           } >> "$GITHUB_OUTPUT"
 
+      # The issue lifecycle is scoped to the default branch on purpose.
+      # A workflow_dispatch from a feature branch is a diagnostic, and must not
+      # be able to open — or, far worse, CLOSE — main's alarm: reeve-services
+      # hit exactly that (a branch dispatch closed a live tenant-isolation
+      # alert while main was still red). The run's own pass/fail below is
+      # unscoped, so a branch dispatch still gives a truthful red/green.
       - name: Create or update the staleness issue
-        if: steps.check.outputs.stale == 'true'
+        if: steps.check.outputs.alert == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REASONS: ${{ steps.check.outputs.reasons }}
-          SHORT_SHA: ${{ steps.check.outputs.short_sha }}
-          PUBLISHED_AT: ${{ steps.check.outputs.published_at }}
-          BEHIND: ${{ steps.check.outputs.behind }}
+          STALE: ${{ steps.check.outputs.stale }}
+          BLIND: ${{ steps.check.outputs.blind }}
+          MAIN_SHA: ${{ steps.check.outputs.main_sha }}
+          PIN_TAG: ${{ steps.check.outputs.pin_tag }}
+          PIN_BEHIND: ${{ steps.check.outputs.pin_behind }}
+          PUBLISHED_TAG: ${{ steps.check.outputs.published_tag }}
+          PUBLISHED_BEHIND: ${{ steps.check.outputs.published_behind }}
         run: |
           set -euo pipefail
           gh label create "$ISSUE_LABEL" --repo "$GITHUB_REPOSITORY" --force \
-            --color D93F0B --description "Published reeve-sign image lags behind main"
+            --color D93F0B --description "reeve-sign's deployed image lags behind main"
 
+          # Title and remediation must match the incident. A blind probe is not
+          # a stale image: telling an on-call to "bump the pin" when the pin is
+          # already current sends them to do a pointless deploy while the real
+          # fault (a permission, a missing file) stays put.
+          if [ "$STALE" = "true" ]; then
+            TITLE="$ISSUE_TITLE"
+            REMEDY="To fix, follow the deploy runbook in \`docs/deployment-staleness.md\`, then bump the pin in \`deploy/compose.yml\` so this check clears."
+          else
+            TITLE="reeve-sign image-staleness monitor is BLIND"
+            REMEDY="**Nothing is known to be stale.** One or more probes could not run, so this alarm currently proves nothing either way. Fix the probe named in the reason above — do NOT deploy in response to this issue."
+          fi
+
+          # Keep every heredoc line at this block's base indentation: YAML strips
+          # only the common indent, so an extra-indented line reaches the shell
+          # with leading spaces and GitHub renders it as a code block.
           BODY="$(cat <<EOF
-          The scheduled image-staleness monitor found that the newest reeve-sign image published to GHCR is behind \`main\`:
+          The image-staleness monitor flagged reeve-sign against \`main\` (\`${MAIN_SHA}\`).
 
+          - **Genuinely stale:** ${STALE}
+          - **Monitor blind (a probe could not run):** ${BLIND}
           - **Reason(s):** ${REASONS}
-          - **Newest published image:** \`sha-${SHORT_SHA}\` (published ${PUBLISHED_AT})
-          - **Commits on main not in that image:** ${BEHIND:-unknown}
-          - **Run:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          To fix, follow the manual deploy runbook in \`docs/deployment-staleness.md\` (publish.yml build → export_tarball → scp → docker load → bump the tag in the box's compose.yml → \`up -d\`).
+          | Probe | Value | Commits behind main |
+          | --- | --- | --- |
+          | Committed deploy pin (\`deploy/compose.yml\`) | \`${PIN_TAG:-unresolved}\` | ${PIN_BEHIND:-unknown} |
+          | Newest published image (GHCR) | \`${PUBLISHED_TAG:-unresolved}\` | ${PUBLISHED_BEHIND:-unknown} |
 
-          _Note: this monitor compares merged vs published. Even when it is green, the image actually **running** on the box may be older — see the blind-spot section of the doc (DEV-5793 Options 1/2)._
+          ${REMEDY}
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
           )"
 
           NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$ISSUE_LABEL" \
             --state open --json number --jq '.[0].number // empty')"
           if [ -n "$NUMBER" ]; then
-            gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            # Retitle too: an issue opened as "blind" that becomes genuine
+            # staleness (or vice versa) must not keep the old headline.
+            gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
             echo "Updated existing issue #$NUMBER"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" \
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
               --label "$ISSUE_LABEL" --body "$BODY"
           fi
 
-      - name: Close the staleness issue when the check passes
-        if: steps.check.outputs.stale != 'true'
+      - name: Close the staleness issue when every probe passes
+        if: steps.check.outputs.alert != 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHORT_SHA: ${{ steps.check.outputs.short_sha }}
-          BEHIND: ${{ steps.check.outputs.behind }}
+          PIN_TAG: ${{ steps.check.outputs.pin_tag }}
+          PIN_BEHIND: ${{ steps.check.outputs.pin_behind }}
         run: |
           set -euo pipefail
           NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$ISSUE_LABEL" \
             --state open --json number --jq '.[0].number // empty')"
           if [ -n "$NUMBER" ]; then
             gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" \
-              --comment "The image-staleness check passes again: newest published image is sha-${SHORT_SHA}, ${BEHIND} commit(s) behind main. Closing."
+              --comment "The image-staleness check passes again: the committed deploy pin is ${PIN_TAG}, ${PIN_BEHIND} commit(s) behind main, and every probe ran. Closing."
           fi
 
-      - name: Notify Slack (only if SLACK_WEBHOOK_URL is configured)
-        if: steps.check.outputs.stale == 'true' && secrets.SLACK_WEBHOOK_URL != ''
+      # `secrets` is NOT an available context in a step-level `if:` — putting it
+      # there is what took this workflow down for 14 days (DEV-8818). It IS
+      # available in `env:`, so the presence check belongs in the shell. Same
+      # standalone-curl shape as deploy/systemd/alert-slack.sh and
+      # reeve-services' prod-health.yml.
+      - name: Notify Slack
+        if: steps.check.outputs.alert == 'true' && github.ref == 'refs/heads/main'
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_ALERT_CHANNEL: ${{ secrets.SLACK_ALERT_CHANNEL }}
           REASONS: ${{ steps.check.outputs.reasons }}
+          STALE: ${{ steps.check.outputs.stale }}
         run: |
           set -euo pipefail
-          TEXT="reeve-sign prod image is stale: ${REASONS}. ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          jq -n --arg text "$TEXT" '{text: $text}' \
-            | curl -fsS -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+          if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_ALERT_CHANNEL:-}" ]; then
+            echo "::warning::SLACK_BOT_TOKEN/SLACK_ALERT_CHANNEL are not configured on this repository; the GitHub issue is the only alert channel."
+            exit 0
+          fi
+          if [ "$STALE" = "true" ]; then
+            HEADLINE="reeve-sign's deployed image is stale"
+          else
+            HEADLINE="reeve-sign's image-staleness monitor is BLIND (not a staleness finding)"
+          fi
+          TEXT="${HEADLINE}: ${REASONS}. ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # Deliberately NOT `curl -f`: with -f curl discards the body on a
+          # non-2xx and exits non-zero, so under `pipefail` the step would die
+          # here and the operator would see a bare exit code instead of Slack's
+          # own diagnostic. Let the response check below decide instead.
+          RESPONSE="$(jq -n --arg channel "$SLACK_ALERT_CHANNEL" --arg text "$TEXT" \
+              '{channel: $channel, text: $text}' \
+            | curl -sS -X POST https://slack.com/api/chat.postMessage \
+                -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+                -H 'Content-type: application/json; charset=utf-8' \
+                --data @- || true)"
+          [ -n "$RESPONSE" ] || RESPONSE='{}'
+          # Slack answers 200 with {"ok":false} on failure, so the HTTP status
+          # alone proves nothing.
+          if [ "$(jq -r '.ok // false' <<<"$RESPONSE" 2>/dev/null)" != "true" ]; then
+            echo "::error::Slack rejected the alert (response: ${RESPONSE})"
+            exit 1
+          fi
 
-      - name: Fail the run when stale
-        if: steps.check.outputs.stale == 'true'
+      - name: Fail the run when the monitor is stale or blind
+        if: steps.check.outputs.alert == 'true'
         env:
           REASONS: ${{ steps.check.outputs.reasons }}
+          STALE: ${{ steps.check.outputs.stale }}
+          BLIND: ${{ steps.check.outputs.blind }}
         run: |
-          echo "::error::reeve-sign published image is stale: ${REASONS}"
+          echo "::error::image-staleness (stale=${STALE}, blind=${BLIND}): ${REASONS}"
           exit 1

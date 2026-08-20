@@ -7,7 +7,7 @@ import { prop, sortBy } from 'remeda';
 import { match } from 'ts-pattern';
 
 import { ZSupportedLanguageCodeSchema } from '../../constants/i18n';
-import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
+import type { TDocumentAuditLog, TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
 import { extractDocumentAuthMethods } from '../../utils/document-auth';
 import { getTranslations } from '../../utils/i18n';
 import { getDocumentCertificateAuditLogs } from '../document/get-document-certificate-audit-logs';
@@ -55,6 +55,16 @@ export const generateCertificatePdf = async (options: GenerateCertificatePdfOpti
     locale: documentLanguage,
     messages,
   });
+
+  // DEV-8741: sender OTP identity-verification is an envelope-level event
+  // (there's exactly one sender), not per-recipient -- extracted once here
+  // rather than inside the recipients.map below. Absent for every envelope
+  // created without `senderVerification` metadata (all callers before this
+  // change), in which case the certificate omits the block entirely.
+  const senderIdentityVerifiedLog = auditLogs['DOCUMENT_SENDER_IDENTITY_VERIFIED'].find(
+    (log): log is Extract<TDocumentAuditLog, { type: 'DOCUMENT_SENDER_IDENTITY_VERIFIED' }> =>
+      log.type === 'DOCUMENT_SENDER_IDENTITY_VERIFIED',
+  );
 
   const payload = {
     recipients: recipients.map((recipient) => {
@@ -142,6 +152,13 @@ export const generateCertificatePdf = async (options: GenerateCertificatePdfOpti
     pageWidth,
     pageHeight,
     i18n,
+    senderVerification: senderIdentityVerifiedLog
+      ? {
+          contact: senderIdentityVerifiedLog.data.contact,
+          method: senderIdentityVerifiedLog.data.method,
+          verifiedAt: senderIdentityVerifiedLog.data.verifiedAt,
+        }
+      : null,
   };
 
   const certificatePages = await renderCertificate(payload);

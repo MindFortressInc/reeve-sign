@@ -4631,6 +4631,7 @@ msgstr "Kennisgeving elektronische handtekening"
 #: packages/lib/constants/document.ts
 #: packages/lib/server-only/pdf/generate-certificate-pdf.ts
 #: packages/lib/server-only/pdf/generate-certificate-pdf.ts
+#: packages/lib/server-only/pdf/render-certificate.ts
 #: packages/lib/utils/fields.ts
 #: packages/ui/primitives/document-flow/add-fields.tsx
 #: packages/ui/primitives/document-flow/add-signers.tsx
@@ -7499,6 +7500,10 @@ msgstr "Origineel"
 msgid "Otherwise, the document will be created as a draft."
 msgstr "Anders wordt het document als concept aangemaakt."
 
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "OTP"
+msgstr "OTP"
+
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 #: apps/remix/app/components/forms/email-preferences-form.tsx
 msgid "Override organisation settings"
@@ -9236,6 +9241,11 @@ msgstr "Verzendstatus"
 msgid "Sender"
 msgstr "Afzender"
 
+#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "Sender-attested contact verification (not independently verified)"
+msgstr "Door de afzender bevestigde contactverificatie (niet onafhankelijk geverifieerd)"
+
 #: apps/remix/app/components/forms/forgot-password.tsx
 msgid "Sending Reset Email..."
 msgstr "Resetmail wordt verzonden..."
@@ -9626,6 +9636,10 @@ msgstr "Site‑instellingen"
 #: apps/remix/app/components/dialogs/ai-recipient-detection-dialog.tsx
 msgid "Skip"
 msgstr "Overslaan"
+
+#: packages/lib/server-only/pdf/render-certificate.ts
+msgid "SMS"
+msgstr "SMS"
 
 #: packages/ui/primitives/document-flow/missing-signature-field-dialog.tsx
 msgid "Some signers have not been assigned a signature field. Please assign at least 1 signature field to each signer before proceeding."

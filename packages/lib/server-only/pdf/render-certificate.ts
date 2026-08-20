@@ -43,6 +43,12 @@ export type CertificateRecipient = {
   };
 };
 
+export type CertificateSenderVerification = {
+  contact: string;
+  method: 'email' | 'sms';
+  verifiedAt: string;
+};
+
 type GenerateCertificateOptions = {
   recipients: CertificateRecipient[];
   envelopeId: string;
@@ -55,6 +61,40 @@ type GenerateCertificateOptions = {
   };
   pageWidth: number;
   pageHeight: number;
+  /**
+   * DEV-8741: sender OTP identity-verification, when the envelope was
+   * created with `senderVerification` metadata. Null/undefined omits the
+   * certificate block entirely -- the case for every envelope created
+   * before this change, and for every caller that doesn't supply it.
+   */
+  senderVerification?: CertificateSenderVerification | null;
+};
+
+/**
+ * DEV-8741: format the sender identity-verification line shown on the
+ * certificate footer. Takes `i18n` explicitly (rather than importing the
+ * module singleton) so it stays a pure, directly unit-testable function --
+ * same reasoning as every other label on this certificate, which all go
+ * through `i18n._(msg\`...\`)` at their call sites.
+ */
+export const formatSenderVerificationValue = (
+  senderVerification: CertificateSenderVerification,
+  i18n: I18n,
+): string => {
+  const methodLabel = senderVerification.method === 'sms' ? i18n._(msg`SMS`) : i18n._(msg`Email`);
+
+  // `setZone: true` keeps the offset the sender's timestamp was recorded
+  // with, so the certificate shows the verification in that zone rather than
+  // silently rebasing it onto the renderer's local zone.
+  const verifiedAt = DateTime.fromISO(senderVerification.verifiedAt, { setZone: true }).setLocale(
+    APP_I18N_OPTIONS.defaultLocale,
+  );
+
+  const formattedTimestamp = verifiedAt.isValid
+    ? verifiedAt.toFormat('yyyy-MM-dd hh:mm:ss a (ZZZZ)')
+    : senderVerification.verifiedAt;
+
+  return `${senderVerification.contact} — ${methodLabel} ${i18n._(msg`OTP`)}, ${formattedTimestamp}`;
 };
 
 // Helper function to get device info from user agent
@@ -721,6 +761,7 @@ export async function renderCertificate({
   envelopeOwner,
   pageWidth,
   pageHeight,
+  senderVerification,
 }: GenerateCertificateOptions) {
   ensureFontLibrary();
 
@@ -759,6 +800,36 @@ export async function renderCertificate({
 
   let isQrPlaced = false;
 
+  // DEV-8741: sender OTP identity-verification, rendered as a footer line
+  // above the envelope ID on whichever page carries a footer (content pages
+  // and the QR overflow page). Omitted entirely when senderVerification is
+  // null/undefined -- true for every envelope created before this change.
+  // Wording is deliberately "sender-attested", not "verified": the API
+  // accepts this metadata from any authenticated caller with no
+  // server-side proof the OTP actually happened (DEV-8975, blocked on
+  // reeve-services support), so the certificate must not assert a
+  // verification the server didn't perform.
+  // Height the sender-verification line adds above the envelope-ID footer.
+  // Zero when absent so the pre-DEV-8741 layout is byte-identical.
+  const senderVerificationFooterHeight = senderVerification ? textXs + 4 : 0;
+
+  const addSenderVerificationFooter = (page: Konva.Layer) => {
+    if (!senderVerification) {
+      return;
+    }
+
+    page.add(
+      new Konva.Text({
+        x: margin,
+        y: pageHeight - textXs - 10 - senderVerificationFooterHeight,
+        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
+        fontFamily: 'Inter',
+        fontSize: textXs,
+        fill: textMutedForegroundLight,
+      }),
+    );
+  };
+
   // Add a table to each page.
   for (const [index, table] of tables.entries()) {
     stage.destroyChildren();
@@ -787,7 +858,10 @@ export async function renderCertificate({
 
     // Add QR code and branding on the last page if there is space.
     if (index === tables.length - 1 && !hidePoweredBy) {
-      const remainingHeight = pageHeight - group.getClientRect().height - pageBottomMargin;
+      // Reserve the sender-verification footer's height too, so branding
+      // never extends into the line rendered above the envelope ID.
+      const remainingHeight =
+        pageHeight - group.getClientRect().height - pageBottomMargin - senderVerificationFooterHeight;
 
       if (brandingRect.height + brandingTopPadding <= remainingHeight) {
         brandingGroup.setAttrs({
@@ -809,6 +883,8 @@ export async function renderCertificate({
       fill: textMutedForegroundLight,
     });
     page.add(footerText);
+
+    addSenderVerificationFooter(page);
 
     page.add(group);
     stage.add(page);
@@ -837,6 +913,12 @@ export async function renderCertificate({
       fill: textMutedForegroundLight,
     });
     page.add(overflowFooterText);
+
+    // DEV-8741: this overflow page can be the certificate's LAST page (when
+    // branding didn't fit on a content page), so it needs the same
+    // sender-verification line the content-page loop above renders --
+    // otherwise a multi-page certificate could end without it.
+    addSenderVerificationFooter(page);
 
     page.add(brandingGroup);
     stage.add(page);

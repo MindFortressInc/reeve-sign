@@ -5,7 +5,7 @@ import { nanoid } from '@documenso/lib/universal/id';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Field } from '@prisma/client';
 import { FieldType } from '@prisma/client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -46,6 +46,21 @@ type UseEditorFieldsResponse = {
   selectedField: TLocalField | undefined;
   setSelectedField: (formId: string | null) => void;
 
+  /**
+   * The formId `addField` last placed, set synchronously so a consumer can tell
+   * that the interaction being handled right now is the one that placed it.
+   *
+   * A ref, not state: the reader is a Konva event handler running on the same
+   * click that triggered the placement, before React has re-rendered. The ref
+   * object is also stable across renders, so a handler registered on an earlier
+   * render still reads the current value. Consumers clear it once acted on.
+   */
+  justPlacedFieldFormIdRef: MutableRefObject<string | null>;
+
+  /** True while a field type is armed for placement. */
+  isPlacementArmed: boolean;
+  setIsPlacementArmed: (isArmed: boolean) => void;
+
   // Field operations
   addField: (field: Omit<TLocalField, 'formId'>) => TLocalField;
   setFieldId: (formId: string, id: number) => void;
@@ -67,6 +82,8 @@ type UseEditorFieldsResponse = {
 
 export const useEditorFields = ({ envelope, handleFieldsUpdate }: EditorFieldsProps): UseEditorFieldsResponse => {
   const [selectedFieldFormId, setSelectedFieldFormId] = useState<string | null>(null);
+  const justPlacedFieldFormIdRef = useRef<string | null>(null);
+  const [isPlacementArmed, setIsPlacementArmed] = useState(false);
   const [selectedRecipientId, setSelectedRecipientId] = useState<number | null>(null);
 
   const generateDefaultValues = (fields?: Field[]) => {
@@ -117,7 +134,12 @@ export const useEditorFields = ({ envelope, handleFieldsUpdate }: EditorFieldsPr
       return;
     }
 
-    const foundField = localFields.find((field) => field.formId === formId);
+    // Resolve against the live form values, not the render-time `localFields`
+    // snapshot. This runs from Konva handlers registered on an earlier render,
+    // whose closed-over snapshot predates a field that was just placed — looking
+    // it up there reports the field as missing and clears the selection that
+    // placement had just made, leaving the new field unconfigurable.
+    const foundField = form.getValues().fields.find((field) => field.formId === formId);
     const recipient = envelope.recipients.find((recipient) => recipient.id === foundField?.recipientId);
 
     if (recipient) {
@@ -143,6 +165,8 @@ export const useEditorFields = ({ envelope, handleFieldsUpdate }: EditorFieldsPr
       append(field);
       triggerFieldsUpdate();
       setSelectedField(field.formId, true);
+      justPlacedFieldFormIdRef.current = field.formId;
+
       return field;
     },
     [append, triggerFieldsUpdate, setSelectedField],
@@ -302,6 +326,9 @@ export const useEditorFields = ({ envelope, handleFieldsUpdate }: EditorFieldsPr
 
     // Selected field
     selectedField,
+    justPlacedFieldFormIdRef,
+    isPlacementArmed,
+    setIsPlacementArmed,
     setSelectedField,
 
     // Selected recipient
