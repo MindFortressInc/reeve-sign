@@ -72,15 +72,16 @@ type GenerateCertificateOptions = {
 
 /**
  * DEV-8741: format the sender identity-verification line shown on the
- * certificate footer. Pulled out as a pure function -- no lingui/Konva/
- * skia-canvas dependency -- so it's unit-testable directly. The method word
- * (Email/SMS) is deliberately not run through i18n, matching how other
- * technical values on this certificate (device strings, signature IDs) are
- * rendered untranslated; only the surrounding label is translated, at the
- * call site below.
+ * certificate footer. Takes `i18n` explicitly (rather than importing the
+ * module singleton) so it stays a pure, directly unit-testable function --
+ * same reasoning as every other label on this certificate, which all go
+ * through `i18n._(msg\`...\`)` at their call sites.
  */
-export const formatSenderVerificationValue = (senderVerification: CertificateSenderVerification): string => {
-  const methodLabel = senderVerification.method === 'sms' ? 'SMS' : 'Email';
+export const formatSenderVerificationValue = (
+  senderVerification: CertificateSenderVerification,
+  i18n: I18n,
+): string => {
+  const methodLabel = senderVerification.method === 'sms' ? i18n._(msg`SMS`) : i18n._(msg`Email`);
 
   const verifiedAt = DateTime.fromISO(senderVerification.verifiedAt).setLocale(APP_I18N_OPTIONS.defaultLocale);
 
@@ -88,7 +89,7 @@ export const formatSenderVerificationValue = (senderVerification: CertificateSen
     ? verifiedAt.toFormat('yyyy-MM-dd hh:mm:ss a (ZZZZ)')
     : senderVerification.verifiedAt;
 
-  return `${senderVerification.contact} — ${methodLabel} OTP, ${formattedTimestamp}`;
+  return `${senderVerification.contact} — ${methodLabel} ${i18n._(msg`OTP`)}, ${formattedTimestamp}`;
 };
 
 // Helper function to get device info from user agent
@@ -848,11 +849,16 @@ export async function renderCertificate({
     // DEV-8741: sender OTP identity-verification, rendered as a footer line
     // above the envelope ID. Omitted entirely when senderVerification is
     // null/undefined -- true for every envelope created before this change.
+    // Wording is deliberately "sender-attested", not "verified": the API
+    // accepts this metadata from any authenticated caller with no
+    // server-side proof the OTP actually happened (DEV-8975, blocked on
+    // reeve-services support), so the certificate must not assert a
+    // verification the server didn't perform.
     if (senderVerification) {
       const senderVerificationText = new Konva.Text({
         x: margin,
         y: pageHeight - textXs - 10 - (textXs + 4),
-        text: `${i18n._(msg`Sender contact verified`)}: ${formatSenderVerificationValue(senderVerification)}`,
+        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
         fontFamily: 'Inter',
         fontSize: textXs,
         fill: textMutedForegroundLight,
@@ -896,7 +902,7 @@ export async function renderCertificate({
       const overflowSenderVerificationText = new Konva.Text({
         x: margin,
         y: pageHeight - textXs - 10 - (textXs + 4),
-        text: `${i18n._(msg`Sender contact verified`)}: ${formatSenderVerificationValue(senderVerification)}`,
+        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
         fontFamily: 'Inter',
         fontSize: textXs,
         fill: textMutedForegroundLight,
