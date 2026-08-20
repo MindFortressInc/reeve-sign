@@ -131,6 +131,30 @@ export const ZDownloadDocumentSuccessfulSchema = z.object({
 
 export type TUploadDocumentSuccessfulSchema = z.infer<typeof ZUploadDocumentSuccessfulSchema>;
 
+/**
+ * DEV-8741: optional sender identity-verification metadata (e.g. from an OTP
+ * flow run before the caller hits this endpoint). Additive and
+ * backward-compatible -- omit entirely and behaviour is unchanged.
+ */
+export const ZSenderVerificationMethodSchema = z.enum(['email', 'sms']);
+
+export const ZSenderVerificationSchema = z.object({
+  contact: z.string().min(1).openapi({
+    description: 'The verified email address or phone number (E.164) the sender proved control of.',
+  }),
+  method: ZSenderVerificationMethodSchema.openapi({
+    description: 'The channel the OTP was verified over.',
+  }),
+  verifiedAt: z.string().datetime({ offset: true }).openapi({
+    description: 'ISO-8601 timestamp of when the sender verified control of the contact.',
+  }),
+  ipAddress: z.string().optional().openapi({
+    description: 'The IP address the sender verified from, if known.',
+  }),
+});
+
+export type TSenderVerificationSchema = z.infer<typeof ZSenderVerificationSchema>;
+
 export const ZCreateDocumentMutationSchema = z.object({
   title: z.string().min(1),
   externalId: z.string().nullish(),
@@ -203,6 +227,10 @@ export const ZCreateDocumentMutationSchema = z.object({
       }),
     )
     .optional(),
+  senderVerification: ZSenderVerificationSchema.optional().openapi({
+    description:
+      'Optional sender identity-verification metadata (e.g. from an OTP flow) recorded on the envelope audit trail and shown on the signing certificate. Omit if the sender was not OTP-verified.',
+  }),
 });
 
 export type TCreateDocumentMutationSchema = z.infer<typeof ZCreateDocumentMutationSchema>;

@@ -87,6 +87,19 @@ export type CreateEnvelopeOptions = {
     recipients?: CreateEnvelopeRecipientOptions[];
     folderId?: string;
     delegatedDocumentOwner?: string;
+
+    /**
+     * DEV-8741: optional sender identity-verification metadata (e.g. from an
+     * OTP flow run by the caller before hitting create). Additive -- when
+     * omitted (every caller before this change), behaviour is unchanged and
+     * no DOCUMENT_SENDER_IDENTITY_VERIFIED audit log is written.
+     */
+    senderVerification?: {
+      contact: string;
+      method: 'email' | 'sms';
+      verifiedAt: string;
+      ipAddress?: string;
+    };
   };
   attachments?: Array<{
     label: string;
@@ -579,6 +592,28 @@ export const createEnvelope = async ({
           },
         }),
       });
+
+      // DEV-8741: record the sender's OTP identity-verification, when the
+      // caller supplied it. Additive -- omitted entirely for every caller
+      // that doesn't pass `senderVerification` (unchanged behaviour).
+      if (data.senderVerification) {
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED,
+            envelopeId: envelope.id,
+            user: {
+              id: envelopeOwnerId,
+            },
+            metadata: requestMetadata,
+            data: {
+              contact: data.senderVerification.contact,
+              method: data.senderVerification.method,
+              verifiedAt: data.senderVerification.verifiedAt,
+              ipAddress: data.senderVerification.ipAddress ?? null,
+            },
+          }),
+        });
+      }
 
       // Create audit log for delegated owner if validation passed
       if (delegatedOwner) {
