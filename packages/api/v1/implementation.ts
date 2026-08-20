@@ -419,6 +419,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
           ],
           globalAccessAuth: body.authOptions?.globalAccessAuth,
           globalActionAuth: body.authOptions?.globalActionAuth,
+          senderVerification: body.senderVerification,
         },
         attachments: body.attachments,
         meta: {

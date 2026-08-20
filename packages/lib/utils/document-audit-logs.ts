@@ -521,6 +521,14 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
       you: msg`You failed to validate a 2FA token for the document`,
       user: msg`${user} failed to validate a 2FA token for the document`,
     }))
+    .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
+      anonymous: msg({
+        message: `Sender contact verified`,
+        context: `Audit log format`,
+      }),
+      you: msg`You verified control of ${data.contact}`,
+      user: msg`${user} verified control of ${data.contact}`,
+    }))
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT }, ({ data }) => {
       if (data.isResending) {
         return {
