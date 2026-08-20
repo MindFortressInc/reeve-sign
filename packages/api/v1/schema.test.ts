@@ -101,4 +101,34 @@ describe('ZCreateDocumentMutationSchema — senderVerification (additive, option
 
     expect(result.success).toBe(false);
   });
+
+  it('rejects method: email with a contact that is not an email', () => {
+    const result = ZSenderVerificationSchema.safeParse({
+      contact: '+15551234567',
+      method: 'email',
+      verifiedAt: '2026-08-14T18:29:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects method: sms with a contact that is not E.164', () => {
+    const result = ZSenderVerificationSchema.safeParse({
+      contact: 'sender@example.com',
+      method: 'sms',
+      verifiedAt: '2026-08-14T18:29:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects method: sms with a phone number missing the leading +', () => {
+    const result = ZSenderVerificationSchema.safeParse({
+      contact: '15551234567',
+      method: 'sms',
+      verifiedAt: '2026-08-14T18:29:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
