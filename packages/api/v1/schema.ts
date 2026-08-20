@@ -11,7 +11,7 @@ import {
 import { ZDocumentEmailSettingsSchema } from '@documenso/lib/types/document-email';
 import { ZEnvelopeAttachmentTypeSchema } from '@documenso/lib/types/envelope-attachment';
 import { ZFieldMetaPrefillFieldsSchema, ZFieldMetaSchema } from '@documenso/lib/types/field-meta';
-import { zEmail } from '@documenso/lib/utils/zod';
+import { contactMatchesMethod, zEmail } from '@documenso/lib/utils/zod';
 import {
   DocumentDataType,
   DocumentDistributionMethod,
@@ -138,8 +138,6 @@ export type TUploadDocumentSuccessfulSchema = z.infer<typeof ZUploadDocumentSucc
  */
 export const ZSenderVerificationMethodSchema = z.enum(['email', 'sms']);
 
-const E164_PHONE_RE = /^\+[1-9]\d{1,14}$/;
-
 export const ZSenderVerificationSchema = z
   .object({
     contact: z.string().min(1).openapi({
@@ -151,20 +149,17 @@ export const ZSenderVerificationSchema = z
     verifiedAt: z.string().datetime({ offset: true }).openapi({
       description: 'ISO-8601 timestamp of when the sender verified control of the contact.',
     }),
-    ipAddress: z.string().optional().openapi({
+    ipAddress: z.string().ip().optional().openapi({
       description: 'The IP address the sender verified from, if known.',
     }),
   })
   // The certificate prints `contact` verbatim as an assertion that this exact
   // address/number was OTP-verified -- so it must actually look like one,
   // matching the claimed `method`, rather than accepting any non-empty string.
-  .refine(
-    (data) => (data.method === 'email' ? zEmail().safeParse(data.contact).success : E164_PHONE_RE.test(data.contact)),
-    {
-      message: 'contact must be a valid email address (method: email) or E.164 phone number (method: sms)',
-      path: ['contact'],
-    },
-  );
+  .refine((data) => contactMatchesMethod(data.contact, data.method), {
+    message: 'contact must be a valid email address (method: email) or E.164 phone number (method: sms)',
+    path: ['contact'],
+  });
 
 export type TSenderVerificationSchema = z.infer<typeof ZSenderVerificationSchema>;
 

@@ -36,3 +36,23 @@ export const zEmail = (options?: string | { message?: string }) => {
 
   return z.string().regex(EMAIL_REGEX, { message });
 };
+
+/**
+ * E.164 phone format: a leading `+`, no leading zero, 2-15 digits total.
+ */
+export const E164_PHONE_REGEX = /^\+[1-9]\d{1,14}$/;
+
+/**
+ * True iff `contact` is a well-formed value for the claimed `method`: a valid
+ * email for `'email'`, an E.164 phone number for `'sms'`.
+ *
+ * DEV-8741: shared between the v1 API's sender-verification input
+ * (`packages/api/v1/schema.ts`) and the `DOCUMENT_SENDER_IDENTITY_VERIFIED`
+ * audit-log event (`packages/lib/types/document-audit-logs.ts`) -- one
+ * validated rule, not two independently-drifting copies. Both surfaces print
+ * `contact` verbatim as an assertion of what was OTP-verified, so it must
+ * actually look like the claimed channel rather than accepting any
+ * non-empty string.
+ */
+export const contactMatchesMethod = (contact: string, method: 'email' | 'sms'): boolean =>
+  method === 'email' ? zEmail().safeParse(contact).success : E164_PHONE_REGEX.test(contact);

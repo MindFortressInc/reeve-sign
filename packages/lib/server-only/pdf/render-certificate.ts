@@ -852,7 +852,7 @@ export async function renderCertificate({
       const senderVerificationText = new Konva.Text({
         x: margin,
         y: pageHeight - textXs - 10 - (textXs + 4),
-        text: `${i18n._(msg`Sender identity verified`)}: ${formatSenderVerificationValue(senderVerification)}`,
+        text: `${i18n._(msg`Sender contact verified`)}: ${formatSenderVerificationValue(senderVerification)}`,
         fontFamily: 'Inter',
         fontSize: textXs,
         fill: textMutedForegroundLight,
@@ -887,6 +887,22 @@ export async function renderCertificate({
       fill: textMutedForegroundLight,
     });
     page.add(overflowFooterText);
+
+    // DEV-8741: this overflow page can be the certificate's LAST page (when
+    // branding didn't fit on a content page), so it needs the same
+    // sender-verification line the content-page loop above renders --
+    // otherwise a multi-page certificate could end without it.
+    if (senderVerification) {
+      const overflowSenderVerificationText = new Konva.Text({
+        x: margin,
+        y: pageHeight - textXs - 10 - (textXs + 4),
+        text: `${i18n._(msg`Sender contact verified`)}: ${formatSenderVerificationValue(senderVerification)}`,
+        fontFamily: 'Inter',
+        fontSize: textXs,
+        fill: textMutedForegroundLight,
+      });
+      page.add(overflowSenderVerificationText);
+    }
 
     page.add(brandingGroup);
     stage.add(page);

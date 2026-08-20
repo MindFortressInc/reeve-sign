@@ -7,7 +7,7 @@
 import { DocumentSource, FieldType } from '@prisma/client';
 import { z } from 'zod';
 
-import { zEmail } from '../utils/zod';
+import { contactMatchesMethod, zEmail } from '../utils/zod';
 import { ZRecipientAccessAuthTypesSchema, ZRecipientActionAuthTypesSchema } from './document-auth';
 
 export const ZDocumentAuditLogTypeSchema = z.enum([
@@ -600,16 +600,24 @@ export const ZDocumentAuditLogEventDocumentRecipientFailed2FAEmailSchema = z.obj
  */
 export const ZDocumentAuditLogEventDocumentSenderIdentityVerifiedSchema = z.object({
   type: z.literal(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED),
-  data: z.object({
-    /** The verified email address or phone number (E.164) the sender proved control of. */
-    contact: z.string(),
-    /** The channel the OTP was verified over. */
-    method: z.enum(['email', 'sms']),
-    /** ISO-8601 timestamp of when the sender verified control of the contact. */
-    verifiedAt: z.string(),
-    /** The IP address the sender verified from, if known. */
-    ipAddress: z.string().nullish(),
-  }),
+  data: z
+    .object({
+      /** The verified email address or phone number (E.164) the sender proved control of. */
+      contact: z.string(),
+      /** The channel the OTP was verified over. */
+      method: z.enum(['email', 'sms']),
+      /** ISO-8601 timestamp of when the sender verified control of the contact. */
+      verifiedAt: z.string().datetime({ offset: true }),
+      /** The IP address the sender verified from, if known. */
+      ipAddress: z.string().ip().nullish(),
+    })
+    // Same rule as the v1 API's ZSenderVerificationSchema (packages/api/v1/schema.ts)
+    // -- this is what the certificate actually prints, so it must match at the
+    // point of persistence too, not just at the API boundary.
+    .refine((data) => contactMatchesMethod(data.contact, data.method), {
+      message: 'contact must be a valid email address (method: email) or E.164 phone number (method: sms)',
+      path: ['contact'],
+    }),
 });
 
 /**

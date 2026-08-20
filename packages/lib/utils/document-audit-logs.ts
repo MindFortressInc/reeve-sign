@@ -523,11 +523,11 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
     }))
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
       anonymous: msg({
-        message: `Sender identity verified`,
+        message: `Sender contact verified`,
         context: `Audit log format`,
       }),
-      you: msg`You verified your identity as ${data.contact}`,
-      user: msg`${user} verified their identity as ${data.contact}`,
+      you: msg`You verified control of ${data.contact}`,
+      user: msg`${user} verified control of ${data.contact}`,
     }))
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT }, ({ data }) => {
       if (data.isResending) {
