@@ -7502,7 +7502,7 @@ msgstr "チェックを入れない場合、文書は下書きとして作成さ
 
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "OTP"
-msgstr ""
+msgstr "OTP"
 
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 #: apps/remix/app/components/forms/email-preferences-form.tsx
@@ -9244,7 +9244,7 @@ msgstr "送信者"
 #: packages/lib/server-only/pdf/render-certificate.ts
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "Sender-attested contact verification (not independently verified)"
-msgstr ""
+msgstr "送信者申告による連絡先確認（独立した検証なし）"
 
 #: apps/remix/app/components/forms/forgot-password.tsx
 msgid "Sending Reset Email..."
@@ -9639,7 +9639,7 @@ msgstr "スキップ"
 
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "SMS"
-msgstr ""
+msgstr "SMS"
 
 #: packages/ui/primitives/document-flow/missing-signature-field-dialog.tsx
 msgid "Some signers have not been assigned a signature field. Please assign at least 1 signature field to each signer before proceeding."

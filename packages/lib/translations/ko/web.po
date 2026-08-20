@@ -9244,7 +9244,7 @@ msgstr "보낸 사람"
 #: packages/lib/server-only/pdf/render-certificate.ts
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "Sender-attested contact verification (not independently verified)"
-msgstr ""
+msgstr "발신자가 확인한 연락처 검증(독립적으로 확인되지 않음)"
 
 #: apps/remix/app/components/forms/forgot-password.tsx
 msgid "Sending Reset Email..."

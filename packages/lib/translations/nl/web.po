@@ -9244,7 +9244,7 @@ msgstr "Afzender"
 #: packages/lib/server-only/pdf/render-certificate.ts
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "Sender-attested contact verification (not independently verified)"
-msgstr ""
+msgstr "Door de afzender bevestigde contactverificatie (niet onafhankelijk geverifieerd)"
 
 #: apps/remix/app/components/forms/forgot-password.tsx
 msgid "Sending Reset Email..."

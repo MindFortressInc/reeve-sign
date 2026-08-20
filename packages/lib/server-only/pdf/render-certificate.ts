@@ -795,6 +795,32 @@ export async function renderCertificate({
 
   let isQrPlaced = false;
 
+  // DEV-8741: sender OTP identity-verification, rendered as a footer line
+  // above the envelope ID on whichever page carries a footer (content pages
+  // and the QR overflow page). Omitted entirely when senderVerification is
+  // null/undefined -- true for every envelope created before this change.
+  // Wording is deliberately "sender-attested", not "verified": the API
+  // accepts this metadata from any authenticated caller with no
+  // server-side proof the OTP actually happened (DEV-8975, blocked on
+  // reeve-services support), so the certificate must not assert a
+  // verification the server didn't perform.
+  const addSenderVerificationFooter = (page: Konva.Layer) => {
+    if (!senderVerification) {
+      return;
+    }
+
+    page.add(
+      new Konva.Text({
+        x: margin,
+        y: pageHeight - textXs - 10 - (textXs + 4),
+        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
+        fontFamily: 'Inter',
+        fontSize: textXs,
+        fill: textMutedForegroundLight,
+      }),
+    );
+  };
+
   // Add a table to each page.
   for (const [index, table] of tables.entries()) {
     stage.destroyChildren();
@@ -846,25 +872,7 @@ export async function renderCertificate({
     });
     page.add(footerText);
 
-    // DEV-8741: sender OTP identity-verification, rendered as a footer line
-    // above the envelope ID. Omitted entirely when senderVerification is
-    // null/undefined -- true for every envelope created before this change.
-    // Wording is deliberately "sender-attested", not "verified": the API
-    // accepts this metadata from any authenticated caller with no
-    // server-side proof the OTP actually happened (DEV-8975, blocked on
-    // reeve-services support), so the certificate must not assert a
-    // verification the server didn't perform.
-    if (senderVerification) {
-      const senderVerificationText = new Konva.Text({
-        x: margin,
-        y: pageHeight - textXs - 10 - (textXs + 4),
-        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
-        fontFamily: 'Inter',
-        fontSize: textXs,
-        fill: textMutedForegroundLight,
-      });
-      page.add(senderVerificationText);
-    }
+    addSenderVerificationFooter(page);
 
     page.add(group);
     stage.add(page);
@@ -898,17 +906,7 @@ export async function renderCertificate({
     // branding didn't fit on a content page), so it needs the same
     // sender-verification line the content-page loop above renders --
     // otherwise a multi-page certificate could end without it.
-    if (senderVerification) {
-      const overflowSenderVerificationText = new Konva.Text({
-        x: margin,
-        y: pageHeight - textXs - 10 - (textXs + 4),
-        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
-        fontFamily: 'Inter',
-        fontSize: textXs,
-        fill: textMutedForegroundLight,
-      });
-      page.add(overflowSenderVerificationText);
-    }
+    addSenderVerificationFooter(page);
 
     page.add(brandingGroup);
     stage.add(page);

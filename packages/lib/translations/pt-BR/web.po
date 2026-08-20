@@ -9239,7 +9239,7 @@ msgstr "Remetente"
 #: packages/lib/server-only/pdf/render-certificate.ts
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "Sender-attested contact verification (not independently verified)"
-msgstr ""
+msgstr "Verificação de contato atestada pelo remetente (não verificada de forma independente)"
 
 #: apps/remix/app/components/forms/forgot-password.tsx
 msgid "Sending Reset Email..."
