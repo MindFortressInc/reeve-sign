@@ -7502,7 +7502,7 @@ msgstr "Altrimenti, il documento sarà creato come bozza."
 
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "OTP"
-msgstr ""
+msgstr "OTP"
 
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 #: apps/remix/app/components/forms/email-preferences-form.tsx
@@ -9639,7 +9639,7 @@ msgstr "Salta"
 
 #: packages/lib/server-only/pdf/render-certificate.ts
 msgid "SMS"
-msgstr ""
+msgstr "SMS"
 
 #: packages/ui/primitives/document-flow/missing-signature-field-dialog.tsx
 msgid "Some signers have not been assigned a signature field. Please assign at least 1 signature field to each signer before proceeding."
