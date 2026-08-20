@@ -177,6 +177,13 @@ export const EnvelopeEditorFieldsPage = () => {
    */
   const [armedFieldType, setArmedFieldType] = useState<FieldType | null>(null);
 
+  // Mirror the armed state into the shared editor state so the canvas renderer
+  // can react to it. Derived from `armedFieldType` in one place so the two
+  // cannot drift.
+  useEffect(() => {
+    editorFields.setIsPlacementArmed(armedFieldType !== null);
+  }, [armedFieldType]);
+
   const onPickFieldType = (fieldType: FieldType) => {
     setArmedFieldType(fieldType);
 
@@ -233,14 +240,18 @@ export const EnvelopeEditorFieldsPage = () => {
           <Trans>Selected Recipient</Trans>
         </h3>
 
-        <EnvelopeRecipientSelector
-          selectedRecipient={editorFields.selectedRecipient}
-          onSelectedRecipientChange={(recipient) => editorFields.setSelectedRecipient(recipient.id)}
-          recipients={envelope.recipients}
-          fields={envelope.fields}
-          className="w-full"
-          align="end"
-        />
+        {/* Mirrors `envelope-editor-mobile-recipient-selector` so a test can name
+            either selector without depending on DOM order. */}
+        <div data-testid="envelope-editor-desktop-recipient-selector">
+          <EnvelopeRecipientSelector
+            selectedRecipient={editorFields.selectedRecipient}
+            onSelectedRecipientChange={(recipient) => editorFields.setSelectedRecipient(recipient.id)}
+            recipients={envelope.recipients}
+            fields={envelope.fields}
+            className="w-full"
+            align="end"
+          />
+        </div>
 
         {editorFields.selectedRecipient &&
           !canRecipientFieldsBeModified(editorFields.selectedRecipient, envelope.fields) && (

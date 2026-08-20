@@ -346,6 +346,12 @@ export const EnvelopeEditorFieldsPageRenderer = ({ pageData }: { pageData: PageR
       }
     });
 
+    // A new interaction starts here, so a placement flag left behind by the
+    // previous one is stale by definition.
+    currentStage.on('mousedown touchstart', () => {
+      editorFields.justPlacedFieldFormIdRef.current = null;
+    });
+
     // Clicks should select/deselect shapes
     currentStage.on('click tap', (e) => {
       // if we are selecting with rect, do nothing
@@ -355,6 +361,17 @@ export const EnvelopeEditorFieldsPageRenderer = ({ pageData }: { pageData: PageR
 
       // If empty area clicked, remove all selections
       if (e.target === stage.current) {
+        // The click that places a field also lands here. `addField` has already
+        // selected the new field, but Konva has not redrawn its hit graph yet,
+        // so this same click still hit-tests as the empty stage. Clearing now
+        // would undo the placement's own selection and leave the field that was
+        // just placed unconfigurable, since the settings panel only renders for
+        // a selected field.
+        if (editorFields.justPlacedFieldFormIdRef.current) {
+          editorFields.justPlacedFieldFormIdRef.current = null;
+          return;
+        }
+
         setSelectedFields([]);
         return;
       }
@@ -548,24 +565,34 @@ export const EnvelopeEditorFieldsPageRenderer = ({ pageData }: { pageData: PageR
 
   return (
     <>
-      {selectedKonvaFieldGroups.length > 0 && interactiveTransformer.current && !isFieldChanging && (
-        <FieldActionButtons
-          handleDuplicateSelectedFields={duplicatedSelectedFields}
-          handleDuplicateSelectedFieldsOnAllPages={duplicatedSelectedFieldsOnAllPages}
-          handleDeleteSelectedFields={deletedSelectedFields}
-          handleChangeRecipient={changeSelectedFieldsRecipients}
-          selectedFieldFormId={selectedKonvaFieldGroups.map((field) => field.id())}
-          style={{
-            position: 'absolute',
-            top: interactiveTransformer.current.y() + interactiveTransformer.current.getClientRect().height + 5 + 'px',
-            left: interactiveTransformer.current.x() + interactiveTransformer.current.getClientRect().width / 2 + 'px',
-            transform: 'translateX(-50%)',
-            gap: '8px',
-            pointerEvents: 'auto',
-            zIndex: 50,
-          }}
-        />
-      )}
+      {/* Hidden while a field type is armed: placement listens on `window`, so a
+          toolbar over the document would not stop the placement, it would just
+          also fire its own action — one click both duplicating a field and
+          placing another. It also sits over where the next field in a column
+          goes. */}
+      {selectedKonvaFieldGroups.length > 0 &&
+        interactiveTransformer.current &&
+        !isFieldChanging &&
+        !editorFields.isPlacementArmed && (
+          <FieldActionButtons
+            handleDuplicateSelectedFields={duplicatedSelectedFields}
+            handleDuplicateSelectedFieldsOnAllPages={duplicatedSelectedFieldsOnAllPages}
+            handleDeleteSelectedFields={deletedSelectedFields}
+            handleChangeRecipient={changeSelectedFieldsRecipients}
+            selectedFieldFormId={selectedKonvaFieldGroups.map((field) => field.id())}
+            style={{
+              position: 'absolute',
+              top:
+                interactiveTransformer.current.y() + interactiveTransformer.current.getClientRect().height + 5 + 'px',
+              left:
+                interactiveTransformer.current.x() + interactiveTransformer.current.getClientRect().width / 2 + 'px',
+              transform: 'translateX(-50%)',
+              gap: '8px',
+              pointerEvents: 'auto',
+              zIndex: 50,
+            }}
+          />
+        )}
 
       {pendingFieldCreation && (
         <div
