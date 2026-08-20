@@ -83,7 +83,12 @@ export const formatSenderVerificationValue = (
 ): string => {
   const methodLabel = senderVerification.method === 'sms' ? i18n._(msg`SMS`) : i18n._(msg`Email`);
 
-  const verifiedAt = DateTime.fromISO(senderVerification.verifiedAt).setLocale(APP_I18N_OPTIONS.defaultLocale);
+  // `setZone: true` keeps the offset the sender's timestamp was recorded
+  // with, so the certificate shows the verification in that zone rather than
+  // silently rebasing it onto the renderer's local zone.
+  const verifiedAt = DateTime.fromISO(senderVerification.verifiedAt, { setZone: true }).setLocale(
+    APP_I18N_OPTIONS.defaultLocale,
+  );
 
   const formattedTimestamp = verifiedAt.isValid
     ? verifiedAt.toFormat('yyyy-MM-dd hh:mm:ss a (ZZZZ)')
@@ -804,6 +809,10 @@ export async function renderCertificate({
   // server-side proof the OTP actually happened (DEV-8975, blocked on
   // reeve-services support), so the certificate must not assert a
   // verification the server didn't perform.
+  // Height the sender-verification line adds above the envelope-ID footer.
+  // Zero when absent so the pre-DEV-8741 layout is byte-identical.
+  const senderVerificationFooterHeight = senderVerification ? textXs + 4 : 0;
+
   const addSenderVerificationFooter = (page: Konva.Layer) => {
     if (!senderVerification) {
       return;
@@ -812,7 +821,7 @@ export async function renderCertificate({
     page.add(
       new Konva.Text({
         x: margin,
-        y: pageHeight - textXs - 10 - (textXs + 4),
+        y: pageHeight - textXs - 10 - senderVerificationFooterHeight,
         text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
         fontFamily: 'Inter',
         fontSize: textXs,
@@ -849,7 +858,10 @@ export async function renderCertificate({
 
     // Add QR code and branding on the last page if there is space.
     if (index === tables.length - 1 && !hidePoweredBy) {
-      const remainingHeight = pageHeight - group.getClientRect().height - pageBottomMargin;
+      // Reserve the sender-verification footer's height too, so branding
+      // never extends into the line rendered above the envelope ID.
+      const remainingHeight =
+        pageHeight - group.getClientRect().height - pageBottomMargin - senderVerificationFooterHeight;
 
       if (brandingRect.height + brandingTopPadding <= remainingHeight) {
         brandingGroup.setAttrs({
