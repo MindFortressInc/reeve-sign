@@ -4,7 +4,7 @@ import type { DocumentAuditLog, DocumentMeta, Field, Recipient } from '@prisma/c
 import { RecipientRole } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 import { match } from 'ts-pattern';
-
+import { getSenderAttestedContactVerificationMessage } from '../constants/document-audit-logs';
 import type {
   TDocumentAuditLog,
   TDocumentAuditLogDocumentMetaDiffSchema,
@@ -521,13 +521,26 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
       you: msg`You failed to validate a 2FA token for the document`,
       user: msg`${user} failed to validate a 2FA token for the document`,
     }))
+    // DEV-9003: `senderVerification` is client-supplied metadata accepted from
+    // any authenticated API caller with no server-side proof the OTP actually
+    // happened (DEV-8975, blocked on reeve-services support), so this row must
+    // not assert a verification the server did not perform.
+    //
+    // The anonymous variant shares its descriptor with the signing-certificate
+    // footer rather than repeating the literal, so the two can't drift. Note
+    // this description is printed on the *Audit Log* PDF (render-audit-logs.ts),
+    // which `includeAuditLog` can attach WITHOUT the signing certificate --
+    // so the row has to carry the caveat on its own; it can't lean on the
+    // certificate footer being somewhere in the same file.
+    //
+    // Sharing the descriptor also drops the `Audit log format` msgctxt, which
+    // is deliberate: msgctxt feeds lingui's id generation, so keeping it would
+    // mint a second msgid and forfeit the translations already shipped for this
+    // wording in 11 locales.
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
-      anonymous: msg({
-        message: `Sender contact verified`,
-        context: `Audit log format`,
-      }),
-      you: msg`You verified control of ${data.contact}`,
-      user: msg`${user} verified control of ${data.contact}`,
+      anonymous: getSenderAttestedContactVerificationMessage(),
+      you: msg`You attested control of ${data.contact} (not independently verified)`,
+      user: msg`${user} attested control of ${data.contact} (not independently verified)`,
     }))
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT }, ({ data }) => {
       if (data.isResending) {

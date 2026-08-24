@@ -13,6 +13,7 @@ import { UAParser } from 'ua-parser-js';
 import { renderSVG } from 'uqr';
 
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
+import { getSenderAttestedContactVerificationMessage } from '../../constants/document-audit-logs';
 import { APP_I18N_OPTIONS } from '../../constants/i18n';
 import { RECIPIENT_ROLE_SIGNING_REASONS, RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
@@ -808,7 +809,9 @@ export async function renderCertificate({
   // accepts this metadata from any authenticated caller with no
   // server-side proof the OTP actually happened (DEV-8975, blocked on
   // reeve-services support), so the certificate must not assert a
-  // verification the server didn't perform.
+  // verification the server didn't perform. DEV-9003: that wording now lives
+  // in constants/document-audit-logs.ts, shared with the audit-log activity
+  // row that states the same fact, so the two can't drift apart.
   // Height the sender-verification line adds above the envelope-ID footer.
   // Zero when absent so the pre-DEV-8741 layout is byte-identical.
   const senderVerificationFooterHeight = senderVerification ? textXs + 4 : 0;
@@ -822,7 +825,7 @@ export async function renderCertificate({
       new Konva.Text({
         x: margin,
         y: pageHeight - textXs - 10 - senderVerificationFooterHeight,
-        text: `${i18n._(msg`Sender-attested contact verification (not independently verified)`)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
+        text: `${i18n._(getSenderAttestedContactVerificationMessage())}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
         fontFamily: 'Inter',
         fontSize: textXs,
         fill: textMutedForegroundLight,
