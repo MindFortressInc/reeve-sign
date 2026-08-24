@@ -1,26 +1,22 @@
-import { readFileSync } from 'node:fs';
 import { setupI18n } from '@lingui/core';
-import { msg } from '@lingui/core/macro';
 import { describe, expect, it } from 'vitest';
 
+import { SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE } from '../constants/document-audit-logs';
 import type { TDocumentAuditLog } from '../types/document-audit-logs';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../types/document-audit-logs';
 import { formatDocumentAuditLogAction } from './document-audit-logs';
 
 // DEV-9003: the DOCUMENT_SENDER_IDENTITY_VERIFIED activity message is
-// user-visible text on a legal document -- it is rendered into the signing
-// certificate PDF's audit-log table (server-only/pdf/render-audit-logs.ts) as
-// well as the web activity tables. Its wording must stay consistent with the
-// certificate footer written by server-only/pdf/render-certificate.ts, which
-// deliberately says "sender-attested" rather than "verified" because the
-// server holds no proof the OTP actually happened (DEV-8975).
+// user-visible text on a legal document -- it is printed into the Audit Log
+// PDF (server-only/pdf/render-audit-logs.ts) as well as the web activity
+// tables. It must not assert a verification the server never performed:
+// `senderVerification` is client-supplied and unproven until DEV-8975.
+//
+// NOTE: no CI job currently runs vitest (turbo.json has no `test` task and
+// ci.yml runs only `npm run build`), so this is a local guard, not a merge
+// gate. See the CI follow-up ticket linked from DEV-9003.
 
-/**
- * The certificate footer's message, declared with the same macro call
- * render-certificate.ts uses. `.message` is the msgid written to the
- * catalogs; `.id` is the generated key `lingui compile` maps translations to.
- */
-const certificateFooterMessage = msg`Sender-attested contact verification (not independently verified)`;
+const EXPECTED_WORDING = 'Sender-attested contact verification (not independently verified)';
 
 const SENDER_IDENTITY_VERIFIED_EVENT = {
   id: 'audit_log_1',
@@ -35,37 +31,25 @@ const SENDER_IDENTITY_VERIFIED_EVENT = {
   },
 } as const;
 
-/** No user attribution on the row, so the anonymous variant is selected. */
-const ANONYMOUS_LOG: TDocumentAuditLog = {
+/**
+ * The shape production actually writes: create-envelope.ts passes
+ * `user: { id }` only, so `createDocumentAuditLogData` nulls name/email and
+ * `formatDocumentAuditLogAction` selects the anonymous variant -- including
+ * on the Audit Log PDF, which calls it with no `userId` argument.
+ */
+const PRODUCTION_LOG: TDocumentAuditLog = {
   ...SENDER_IDENTITY_VERIFIED_EVENT,
   name: null,
   email: null,
-  userId: null,
+  userId: 42,
 };
 
-/** Attributed row, so the `you` / `user` variants are selected instead. */
+/** Hypothetical attributed row, exercising the `you` / `user` variants. */
 const ATTRIBUTED_LOG: TDocumentAuditLog = {
   ...SENDER_IDENTITY_VERIFIED_EVENT,
   name: 'Ada Lovelace',
   email: 'sender@example.com',
   userId: 42,
-};
-
-/**
- * Reads a shipped translation straight out of a committed catalog, so the
- * "reuses the certificate msgid" claim is asserted against the real .po
- * rather than a hand-written fixture.
- */
-const readTranslationFromCatalog = (locale: string, msgid: string): string => {
-  const catalog = readFileSync(new URL(`../translations/${locale}/web.po`, import.meta.url), 'utf-8');
-  const escaped = msgid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`^msgid "${escaped}"\\nmsgstr "(.+)"$`, 'm').exec(catalog);
-
-  if (!match) {
-    throw new Error(`No translated msgstr for "${msgid}" in ${locale}/web.po`);
-  }
-
-  return match[1];
 };
 
 const createI18n = (locale: string, messages: Record<string, string> = {}) => {
@@ -79,38 +63,46 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
   it('describes the event as sender-attested, never as verified by us', () => {
     const i18n = createI18n('en');
 
-    const { description } = formatDocumentAuditLogAction(i18n, ANONYMOUS_LOG);
+    const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
 
-    expect(description).toBe('Sender-attested contact verification (not independently verified)');
-    expect(description).not.toMatch(/\bcontact verified\b/);
+    expect(description).toBe(EXPECTED_WORDING);
+    // The pre-DEV-9003 wording, and the looser claim it made.
+    expect(description).not.toMatch(/contact verified/);
+    expect(description).not.toMatch(/\bverified control of\b/);
   });
 
-  it('renders the same wording the certificate footer uses', () => {
+  it('renders the exact message the signing certificate uses, from the shared descriptor', () => {
     const i18n = createI18n('en');
 
-    const { description } = formatDocumentAuditLogAction(i18n, ANONYMOUS_LOG);
+    const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
 
-    expect(description).toBe(certificateFooterMessage.message);
+    // Asserted against the descriptor render-certificate.ts renders, so
+    // changing the certificate wording alone cannot leave the two out of sync.
+    expect(description).toBe(i18n._(SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE));
+    expect(SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE.message).toBe(EXPECTED_WORDING);
   });
 
-  it('reuses the certificate msgid, so the already-shipped translations resolve', () => {
-    const germanTranslation = readTranslationFromCatalog('de', String(certificateFooterMessage.message));
-    const i18n = createI18n('de', { [certificateFooterMessage.id]: germanTranslation });
+  it('resolves a translation rather than rendering a raw key or an empty string', () => {
+    const germanWording = 'Vom Absender bestätigte Kontaktverifizierung (nicht unabhängig geprüft)';
+    const messageId = SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE.id;
 
-    const { description } = formatDocumentAuditLogAction(i18n, ANONYMOUS_LOG);
+    expect(messageId).toBeTruthy();
 
-    // Resolves to the real German string -- not a raw key, not empty.
-    expect(description).toBe(germanTranslation);
+    const i18n = createI18n('de', { [String(messageId)]: germanWording });
+
+    const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
+
+    expect(description).toBe(germanWording);
+    expect(description).not.toBe(messageId);
     expect(description).not.toBe('');
-    expect(description).not.toBe(certificateFooterMessage.id);
   });
 
   it('falls back to readable English when a locale has no translation yet', () => {
     const i18n = createI18n('de');
 
-    const { description } = formatDocumentAuditLogAction(i18n, ANONYMOUS_LOG);
+    const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
 
-    expect(description).toBe('Sender-attested contact verification (not independently verified)');
+    expect(description).toBe(EXPECTED_WORDING);
   });
 
   it('attributes the attestation to the viewer without asserting verification', () => {

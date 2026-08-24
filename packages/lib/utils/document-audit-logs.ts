@@ -18,6 +18,7 @@ import {
   RECIPIENT_DIFF_TYPE,
   ZDocumentAuditLogSchema,
 } from '../types/document-audit-logs';
+import { SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE } from '../constants/document-audit-logs';
 import { ZRecipientAuthOptionsSchema } from '../types/document-auth';
 import type { ApiRequestMetadata, RequestMetadata } from '../universal/extract-request-metadata';
 
@@ -521,20 +522,24 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
       you: msg`You failed to validate a 2FA token for the document`,
       user: msg`${user} failed to validate a 2FA token for the document`,
     }))
-    // DEV-9003: this wording deliberately mirrors the signing certificate's
-    // sender-attested phrasing in packages/lib/server-only/pdf/render-certificate.ts.
-    // `senderVerification` is client-supplied metadata accepted from any
-    // authenticated API caller with no server-side proof the OTP actually
-    // happened (DEV-8975, blocked on reeve-services support), so no display
-    // surface may assert a verification the server did not perform -- and this
-    // description is rendered onto the certificate PDF itself via
-    // render-audit-logs.ts, so it must not contradict the footer above it.
-    // The anonymous variant intentionally drops the `Audit log format` msgctxt
-    // so it reuses the certificate's existing msgid (and its translations)
-    // verbatim. When DEV-8975 lands, flipping both surfaces back to assertive
-    // "verified" wording is a single wording change in each file.
+    // DEV-9003: `senderVerification` is client-supplied metadata accepted from
+    // any authenticated API caller with no server-side proof the OTP actually
+    // happened (DEV-8975, blocked on reeve-services support), so this row must
+    // not assert a verification the server did not perform.
+    //
+    // The anonymous variant shares its descriptor with the signing-certificate
+    // footer rather than repeating the literal, so the two can't drift. Note
+    // this description is printed on the *Audit Log* PDF (render-audit-logs.ts),
+    // which `includeAuditLog` can attach WITHOUT the signing certificate --
+    // so the row has to carry the caveat on its own; it can't lean on the
+    // certificate footer being somewhere in the same file.
+    //
+    // Sharing the descriptor also drops the `Audit log format` msgctxt, which
+    // is deliberate: msgctxt feeds lingui's id generation, so keeping it would
+    // mint a second msgid and forfeit the translations already shipped for this
+    // wording in 11 locales.
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
-      anonymous: msg`Sender-attested contact verification (not independently verified)`,
+      anonymous: SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE,
       you: msg`You attested control of ${data.contact} (not independently verified)`,
       user: msg`${user} attested control of ${data.contact} (not independently verified)`,
     }))
