@@ -13,7 +13,7 @@ import { UAParser } from 'ua-parser-js';
 import { renderSVG } from 'uqr';
 
 import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
-import { SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE } from '../../constants/document-audit-logs';
+import { getSenderAttestedContactVerificationMessage } from '../../constants/document-audit-logs';
 import { APP_I18N_OPTIONS } from '../../constants/i18n';
 import { RECIPIENT_ROLE_SIGNING_REASONS, RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
@@ -825,7 +825,7 @@ export async function renderCertificate({
       new Konva.Text({
         x: margin,
         y: pageHeight - textXs - 10 - senderVerificationFooterHeight,
-        text: `${i18n._(SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE)}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
+        text: `${i18n._(getSenderAttestedContactVerificationMessage())}: ${formatSenderVerificationValue(senderVerification, i18n)}`,
         fontFamily: 'Inter',
         fontSize: textXs,
         fill: textMutedForegroundLight,

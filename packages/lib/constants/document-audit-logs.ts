@@ -42,9 +42,24 @@ export const DOCUMENT_AUDIT_LOG_EMAIL_FORMAT = {
  *
  * DEV-9003. When DEV-8975 lands and the proof is genuinely server-held, this
  * is the single place to return to assertive "verified" wording.
+ *
+ * Deliberately a function rather than a `const`: `msg` is a compile-time Lingui
+ * macro, and this module is reachable from `packages/prisma/seed-database.ts`
+ * (seed/documents.ts -> server-only/envelope/create-envelope ->
+ * utils/document-audit-logs -> here). The seed runs under `tsx`, which applies
+ * no macro transform, so evaluating `msg()` at module scope throws
+ * `TypeError: (0 , import_macro.msg) is not a function` at *import* time and
+ * fails `prisma:seed` -- which the E2E job runs before a single test. Keeping
+ * the call inside a function makes importing this module side-effect-free; only
+ * the macro-compiled callers ever invoke it. Do not re-inline it to a `const`.
+ *
+ * The message and (absent) context are unchanged, so the generated msgid hash
+ * is identical and the translations already shipped for this wording still
+ * resolve -- extraction is static and finds the macro call inside the function.
  */
-export const SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE = msg({
-  message: `Sender-attested contact verification (not independently verified)`,
-  comment:
-    'Shown in two places: as the signing-certificate footer label, followed by ": <contact> — <method> OTP, <timestamp>"; and on its own as an audit-log activity row. Must read correctly both as a label and as a standalone sentence.',
-});
+export const getSenderAttestedContactVerificationMessage = () =>
+  msg({
+    message: `Sender-attested contact verification (not independently verified)`,
+    comment:
+      'Shown in two places: as the signing-certificate footer label, followed by ": <contact> — <method> OTP, <timestamp>"; and on its own as an audit-log activity row. Must read correctly both as a label and as a standalone sentence.',
+  });

@@ -4,7 +4,7 @@ import type { DocumentAuditLog, DocumentMeta, Field, Recipient } from '@prisma/c
 import { RecipientRole } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 import { match } from 'ts-pattern';
-
+import { getSenderAttestedContactVerificationMessage } from '../constants/document-audit-logs';
 import type {
   TDocumentAuditLog,
   TDocumentAuditLogDocumentMetaDiffSchema,
@@ -18,7 +18,6 @@ import {
   RECIPIENT_DIFF_TYPE,
   ZDocumentAuditLogSchema,
 } from '../types/document-audit-logs';
-import { SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE } from '../constants/document-audit-logs';
 import { ZRecipientAuthOptionsSchema } from '../types/document-auth';
 import type { ApiRequestMetadata, RequestMetadata } from '../universal/extract-request-metadata';
 
@@ -539,7 +538,7 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
     // mint a second msgid and forfeit the translations already shipped for this
     // wording in 11 locales.
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
-      anonymous: SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE,
+      anonymous: getSenderAttestedContactVerificationMessage(),
       you: msg`You attested control of ${data.contact} (not independently verified)`,
       user: msg`${user} attested control of ${data.contact} (not independently verified)`,
     }))

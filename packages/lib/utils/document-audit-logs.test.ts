@@ -1,7 +1,7 @@
 import { setupI18n } from '@lingui/core';
 import { describe, expect, it } from 'vitest';
 
-import { SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE } from '../constants/document-audit-logs';
+import { getSenderAttestedContactVerificationMessage } from '../constants/document-audit-logs';
 import type { TDocumentAuditLog } from '../types/document-audit-logs';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../types/document-audit-logs';
 import { formatDocumentAuditLogAction } from './document-audit-logs';
@@ -78,13 +78,15 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
 
     // Asserted against the descriptor render-certificate.ts renders, so
     // changing the certificate wording alone cannot leave the two out of sync.
-    expect(description).toBe(i18n._(SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE));
-    expect(SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE.message).toBe(EXPECTED_WORDING);
+    const descriptor = getSenderAttestedContactVerificationMessage();
+
+    expect(description).toBe(i18n._(descriptor));
+    expect(descriptor.message).toBe(EXPECTED_WORDING);
   });
 
   it('resolves a translation rather than rendering a raw key or an empty string', () => {
     const germanWording = 'Vom Absender bestätigte Kontaktverifizierung (nicht unabhängig geprüft)';
-    const messageId = SENDER_ATTESTED_CONTACT_VERIFICATION_MESSAGE.id;
+    const messageId = getSenderAttestedContactVerificationMessage().id;
 
     expect(messageId).toBeTruthy();
 
