@@ -521,13 +521,22 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
       you: msg`You failed to validate a 2FA token for the document`,
       user: msg`${user} failed to validate a 2FA token for the document`,
     }))
+    // DEV-9003: this wording deliberately mirrors the signing certificate's
+    // sender-attested phrasing in packages/lib/server-only/pdf/render-certificate.ts.
+    // `senderVerification` is client-supplied metadata accepted from any
+    // authenticated API caller with no server-side proof the OTP actually
+    // happened (DEV-8975, blocked on reeve-services support), so no display
+    // surface may assert a verification the server did not perform -- and this
+    // description is rendered onto the certificate PDF itself via
+    // render-audit-logs.ts, so it must not contradict the footer above it.
+    // The anonymous variant intentionally drops the `Audit log format` msgctxt
+    // so it reuses the certificate's existing msgid (and its translations)
+    // verbatim. When DEV-8975 lands, flipping both surfaces back to assertive
+    // "verified" wording is a single wording change in each file.
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
-      anonymous: msg({
-        message: `Sender contact verified`,
-        context: `Audit log format`,
-      }),
-      you: msg`You verified control of ${data.contact}`,
-      user: msg`${user} verified control of ${data.contact}`,
+      anonymous: msg`Sender-attested contact verification (not independently verified)`,
+      you: msg`You attested control of ${data.contact} (not independently verified)`,
+      user: msg`${user} attested control of ${data.contact} (not independently verified)`,
     }))
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.EMAIL_SENT }, ({ data }) => {
       if (data.isResending) {
