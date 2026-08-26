@@ -141,21 +141,22 @@ export const ZSenderVerificationMethodSchema = z.enum(['email', 'sms']);
 export const ZSenderVerificationSchema = z
   .object({
     contact: z.string().min(1).openapi({
-      description: 'The verified email address or phone number (E.164) the sender proved control of.',
+      description:
+        'The email address or phone number (E.164) the sender attests they control. Recorded as supplied; not independently verified by Reeve.',
     }),
     method: ZSenderVerificationMethodSchema.openapi({
-      description: 'The channel the OTP was verified over.',
+      description: 'The channel the sender attests the OTP was verified over.',
     }),
     verifiedAt: z.string().datetime({ offset: true }).openapi({
-      description: 'ISO-8601 timestamp of when the sender verified control of the contact.',
+      description: 'ISO-8601 timestamp of when the sender attests the contact was verified.',
     }),
     ipAddress: z.string().ip().optional().openapi({
-      description: 'The IP address the sender verified from, if known.',
+      description: 'The IP address the sender attests the verification was performed from, if known.',
     }),
   })
-  // The certificate prints `contact` verbatim as an assertion that this exact
-  // address/number was OTP-verified -- so it must actually look like one,
-  // matching the claimed `method`, rather than accepting any non-empty string.
+  // The certificate and the audit log print `contact` verbatim as a sender
+  // attestation -- so it must still look like a real address/number for the
+  // claimed `method`, rather than accepting any non-empty string.
   .refine((data) => contactMatchesMethod(data.contact, data.method), {
     message: 'contact must be a valid email address (method: email) or E.164 phone number (method: sms)',
     path: ['contact'],
@@ -237,7 +238,7 @@ export const ZCreateDocumentMutationSchema = z.object({
     .optional(),
   senderVerification: ZSenderVerificationSchema.optional().openapi({
     description:
-      'Optional sender identity-verification metadata (e.g. from an OTP flow) recorded on the envelope audit trail and shown on the signing certificate. Omit if the sender was not OTP-verified.',
+      'Optional sender identity-verification metadata (e.g. from an OTP flow the caller ran) that the caller attests to. Recorded verbatim on the envelope audit trail and shown on the signing certificate as a sender attestation; Reeve does not independently verify it. Omit if no such verification was performed.',
   }),
 });
 

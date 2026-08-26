@@ -98,8 +98,8 @@ describe('DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED', () => {
     expect(result.success).toBe(false);
   });
 
-  // The certificate prints `contact` verbatim as an assertion of what was
-  // OTP-verified (CR CLI + independent review, DEV-8741) -- these three
+  // The certificate prints `contact` verbatim as a sender attestation
+  // (CR CLI + independent review, DEV-8741) -- these three
   // confirm the audit-log persistence schema enforces the same rule the v1
   // API input schema does, not just at the API boundary.
   it('rejects method: email with a contact that is not an email', () => {
