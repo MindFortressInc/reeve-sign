@@ -50,9 +50,9 @@ export const E164_PHONE_REGEX = /^\+[1-9]\d{1,14}$/;
  * (`packages/api/v1/schema.ts`) and the `DOCUMENT_SENDER_IDENTITY_VERIFIED`
  * audit-log event (`packages/lib/types/document-audit-logs.ts`) -- one
  * validated rule, not two independently-drifting copies. Both surfaces print
- * `contact` verbatim as an assertion of what was OTP-verified, so it must
- * actually look like the claimed channel rather than accepting any
- * non-empty string.
+ * `contact` verbatim as a sender attestation -- Reeve does not independently
+ * verify it (DEV-9177) -- so it must still look like the claimed channel
+ * rather than accepting any non-empty string.
  */
 export const contactMatchesMethod = (contact: string, method: 'email' | 'sms'): boolean =>
   method === 'email' ? zEmail().safeParse(contact).success : E164_PHONE_REGEX.test(contact);

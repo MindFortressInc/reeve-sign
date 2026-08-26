@@ -55,9 +55,10 @@ export const ZDocumentAuditLogTypeSchema = z.enum([
   'DOCUMENT_ACCESS_AUTH_2FA_VALIDATED', // When ACCESS AUTH 2FA is successfully validated.
   'DOCUMENT_ACCESS_AUTH_2FA_FAILED', // When ACCESS AUTH 2FA validation fails.
 
-  // Sender identity verification (DEV-8741): the sender proved control of the
-  // originating contact (email or phone) via OTP before the envelope was sent,
-  // giving the certificate of completion a defensible sender identity claim.
+  // Sender identity verification (DEV-8741): the sender attests they verified
+  // control of the originating contact (email or phone) via OTP before the
+  // envelope was sent. Client-supplied and recorded verbatim -- Reeve does not
+  // independently verify it (DEV-8975).
   'DOCUMENT_SENDER_IDENTITY_VERIFIED', // When sender OTP-verification metadata is recorded on the envelope at create time.
 ]);
 
@@ -593,22 +594,24 @@ export const ZDocumentAuditLogEventDocumentRecipientFailed2FAEmailSchema = z.obj
 });
 
 /**
- * Event: Sender verified control of the originating contact (email or phone)
- * via OTP prior to sending. Recorded on envelope create when the caller
- * supplies `senderVerification` metadata (DEV-8741); this event is simply
- * absent for envelopes created without it — every caller before this change.
+ * Event: the sender attests they verified control of the originating contact
+ * (email or phone) via OTP prior to sending. Recorded on envelope create when
+ * the caller supplies `senderVerification` metadata (DEV-8741); this event is
+ * simply absent for envelopes created without it — every caller before this
+ * change. The metadata is client-supplied and is not independently verified by
+ * Reeve (DEV-8975).
  */
 export const ZDocumentAuditLogEventDocumentSenderIdentityVerifiedSchema = z.object({
   type: z.literal(DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED),
   data: z
     .object({
-      /** The verified email address or phone number (E.164) the sender proved control of. */
+      /** The email address or phone number (E.164) the sender attests they control. */
       contact: z.string(),
-      /** The channel the OTP was verified over. */
+      /** The channel the sender attests the OTP was verified over. */
       method: z.enum(['email', 'sms']),
-      /** ISO-8601 timestamp of when the sender verified control of the contact. */
+      /** ISO-8601 timestamp of when the sender attests the contact was verified. */
       verifiedAt: z.string().datetime({ offset: true }),
-      /** The IP address the sender verified from, if known. */
+      /** The IP address the sender attests the verification was performed from, if known. */
       ipAddress: z.string().ip().nullish(),
     })
     // Same rule as the v1 API's ZSenderVerificationSchema (packages/api/v1/schema.ts)
