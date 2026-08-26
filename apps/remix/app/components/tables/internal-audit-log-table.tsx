@@ -1,3 +1,4 @@
+import { getDocumentAuditLogTypeLabel } from '@documenso/lib/constants/document-audit-logs';
 import { APP_I18N_OPTIONS } from '@documenso/lib/constants/i18n';
 import { DOCUMENT_AUDIT_LOG_TYPE, type TDocumentAuditLog } from '@documenso/lib/types/document-audit-logs';
 import { formatDocumentAuditLogAction } from '@documenso/lib/utils/document-audit-logs';
@@ -86,8 +87,8 @@ export const InternalAuditLogTable = ({ logs }: AuditLogDataTableProps) => {
                   <div className={cn(`h-2 w-2 rounded-full`, getAuditLogIndicatorColor(log.type))} />
 
                   <div>
-                    <div className="font-medium text-muted-foreground text-sm uppercase tracking-wide print:text-[8pt]">
-                      {log.type.replace(/_/g, ' ')}
+                    <div className="font-medium text-muted-foreground text-sm tracking-wide print:text-[8pt]">
+                      {_(getDocumentAuditLogTypeLabel(log.type))}
                     </div>
 
                     <div className="font-medium text-foreground text-sm print:text-[8pt]">
