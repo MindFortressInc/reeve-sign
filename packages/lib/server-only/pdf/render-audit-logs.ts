@@ -13,6 +13,7 @@ import { match, P } from 'ts-pattern';
 import { UAParser } from 'ua-parser-js';
 
 import { DOCUMENT_STATUS } from '../../constants/document';
+import { getDocumentAuditLogTypeLabel } from '../../constants/document-audit-logs';
 import { APP_I18N_OPTIONS } from '../../constants/i18n';
 import { RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLog } from '../../types/document-audit-logs';
@@ -303,7 +304,14 @@ type RenderRowOptions = {
   i18n: I18n;
 };
 
-const renderRow = (options: RenderRowOptions) => {
+/**
+ * Exported so the row's user-facing text can be asserted directly against the
+ * real Konva render (render-audit-logs.test.ts) instead of a re-implementation
+ * of it -- the same reason `formatSenderVerificationValue` is exported from
+ * render-certificate.ts. Not part of the module's public API; call
+ * `renderAuditLogs`.
+ */
+export const renderRow = (options: RenderRowOptions) => {
   const { auditLog, width, i18n } = options;
 
   const paddingWithinCard = 12;
@@ -328,7 +336,7 @@ const renderRow = (options: RenderRowOptions) => {
     x: indicatorWidth + indicatorPaddingRight,
     y: 0,
     width: columnWidth - indicatorWidth - indicatorPaddingRight,
-    text: auditLog.type.replace(/_/g, ' '),
+    text: i18n._(getDocumentAuditLogTypeLabel(auditLog.type)),
     fontFamily: 'Inter',
     fontSize: textSm,
     fontStyle: fontMedium,
