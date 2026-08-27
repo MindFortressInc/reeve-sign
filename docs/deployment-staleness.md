@@ -116,11 +116,14 @@ the box as a tarball, never via a registry pull.
 
 7. **Restart**: `docker compose up -d`.
 
-8. **Verify by digest**: `deploy/check-image-drift.sh` confirms the running
-   container's image matches the digest the pinned tag resolves to in GHCR
-   (see "Digest pinning" below). Note that its byte-level assertion is
-   currently broken by the same containerd re-normalization described in step
-   5 — see DEV-9526; step 5's pre-load check is the integrity gate that
+8. **Verify by digest**: `deploy/check-image-drift.sh` checks the running
+   container against the box-pinned tag (see "Digest pinning" below). Its
+   ref-vs-pin comparison still holds, but its byte-level digest comparison
+   does not: under the same containerd re-normalization described in step 5
+   (DEV-9526), the running image ID it reads is a manifest digest compared
+   against a config digest, so it reports **DRIFT even on a byte-for-byte
+   correct deploy**. Treat that half of its output as inconclusive until
+   DEV-9526 lands — step 5's pre-load check is the integrity gate that
    actually works today.
 
 ## Digest pinning (DEV-7600)
