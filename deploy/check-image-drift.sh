@@ -10,15 +10,26 @@
 #   - pinning compose by `image@sha256:<manifest digest>` cannot work: the box
 #     would have to pull the digest from GHCR, which it cannot do;
 #   - comparing manifest digests on the box cannot work either: `docker load`
-#     does not preserve RepoDigests, so the running image has none.
+#     does not carry GHCR's manifest digest across, so the RepoDigests entry
+#     the box reports is a locally synthesized digest, not the registry's.
 #
 # The digest that DOES survive docker save / docker load is the image ID: the
 # config digest (sha256 of the image config JSON). It is byte-identical
-# between the registry manifest's `config.digest` and `docker inspect`'s
-# `.Image` on the box. So this assertion resolves the pinned tag to its config
+# between the registry manifest's `config.digest` and the config blob carried
+# inside the tarball. So this assertion resolves the pinned tag to its config
 # digest via the GHCR API *at check time* and compares it to the running
 # container's image ID. A moving tag serving different bytes fails this check;
 # a mere tag-string comparison would not.
+#
+# KNOWN BROKEN (DEV-9441 / DEV-9526): the box now runs the containerd
+# snapshotter image store, where `docker inspect --format '{{.Image}}'` is the
+# image's *manifest* digest, not its config digest -- and no `docker image
+# inspect` field exposes the config digest at all. The digest comparison below
+# therefore compares a config digest to a manifest digest and always
+# mismatches, even on a byte-for-byte correct deploy. The ref-vs-pin
+# comparison is unaffected. Until DEV-9526 lands, the integrity gate that
+# actually works is the pre-load tarball check in
+# docs/deployment-staleness.md step 5.
 #
 # Requirements: ssh access to the box, `jq`, and a GitHub token that can read
 # the private GHCR package (uses `gh auth token`, or $GH_TOKEN/$GITHUB_TOKEN).
@@ -77,8 +88,9 @@ PINNED_REF="$(run_ssh "${HOST}" "grep -Eo 'ghcr\.io/mindfortressinc/reeve-sign:[
 TAG="${PINNED_REF##*:}"
 echo "pinned ref (box compose.yml):    ${PINNED_REF}"
 
-# 2. What is actually running: the ref the container was started from, and its
-#    image ID (config digest) — the only digest that survives docker load.
+# 2. What is actually running: the ref the container was started from, and the
+#    image digest docker reports for it. NOTE (DEV-9526): under the containerd
+#    snapshotter this is the manifest digest, not the config digest.
 CONTAINER_ID="$(run_ssh "${HOST}" "docker compose --project-directory ${BOX_COMPOSE_DIR} ps -q documenso")" ||
   fail "'docker compose ps' failed over ssh to ${HOST} (transport or compose failure, NOT a no-drift result)"
 [ -n "${CONTAINER_ID}" ] || fail "no running 'documenso' container found via compose in ${BOX_COMPOSE_DIR}"
@@ -95,7 +107,7 @@ RUNNING_IMAGE_ID="$(run_ssh "${HOST}" "docker inspect --format '{{.Image}}' ${CO
 [ -n "${RUNNING_REF}" ] && [ -n "${RUNNING_IMAGE_ID}" ] ||
   fail "docker inspect on ${HOST} returned an empty ref/image ID for ${CONTAINER_ID}"
 echo "running ref (container):         ${RUNNING_REF}"
-echo "running image ID (config digest): ${RUNNING_IMAGE_ID}"
+echo "running image digest (see DEV-9526): ${RUNNING_IMAGE_ID}"
 
 # 3. Resolve the pinned tag to its config digest via the GHCR API at check time.
 #    Credentials go to curl via `--config -` on stdin, never as command-line
@@ -129,6 +141,9 @@ fi
 if [ "${RUNNING_IMAGE_ID}" != "${EXPECTED_IMAGE_ID}" ]; then
   echo "DRIFT: running image ID ${RUNNING_IMAGE_ID} != ${EXPECTED_IMAGE_ID}, which ${IMAGE}:${TAG} resolves to in GHCR." >&2
   echo "       The pinned tag and the running bytes disagree — exactly the moving-tag failure class (DEV-7600)." >&2
+  echo "       CAVEAT (DEV-9526): on the containerd-snapshotter box this comparison is config-digest vs" >&2
+  echo "       manifest-digest and mismatches even when the deploy is correct. Confirm with the pre-load" >&2
+  echo "       tarball check in docs/deployment-staleness.md step 5 before believing this line." >&2
   status=1
 fi
 
