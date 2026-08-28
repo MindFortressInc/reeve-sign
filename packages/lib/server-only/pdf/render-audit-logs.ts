@@ -308,7 +308,7 @@ type RenderRowOptions = {
  * Exported so the row's user-facing text can be asserted directly against the
  * real Konva render (render-audit-logs.test.ts) instead of a re-implementation
  * of it -- the same reason `formatSenderVerificationValue` is exported from
- * render-certificate.ts. Not part of the module's public API; call
+ * utils/sender-verification.ts. Not part of the module's public API; call
  * `renderAuditLogs`.
  */
 export const renderRow = (options: RenderRowOptions) => {

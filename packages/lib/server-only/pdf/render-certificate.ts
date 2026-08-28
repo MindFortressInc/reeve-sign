@@ -46,15 +46,13 @@ export type CertificateRecipient = {
   };
 };
 
-export type CertificateSenderVerification = SenderVerificationValue;
-
 /**
- * Re-exported so the certificate's own importers (and render-certificate.test.ts)
- * keep their existing import path; the implementation now lives in
- * utils/sender-verification.ts so the audit-log row can compose the same value
- * without pulling Konva into the client bundle (DEV-9178).
+ * The certificate's name for the shared shape; the value it prints is formatted
+ * by `formatSenderVerificationValue`, which lives in utils/sender-verification.ts
+ * so the Audit Log PDF row can compose the same string without pulling
+ * Konva/skia-canvas into the client bundle (DEV-9178).
  */
-export { formatSenderVerificationValue };
+export type CertificateSenderVerification = SenderVerificationValue;
 
 type GenerateCertificateOptions = {
   recipients: CertificateRecipient[];
