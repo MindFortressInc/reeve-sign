@@ -18,6 +18,8 @@ import { APP_I18N_OPTIONS } from '../../constants/i18n';
 import { RECIPIENT_ROLE_SIGNING_REASONS, RECIPIENT_ROLES_DESCRIPTION } from '../../constants/recipient-roles';
 import type { TDocumentAuditLogBaseSchema } from '../../types/document-audit-logs';
 import { svgToPng } from '../../utils/images/svg-to-png';
+import type { SenderVerificationValue } from '../../utils/sender-verification';
+import { formatSenderVerificationValue } from '../../utils/sender-verification';
 import { ensureFontLibrary } from './helpers';
 
 type ColumnWidths = [number, number, number];
@@ -44,11 +46,13 @@ export type CertificateRecipient = {
   };
 };
 
-export type CertificateSenderVerification = {
-  contact: string;
-  method: 'email' | 'sms';
-  verifiedAt: string;
-};
+/**
+ * The certificate's name for the shared shape; the value it prints is formatted
+ * by `formatSenderVerificationValue`, which lives in utils/sender-verification.ts
+ * so the Audit Log PDF row can compose the same string without pulling
+ * Konva/skia-canvas into the client bundle (DEV-9178).
+ */
+export type CertificateSenderVerification = SenderVerificationValue;
 
 type GenerateCertificateOptions = {
   recipients: CertificateRecipient[];
@@ -69,33 +73,6 @@ type GenerateCertificateOptions = {
    * before this change, and for every caller that doesn't supply it.
    */
   senderVerification?: CertificateSenderVerification | null;
-};
-
-/**
- * DEV-8741: format the sender identity-verification line shown on the
- * certificate footer. Takes `i18n` explicitly (rather than importing the
- * module singleton) so it stays a pure, directly unit-testable function --
- * same reasoning as every other label on this certificate, which all go
- * through `i18n._(msg\`...\`)` at their call sites.
- */
-export const formatSenderVerificationValue = (
-  senderVerification: CertificateSenderVerification,
-  i18n: I18n,
-): string => {
-  const methodLabel = senderVerification.method === 'sms' ? i18n._(msg`SMS`) : i18n._(msg`Email`);
-
-  // `setZone: true` keeps the offset the sender's timestamp was recorded
-  // with, so the certificate shows the verification in that zone rather than
-  // silently rebasing it onto the renderer's local zone.
-  const verifiedAt = DateTime.fromISO(senderVerification.verifiedAt, { setZone: true }).setLocale(
-    APP_I18N_OPTIONS.defaultLocale,
-  );
-
-  const formattedTimestamp = verifiedAt.isValid
-    ? verifiedAt.toFormat('yyyy-MM-dd hh:mm:ss a (ZZZZ)')
-    : senderVerification.verifiedAt;
-
-  return `${senderVerification.contact} — ${methodLabel} ${i18n._(msg`OTP`)}, ${formattedTimestamp}`;
 };
 
 // Helper function to get device info from user agent

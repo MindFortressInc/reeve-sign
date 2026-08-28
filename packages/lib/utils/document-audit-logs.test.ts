@@ -5,6 +5,7 @@ import { getSenderAttestedContactVerificationMessage } from '../constants/docume
 import type { TDocumentAuditLog } from '../types/document-audit-logs';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '../types/document-audit-logs';
 import { formatDocumentAuditLogAction } from './document-audit-logs';
+import { formatSenderVerificationValue } from './sender-verification';
 
 // DEV-9003: the DOCUMENT_SENDER_IDENTITY_VERIFIED activity message is
 // user-visible text on a legal document -- it is printed into the Audit Log
@@ -17,6 +18,11 @@ import { formatDocumentAuditLogAction } from './document-audit-logs';
 // gate. See the CI follow-up ticket linked from DEV-9003.
 
 const EXPECTED_WORDING = 'Sender-attested contact verification (not independently verified)';
+
+// DEV-9178: the caveat sentence alone records that *something* was attested but
+// never what. The attested facts are appended to it at render time, the same
+// way the signing-certificate footer composes them.
+const EXPECTED_DETAILS = 'sender@example.com — Email OTP, 2026-08-14 06:29:00 PM (UTC)';
 
 const SENDER_IDENTITY_VERIFIED_EVENT = {
   id: 'audit_log_1',
@@ -65,10 +71,43 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
 
     const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
 
-    expect(description).toBe(EXPECTED_WORDING);
+    expect(description.startsWith(EXPECTED_WORDING)).toBe(true);
     // The pre-DEV-9003 wording, and the looser claim it made.
     expect(description).not.toMatch(/contact verified/);
     expect(description).not.toMatch(/\bverified control of\b/);
+  });
+
+  // DEV-9178. This row is the only place the Audit Log PDF can carry the
+  // attestation: `includeAuditLog` and `includeSigningCertificate` are
+  // independent settings (seal-document.handler.ts), so an Audit Log attached
+  // without the certificate has no footer to lean on.
+  it('records which contact was attested, over which method, and when', () => {
+    const i18n = createI18n('en');
+
+    const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
+
+    expect(description).toContain('sender@example.com');
+    expect(description).toContain('Email OTP');
+    expect(description).toContain('2026-08-14');
+    // The facts are added, not swapped in for the caveat.
+    expect(description).toContain('not independently verified');
+  });
+
+  it('composes the facts exactly as the signing-certificate footer does', () => {
+    const i18n = createI18n('en');
+
+    const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
+
+    // render-certificate.ts renders
+    // `${i18n._(descriptor)}: ${formatSenderVerificationValue(...)}` from these
+    // same two helpers, so the audit row and the certificate cannot drift.
+    expect(description).toBe(
+      `${i18n._(getSenderAttestedContactVerificationMessage())}: ${formatSenderVerificationValue(
+        SENDER_IDENTITY_VERIFIED_EVENT.data,
+        i18n,
+      )}`,
+    );
+    expect(description).toBe(`${EXPECTED_WORDING}: ${EXPECTED_DETAILS}`);
   });
 
   it('renders the exact message the signing certificate uses, from the shared descriptor', () => {
@@ -80,7 +119,7 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
     // changing the certificate wording alone cannot leave the two out of sync.
     const descriptor = getSenderAttestedContactVerificationMessage();
 
-    expect(description).toBe(i18n._(descriptor));
+    expect(description.startsWith(i18n._(descriptor))).toBe(true);
     expect(descriptor.message).toBe(EXPECTED_WORDING);
   });
 
@@ -94,8 +133,11 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
 
     const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
 
-    expect(description).toBe(germanWording);
-    expect(description).not.toBe(messageId);
+    // DEV-9178: the translated sentence still resolves; only the untranslatable
+    // facts are appended after it, so the 11 shipped locales keep working.
+    expect(description.startsWith(germanWording)).toBe(true);
+    expect(description).toContain('sender@example.com');
+    expect(description).not.toContain(String(messageId));
     expect(description).not.toBe('');
   });
 
@@ -104,7 +146,7 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
 
     const { description } = formatDocumentAuditLogAction(i18n, PRODUCTION_LOG);
 
-    expect(description).toBe(EXPECTED_WORDING);
+    expect(description).toBe(`${EXPECTED_WORDING}: ${EXPECTED_DETAILS}`);
   });
 
   it('attributes the attestation to the viewer without asserting verification', () => {
@@ -113,6 +155,8 @@ describe('formatDocumentAuditLogAction · DOCUMENT_SENDER_IDENTITY_VERIFIED', ()
     const { prefix, description } = formatDocumentAuditLogAction(i18n, ATTRIBUTED_LOG, 42);
 
     expect(prefix).toBe('You');
+    // The attributed variants interpolate the contact themselves, so the
+    // composed details are not appended on top of it (DEV-9178).
     expect(description).toBe('You attested control of sender@example.com (not independently verified)');
     expect(description).not.toMatch(/\bverified control of\b/);
   });

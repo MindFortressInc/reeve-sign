@@ -20,6 +20,7 @@ import {
 } from '../types/document-audit-logs';
 import { ZRecipientAuthOptionsSchema } from '../types/document-auth';
 import type { ApiRequestMetadata, RequestMetadata } from '../universal/extract-request-metadata';
+import { formatSenderVerificationValue } from './sender-verification';
 
 type CreateDocumentAuditLogDataOptions<T = TDocumentAuditLog['type']> = {
   envelopeId: string;
@@ -280,6 +281,39 @@ export const diffDocumentMetaChanges = (
 };
 
 /**
+ * DEV-9178: already-composed, untranslatable facts to append to an event's
+ * `anonymous` description.
+ *
+ * `DOCUMENT_SENDER_IDENTITY_VERIFIED`'s anonymous description is the caveat
+ * sentence alone -- it records that *something* was attested but never which
+ * contact, over which method, or when, and the attested contact is the event's
+ * entire evidentiary value. That is also the description every reader actually
+ * gets: create-envelope.ts writes the row with `user: { id }` only, so
+ * `createDocumentAuditLogData` nulls name/email (making the `user` variant
+ * unreachable), and the Audit Log PDF calls `formatDocumentAuditLogAction` with
+ * no `userId` at all. The Audit Log can be sealed onto a document *without* the
+ * signing certificate (`includeAuditLog` and `includeSigningCertificate` are
+ * independent -- seal-document.handler.ts), so the row cannot lean on the
+ * certificate footer to carry them.
+ *
+ * Composed here rather than interpolated into the descriptor: the anonymous
+ * descriptor is shared with that certificate footer and is already translated
+ * in 11 locales, and interpolating a value would mint a new, untranslated
+ * msgid (DEV-9003). Rendering `${i18n._(descriptor)}: ${value}` is exactly what
+ * the footer does (render-certificate.ts), from this same helper, so the two
+ * surfaces cannot state the attestation differently.
+ *
+ * Deliberately not applied to the `you` / `user` variants: those already
+ * interpolate `data.contact`, so appending the value would print it twice.
+ */
+const getAnonymousDescriptionDetails = (i18n: I18n, auditLog: TDocumentAuditLog): string | undefined =>
+  match(auditLog)
+    .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) =>
+      formatSenderVerificationValue(data, i18n),
+    )
+    .otherwise(() => undefined);
+
+/**
  * Formats the audit log into a description of the action.
  *
  * Provide a userId to prefix the action with the user, example 'X did Y'.
@@ -537,6 +571,10 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
     // is deliberate: msgctxt feeds lingui's id generation, so keeping it would
     // mint a second msgid and forfeit the translations already shipped for this
     // wording in 11 locales.
+    //
+    // DEV-9178: the anonymous descriptor is a bare caveat naming no contact,
+    // method or timestamp -- see `getAnonymousDescriptionDetails` above, which
+    // composes those facts onto it at render time.
     .with({ type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_SENDER_IDENTITY_VERIFIED }, ({ data }) => ({
       anonymous: getSenderAttestedContactVerificationMessage(),
       you: msg`You attested control of ${data.contact} (not independently verified)`,
@@ -622,14 +660,20 @@ export const formatDocumentAuditLogAction = (i18n: I18n, auditLog: TDocumentAudi
 
   let selectedDescription = description.anonymous;
 
+  let details = getAnonymousDescriptionDetails(i18n, auditLog);
+
   if (isCurrentUser) {
     selectedDescription = description.you;
+    details = undefined;
   } else if (user) {
     selectedDescription = description.user;
+    details = undefined;
   }
+
+  const translatedDescription = i18n._(selectedDescription);
 
   return {
     prefix,
-    description: i18n._(selectedDescription),
+    description: details ? `${translatedDescription}: ${details}` : translatedDescription,
   };
 };

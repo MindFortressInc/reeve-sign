@@ -1,14 +1,18 @@
 import { setupI18n } from '@lingui/core';
 import { describe, expect, it } from 'vitest';
 
-import { formatSenderVerificationValue } from './render-certificate';
+import { formatSenderVerificationValue } from './sender-verification';
 
 // DEV-8741: pure formatting for the sender OTP identity-verification line
 // shown on the certificate footer. Deliberately has no Konva/skia-canvas
 // dependency (see the docstring on the function) so it's testable without
 // the rendering pipeline; the actual PDF rendering (block present/absent) is
 // verified separately via a rendered artifact -- see PR description /
-// DEV-8741 notes. `i18n` is a real I18n instance with no catalog loaded, so
+// DEV-8741 notes.
+//
+// DEV-9178: moved here with the function, which the Audit Log PDF row now
+// composes too (utils/document-audit-logs.ts) -- it is no longer the
+// certificate's alone. `i18n` is a real I18n instance with no catalog loaded, so
 // `i18n._(msg\`...\`)` falls back to each message's id -- identical to its
 // English source text -- exercising the same code path
 // `generate-certificate-pdf.ts` uses in production without pulling in a
