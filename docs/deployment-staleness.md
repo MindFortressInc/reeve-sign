@@ -55,19 +55,60 @@ the box as a tarball, never via a registry pull.
    ```
 
    The `.digests` file has to land next to the tarball, not stay in the CI
-   artifact: `docker load` does not preserve `RepoDigests`, so once the image
-   is on the box this file is the only record of which registry manifest
-   digest those bytes came from.
+   artifact: `docker load` does not carry the registry manifest digest across,
+   so once the image is on the box this file is the only record of which
+   registry manifest digest those bytes came from. The containerd store *does*
+   populate a `RepoDigests` entry after a load, but it is the digest of a
+   manifest containerd synthesized locally — not the one GHCR served — so it
+   cannot stand in for this file (see step 5).
 
-5. **Load it on the box**, then confirm the loaded image ID matches the record
-   you copied (a registry-free check the box can run on its own):
+5. **Verify the tarball, then load it.** The check runs *before* the load,
+   against the tarball's own bytes: hash the config blob it carries and
+   compare that to the `image_id=` line in the record you copied (a
+   registry-free check the box can run on its own):
 
    ```bash
-   docker load < reeve-sign-image.tar.gz
    cat reeve-sign-image.digests   # image=, tag=, manifest_digest=, image_id=
-   docker image inspect --format '{{.Id}}' ghcr.io/mindfortressinc/reeve-sign:<tag>
-   # must equal the image_id line above
+
+   # Hashes the config blob the tarball carries, compares it to image_id=, and
+   # exits non-zero on a mismatch -- so the load only runs on matching bytes.
+   python3 - <<'PY' && docker load < reeve-sign-image.tar.gz
+   import tarfile, hashlib, json
+   t = tarfile.open("reeve-sign-image.tar.gz")   # tarfile handles the gzip
+   mf = json.load(t.extractfile("manifest.json"))
+   if len(mf) != 1:   # not `assert` -- python3 -O would strip it
+       raise SystemExit("%d images in tarball, expected 1" % len(mf))
+   actual = "sha256:" + hashlib.sha256(t.extractfile(mf[0]["Config"]).read()).hexdigest()
+   expected = next((l.split("=", 1)[1].strip()
+                    for l in open("reeve-sign-image.digests")
+                    if l.startswith("image_id=")), None)
+   if actual != expected:
+       raise SystemExit("MISMATCH: tarball has %s, record says %s" % (actual, expected))
+   print("OK: config digest matches image_id= %s" % actual)
+   PY
    ```
+
+   **Do not run this check after the load.** The box runs Docker 29.2.1 with
+   the **containerd snapshotter** image store, which re-normalizes image
+   metadata on `docker load`: it synthesizes a fresh OCI manifest for the
+   loaded bytes and reports *that* manifest's digest as `.Id`. Measured on the
+   box after a deploy that was byte-for-byte correct (DEV-9441):
+
+   | value | digest |
+   | --- | --- |
+   | `docker image inspect --format '{{.Id}}'` | `sha256:fea13fca…` |
+   | `docker image inspect --format '{{index .RepoDigests 0}}'` | `…@sha256:fea13fca…` |
+   | recorded `image_id=` (config digest) | `sha256:97318982…` |
+   | recorded `manifest_digest=` | `sha256:ebb507bd…` |
+
+   `.Id` matches **neither** recorded digest, and swapping it for
+   `{{index .RepoDigests 0}}` does not help — the containerd store fills
+   `RepoDigests` from that same locally-synthesized manifest, so it is not
+   GHCR's manifest digest either. Under this store `.Id` is a **manifest**
+   digest, not the config digest it was under the classic image store, and no
+   `docker image inspect` field exposes the config digest at all. The tarball
+   is the only thing on the box that still carries it — which is why the check
+   has to happen before you load.
 
 6. **Bump the tag** in the box-local `compose.yml` to the exact image tag you
    loaded (prefer the immutable `sha-<shortsha>` tag so the running version is
@@ -75,9 +116,15 @@ the box as a tarball, never via a registry pull.
 
 7. **Restart**: `docker compose up -d`.
 
-8. **Verify by digest**: `deploy/check-image-drift.sh` confirms the running
-   container's image ID matches the config digest the pinned tag resolves to
-   in GHCR (see "Digest pinning" below).
+8. **Verify by digest**: `deploy/check-image-drift.sh` checks the running
+   container against the box-pinned tag (see "Digest pinning" below). Its
+   ref-vs-pin comparison still holds, but its byte-level digest comparison
+   does not: under the same containerd re-normalization described in step 5
+   (DEV-9526), the running image ID it reads is a manifest digest compared
+   against a config digest, so it reports **DRIFT even on a byte-for-byte
+   correct deploy**. Treat that half of its output as inconclusive until
+   DEV-9526 lands — step 5's pre-load check is the integrity gate that
+   actually works today.
 
 ## Digest pinning (DEV-7600)
 
@@ -87,8 +134,9 @@ tarball path above:
 
 - compose **cannot** pin `image@sha256:<manifest digest>` — satisfying a
   digest reference requires a registry pull, which the box cannot do;
-- the box **cannot** report a manifest digest — `docker load` does not
-  preserve `RepoDigests`.
+- the box **cannot** report GHCR's manifest digest — `docker load` does not
+  carry it across, and the `RepoDigests` entry the containerd store
+  synthesizes on load is a local digest, not the registry's.
 
 The digest that survives `docker save`/`docker load` byte-identically is the
 **image ID** (the config digest, sha256 of the image config JSON), and it is
@@ -102,7 +150,18 @@ time** rather than the pipeline pinning by manifest digest.
   box-pinned tag to its config digest via the GHCR API and compares it to the
   running container's image ID (`docker inspect --format '{{.Image}}'`).
   A moving tag serving different bytes fails this check; a tag-string
-  comparison would pass it.
+  comparison would pass it. **This byte-level half of the check no longer
+  holds on the containerd-snapshotter box** — `.Image` reports a manifest
+  digest there, so it is being compared against a config digest and always
+  mismatches (DEV-9526). Its ref-vs-pin comparison is unaffected.
+
+**Caveat (DEV-9441): the box can no longer *report* that config digest.** The
+config digest still survives inside the tarball — that is what step 5 hashes —
+but under the containerd snapshotter image store `docker image inspect`'s
+`.Id`, its `.Descriptor.digest`, and a container's `.Image` are all the
+**manifest** digest, and no `docker image inspect` field exposes the config
+digest. So the digest does survive the transfer; what stopped working is
+asking Docker on the box to print it.
 
 ## The staleness monitor (`.github/workflows/image-staleness.yml`)
 

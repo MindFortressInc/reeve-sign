@@ -17,10 +17,14 @@ name: Publish Reeve.Sign image (GHCR)
 # Digests (DEV-7600): tags are strings and can move; digests are the truth.
 # Both jobs print and record two digests:
 #   - manifest digest: what the registry serves for the tag (registry-side pin);
-#   - image ID (config digest): the only digest that survives `docker save` /
-#     `docker load`, i.e. the only one the box can ever report. The drift
-#     assertion compares the running container's image ID against the config
-#     digest the pinned tag resolves to (see deploy/check-image-drift.sh).
+#   - image ID (config digest): the digest that survives `docker save` /
+#     `docker load` inside the image itself. NOTE (DEV-9441): the box can no
+#     longer *report* it -- under the containerd snapshotter image store
+#     `docker image inspect` exposes only manifest digests -- so it is checked
+#     by hashing the config blob out of the tarball before loading (see
+#     docs/deployment-staleness.md step 5). The drift assertion in
+#     deploy/check-image-drift.sh still compares against `docker inspect` and
+#     is broken by that same change; see DEV-9526.
 # `export_tarball` accepts an optional `digest` input and fails if the tag no
 # longer resolves to it, so a tag that moved between publish and export cannot
 # silently ship different bytes.
@@ -90,11 +94,16 @@ jobs:
           # Record the digests (DEV-7600). RepoDigests is populated by the push.
           MANIFEST_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:sha-${GIT_SHA}")"
           MANIFEST_DIGEST="${MANIFEST_DIGEST#*@}"
+          # `.Id` is the config digest only under the CLASSIC image store, which
+          # is what GitHub-hosted runners use. Under the containerd snapshotter
+          # it is the manifest digest instead -- if runners ever switch, this
+          # records the wrong kind of digest and the box-side check in
+          # docs/deployment-staleness.md step 5 starts failing (DEV-9441).
           IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}:sha-${GIT_SHA}")"
 
           echo "Published ${IMAGE}:${TAG} and ${IMAGE}:sha-${GIT_SHA}"
           echo "manifest digest: ${MANIFEST_DIGEST}"
-          echo "image ID (config digest, survives docker load): ${IMAGE_ID}"
+          echo "image ID (config digest; verify it from the tarball, not via docker inspect on the box -- DEV-9441): ${IMAGE_ID}"
 
           {
             echo "### Published \`${IMAGE}\`"
@@ -157,9 +166,13 @@ jobs:
           docker save "${IMAGE}:${TAG}" | gzip > reeve-sign-image.tar.gz
           ls -lh reeve-sign-image.tar.gz
 
-          # Shipped alongside the tarball: `docker load` preserves the image ID
-          # but NOT the manifest digest, so this file is the only record on the
-          # box side of exactly which registry bytes were deployed.
+          # Shipped alongside the tarball: the config blob carrying the image ID
+          # survives into the loaded image, but the manifest digest does not --
+          # and on the containerd snapshotter box `docker image inspect` cannot
+          # report the config digest either (DEV-9441). So this file is the only
+          # record on the box side of exactly which registry bytes were
+          # deployed; docs/deployment-staleness.md step 5 checks the tarball
+          # against it before loading.
           {
             echo "image=${IMAGE}"
             echo "tag=${TAG}"
