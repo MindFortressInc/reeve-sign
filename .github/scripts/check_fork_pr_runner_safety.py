@@ -68,6 +68,8 @@ GITHUB_HOSTED_LABELS = frozenset(
         "ubuntu-latest-4-cores",
         "ubuntu-latest-8-cores",
         "ubuntu-latest-16-cores",
+        "ubuntu-26.04",
+        "ubuntu-26.04-arm",
         "ubuntu-24.04",
         "ubuntu-24.04-arm",
         "ubuntu-22.04",
@@ -78,6 +80,7 @@ GITHUB_HOSTED_LABELS = frozenset(
         "windows-2025",
         "windows-2025-vs2026",
         "windows-2022",
+        "windows-11-vs2026-arm",
         "windows-11-arm",
         "macos-latest",
         "macos-latest-xlarge",
@@ -125,18 +128,26 @@ def uses_checkout(steps):
 
 
 def local_reusable_workflow_call(job):
-    """A job-level `uses: ./.github/workflows/x.yml` (reusable workflow call).
+    """A job-level `uses:` reusable-workflow call.
 
-    Such a job has no `steps:`/`runs-on:` of its own -- the CALLED file's own
-    jobs set those. This script does not follow the reference (that file may
-    itself be scanned separately, but only if it independently declares
-    `pull_request` -- a `workflow_call`-only file otherwise falls outside the
+    `jobs.<job_id>.uses` accepts several forms: `./.github/workflows/x.yml`
+    (workspace-relative), `$/.github/workflows/x.yml` (self-repository), or
+    `{owner}/{repo}/.github/workflows/x.yml@{ref}` (external repository) --
+    every one of them is a job-level `uses:` with no `steps:`/`runs-on:` of
+    its own; the CALLED file's own jobs set those. This script does not
+    follow ANY of these references (the callee may itself be scanned
+    separately, but only if it independently declares `pull_request` in its
+    own `on:` -- a `workflow_call`-only callee otherwise falls outside the
     per-file `pull_request` filter above even when it is reachable FROM a
-    pull_request-triggered caller). Rather than silently trust an unfollowed
-    reference, treat it as unresolved and fail closed (CR CLI review, DEV-9724).
+    pull_request-triggered caller). Recognizing only the `./` prefix let
+    `$/`- and external-repo-qualified calls slip through with no `steps:`/
+    `runs-on:` to flag, silently passing an unresolved delegation. Rather
+    than silently trust an unfollowed reference of any form, treat every
+    string-valued job-level `uses:` as unresolved and fail closed (CR PR #48,
+    DEV-9724).
     """
     uses = job.get("uses")
-    return isinstance(uses, str) and uses.startswith("./")
+    return isinstance(uses, str)
 
 
 def runs_on_findings(where, runs_on):
@@ -204,7 +215,7 @@ def main(workflows_dir):
             where = f"{path}: job `{job_name}`"
             if local_reusable_workflow_call(job):
                 print(
-                    f"{where}: delegates to local reusable workflow "
+                    f"{where}: delegates to reusable workflow "
                     f"{job['uses']!r}, which this script does not follow -- "
                     "manually verify that file never combines "
                     "actions/checkout with a self-hosted/fleet runs-on"
