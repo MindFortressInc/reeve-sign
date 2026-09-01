@@ -10,11 +10,15 @@ infrastructure — this is a hard rule (see DEV-9722/DEV-9724), not a style
 preference, so it is enforced here rather than left to review discipline.
 
 This is deliberately narrow and literal-only, matching how this repo actually
-sets `runs-on:` today (a single string per job, or a `matrix.os` array of
-plain strings — see e2e-tests.yml). Anything this script cannot resolve to a
-known-safe literal (an expression, a variable reference, an unrecognized
-string) is treated as a FINDING, not silently passed: a job on the
-`pull_request` + `actions/checkout` path fails closed here.
+sets `runs-on:` today: every `pull_request`-triggered job that checks out
+code (ci.yml, codeql-analysis.yml, e2e-tests.yml, pr-review-reminder.yml) is
+a single literal string, `ubuntu-latest`. A list of literal strings is also
+accepted (GitHub allows `runs-on:` to be a label list), since that shape is
+just as statically resolvable. Anything this script cannot resolve to a
+known-safe literal (an expression like `${{ matrix.os }}`, a variable
+reference, an unrecognized string) is treated as a FINDING, not silently
+passed: a job on the `pull_request` + `actions/checkout` path fails closed
+here.
 
 Usage: check_fork_pr_runner_safety.py [workflows_dir]
 (directory arg is for testing against a fixture dir; defaults to
