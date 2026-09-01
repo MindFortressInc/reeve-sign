@@ -18,7 +18,17 @@ just as statically resolvable. Anything this script cannot resolve to a
 known-safe literal (an expression like `${{ matrix.os }}`, a variable
 reference, an unrecognized string) is treated as a FINDING, not silently
 passed: a job on the `pull_request` + `actions/checkout` path fails closed
-here.
+here. A job that delegates to a local reusable workflow (`uses:
+./.github/workflows/x.yml`) is similarly unresolved rather than trusted --
+this script does not follow that reference, so it flags the delegation for
+manual verification instead of silently passing it (CR CLI review, DEV-9724).
+
+Known scope limit: a LOCAL COMPOSITE ACTION (`uses: ./.github/actions/x`)
+is not recursively inspected for a checkout of its own -- as of this
+writing none of reeve-sign's composite actions do (verified: no
+`actions/checkout` under `.github/actions/**`), matching the same
+non-recursive scope `lint_composite_actions.py` already accepts for that
+directory.
 
 Usage: check_fork_pr_runner_safety.py [workflows_dir]
 (directory arg is for testing against a fixture dir; defaults to
@@ -89,6 +99,21 @@ def uses_checkout(steps):
     return False
 
 
+def local_reusable_workflow_call(job):
+    """A job-level `uses: ./.github/workflows/x.yml` (reusable workflow call).
+
+    Such a job has no `steps:`/`runs-on:` of its own -- the CALLED file's own
+    jobs set those. This script does not follow the reference (that file may
+    itself be scanned separately, but only if it independently declares
+    `pull_request` -- a `workflow_call`-only file otherwise falls outside the
+    per-file `pull_request` filter above even when it is reachable FROM a
+    pull_request-triggered caller). Rather than silently trust an unfollowed
+    reference, treat it as unresolved and fail closed (CR CLI review, DEV-9724).
+    """
+    uses = job.get("uses")
+    return isinstance(uses, str) and uses.startswith("./")
+
+
 def runs_on_findings(where, runs_on):
     """Return a list of finding strings for a `runs-on:` value, or [] if safe.
 
@@ -151,9 +176,18 @@ def main(workflows_dir):
             if not isinstance(job, dict):
                 continue
             checked_jobs += 1
+            where = f"{path}: job `{job_name}`"
+            if local_reusable_workflow_call(job):
+                print(
+                    f"{where}: delegates to local reusable workflow "
+                    f"{job['uses']!r}, which this script does not follow -- "
+                    "manually verify that file never combines "
+                    "actions/checkout with a self-hosted/fleet runs-on"
+                )
+                status = 1
+                continue
             if not uses_checkout(job.get("steps")):
                 continue
-            where = f"{path}: job `{job_name}`"
             for finding in runs_on_findings(where, job.get("runs-on")):
                 print(finding)
                 status = 1
