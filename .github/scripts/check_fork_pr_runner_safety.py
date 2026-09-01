@@ -39,35 +39,60 @@ from pathlib import Path
 
 import yaml
 
-# GitHub-hosted runner labels. Anything NOT in this set is treated as a
-# self-hosted/fleet label for the purpose of this guard — reeve-sign has zero
-# fleet labels today (DEV-9724 premise), so this allowlist only needs to cover
-# GitHub's own hosted images, not our fleet's names.
+# Currently-live GitHub-hosted runner image labels. Anything NOT in this set
+# is treated as a self-hosted/fleet label for the purpose of this guard --
+# reeve-sign has zero fleet labels today (DEV-9724 premise), so this
+# allowlist only needs to cover GitHub's own hosted images, not our fleet's
+# names.
+#
+# CR CLI (major, potential_issue): an earlier version of this list carried
+# RETIRED GitHub-hosted labels (ubuntu-20.04, windows-2019, macos-13*,
+# macos-latest-xl). A retired label is not reserved forever -- a self-hosted
+# runner could register under that exact name, and this guard would then
+# wave through a fork-PR checkout job routed to it as "GitHub-hosted". Keep
+# this list to labels GitHub currently serves; when GitHub retires one, drop
+# it here too rather than leaving a stale entry that quietly becomes a
+# spoofable bypass.
+#
+# Cross-checked 2026-09-01 against actionlint 1.7.12's own `runner-label`
+# rule (`actionlint <any-bad-label>.yml` prints its exact known-label list;
+# same version this repo's actionlint.yml pins) -- the authority to re-check
+# against when this needs updating. Excludes actionlint's generic
+# self-hosted-adjacent labels (`self-hosted`, `x64`, `arm`, `arm64`, `linux`,
+# `macos`, `windows`): those are automatic labels every runner (hosted OR
+# self-hosted) carries, not a specific hosted image, so treating them as
+# "safe" would be its own bypass.
 GITHUB_HOSTED_LABELS = frozenset(
     {
         "ubuntu-latest",
+        "ubuntu-latest-4-cores",
+        "ubuntu-latest-8-cores",
+        "ubuntu-latest-16-cores",
         "ubuntu-24.04",
         "ubuntu-24.04-arm",
         "ubuntu-22.04",
         "ubuntu-22.04-arm",
-        "ubuntu-20.04",
+        "ubuntu-slim",
         "windows-latest",
+        "windows-latest-8-cores",
         "windows-2025",
+        "windows-2025-vs2026",
         "windows-2022",
-        "windows-2019",
         "windows-11-arm",
         "macos-latest",
-        "macos-latest-xl",
+        "macos-latest-xlarge",
         "macos-latest-large",
+        "macos-26",
+        "macos-26-intel",
+        "macos-26-xlarge",
+        "macos-26-large",
         "macos-15",
+        "macos-15-intel",
         "macos-15-xlarge",
         "macos-15-large",
         "macos-14",
         "macos-14-xlarge",
         "macos-14-large",
-        "macos-13",
-        "macos-13-xlarge",
-        "macos-13-large",
     }
 )
 
