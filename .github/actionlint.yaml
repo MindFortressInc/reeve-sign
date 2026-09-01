@@ -1,0 +1,9 @@
+self-hosted-runner:
+  labels:
+    # DEV-9724: reeve-sign's first fleet label. actionlint (pinned in
+    # actionlint.yml) rejects any `runs-on:` it does not recognize as either
+    # a GitHub-hosted image or a configured self-hosted label — without this
+    # entry, routing stale.yml's schedule-only `stale` job to `hetzner-probe`
+    # fails this repo's own lint gate. Mirrors reeve-services'
+    # `.github/actionlint.yaml` registration of the same label (DEV-9722).
+    - hetzner-probe
