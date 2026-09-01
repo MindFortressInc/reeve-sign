@@ -1,34 +1,33 @@
 #!/usr/bin/env python3
-"""Guard: no `pull_request`-triggered job that checks out code may run on a
+"""Guard: no job in a `pull_request`-triggered workflow may run on a
 self-hosted/fleet runner.
 
 DEV-9724: reeve-sign is a PUBLIC repo that accepts external fork PRs. A
-`pull_request`-triggered job that runs `actions/checkout` executes the PR
-HEAD's own code (fork-authored, untrusted). Pointing such a job's `runs-on:`
-at a self-hosted/fleet label would run that untrusted code on our own
-infrastructure — this is a hard rule (see DEV-9722/DEV-9724), not a style
-preference, so it is enforced here rather than left to review discipline.
+`pull_request`-triggered job can execute untrusted, fork-authored input even
+without a direct `actions/checkout` step -- `run:` steps that interpolate
+`github.event.pull_request.*` fields (title, body, head ref, etc.) or that
+call out to the PR's merge commit are just as exposed as an explicit
+checkout. Gating this guard on `actions/checkout` presence alone (as an
+earlier version did) let a checkout-less `pull_request` job route to a
+self-hosted/fleet runner and pass silently (CR CLI PR #48, DEV-9724).
+Pointing ANY `pull_request` job's `runs-on:` at a self-hosted/fleet label
+would run that untrusted input on our own infrastructure — this is a hard
+rule (see DEV-9722/DEV-9724), not a style preference, so it is enforced here
+rather than left to review discipline.
 
 This is deliberately narrow and literal-only, matching how this repo actually
-sets `runs-on:` today: every `pull_request`-triggered job that checks out
-code (ci.yml, codeql-analysis.yml, e2e-tests.yml, pr-review-reminder.yml) is
+sets `runs-on:` today: every `pull_request`-triggered job (ci.yml,
+codeql-analysis.yml, e2e-tests.yml, pr-review-reminder.yml, and the rest) is
 a single literal string, `ubuntu-latest`. A list of literal strings is also
 accepted (GitHub allows `runs-on:` to be a label list), since that shape is
 just as statically resolvable. Anything this script cannot resolve to a
 known-safe literal (an expression like `${{ matrix.os }}`, a variable
 reference, an unrecognized string) is treated as a FINDING, not silently
-passed: a job on the `pull_request` + `actions/checkout` path fails closed
-here. A job that delegates to a local reusable workflow (`uses:
+passed: every job in a `pull_request`-triggered workflow fails closed here.
+A job that delegates to a local reusable workflow (`uses:
 ./.github/workflows/x.yml`) is similarly unresolved rather than trusted --
 this script does not follow that reference, so it flags the delegation for
 manual verification instead of silently passing it (CR CLI review, DEV-9724).
-
-Known scope limit: a LOCAL COMPOSITE ACTION (`uses: ./.github/actions/x`)
-is not recursively inspected for a checkout of its own -- as of this
-writing none of reeve-sign's composite actions do (verified: no
-`actions/checkout` under `.github/actions/**`), matching the same
-non-recursive scope `lint_composite_actions.py` already accepts for that
-directory.
 
 Usage: check_fork_pr_runner_safety.py [workflows_dir]
 (directory arg is for testing against a fixture dir; defaults to
@@ -115,18 +114,6 @@ def event_names(on_value):
     return set()
 
 
-def uses_checkout(steps):
-    if not isinstance(steps, list):
-        return False
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        uses = step.get("uses")
-        if isinstance(uses, str) and uses.split("@", 1)[0].strip() == "actions/checkout":
-            return True
-    return False
-
-
 def local_reusable_workflow_call(job):
     """A job-level `uses:` reusable-workflow call.
 
@@ -156,7 +143,7 @@ def runs_on_findings(where, runs_on):
     Fails closed: only a literal string (or list of literal strings) that is
     entirely within GITHUB_HOSTED_LABELS is accepted. An expression
     (`${{ ... }}`), a bare `self-hosted`, or an unrecognized literal is
-    flagged — a `pull_request` + `actions/checkout` job has no business
+    flagged — a job in a `pull_request`-triggered workflow has no business
     resolving to anything this script cannot vouch for.
     """
     if runs_on is None:
@@ -173,8 +160,9 @@ def runs_on_findings(where, runs_on):
         if label not in GITHUB_HOSTED_LABELS:
             findings.append(
                 f"{where}: runs-on {label!r} is not a recognized GitHub-hosted "
-                "label — a pull_request job that checks out code must not run "
-                "on a self-hosted/fleet runner (fork PRs execute untrusted code)"
+                "label — a job in a pull_request-triggered workflow must not "
+                "run on a self-hosted/fleet runner (fork PRs execute "
+                "untrusted code, with or without an explicit checkout step)"
             )
     return findings
 
@@ -217,12 +205,10 @@ def main(workflows_dir):
                 print(
                     f"{where}: delegates to reusable workflow "
                     f"{job['uses']!r}, which this script does not follow -- "
-                    "manually verify that file never combines "
-                    "actions/checkout with a self-hosted/fleet runs-on"
+                    "manually verify that file never routes a "
+                    "self-hosted/fleet runs-on to a pull_request job"
                 )
                 status = 1
-                continue
-            if not uses_checkout(job.get("steps")):
                 continue
             for finding in runs_on_findings(where, job.get("runs-on")):
                 print(finding)
