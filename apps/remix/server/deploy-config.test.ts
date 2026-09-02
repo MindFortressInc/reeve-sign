@@ -31,7 +31,20 @@ const nginx = readFileSync(NGINX_PATH, 'utf8');
 // Compose-style `${VAR}` references resolved with non-secret placeholders,
 // so the *resulting* document (what compose would actually materialize)
 // can be parsed and structurally validated in CI -- not just the raw text.
-const resolvedCompose = compose.replace(/\$\{([A-Z0-9_]+)\}/g, 'placeholder-$1');
+//
+// DEV-7617/DEV-9828: compose's interpolation grammar is wider than the bare
+// `${VAR}` form -- it also supports `${VAR:?err}` / `${VAR?err}` (required,
+// error if unset/empty) and `${VAR:-default}` / `${VAR-default}` (default if
+// unset/empty). `deploy/compose.yml` started using the `:?` form (DEV-8976)
+// and a resolver that only matched bare `${VAR}` left those refs unresolved,
+// which both broke the YAML-parse assertion below (`${` still present) and
+// made the secret-literal check flag the interpolation ref itself as a
+// "literal" value. `INTERPOLATION_REF` is the single source of truth for
+// this grammar -- reused below by the secret-literal allowlist and by the
+// dedicated per-form fixture tests, so a future regression to any one form
+// fails loudly in one place.
+const INTERPOLATION_REF = /\$\{([A-Z0-9_]+)(?:(?::?[-?])[^}]*)?\}/;
+const resolvedCompose = compose.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
 
 type ComposeDocument = {
   name?: string;
@@ -137,8 +150,14 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     // that the named-credential words alone would miss. The `_URL` suffixes
     // catch connection strings (DATABASE_URL/REDIS_URL/SMTP_URL) whose
     // literal values typically embed user:password credentials.
-    const secretShapedName = /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
+    const secretShapedName =
+      /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
     const assignmentLine = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
+    // Anchored, non-global sibling of INTERPOLATION_REF -- deliberately not
+    // `g`-flagged since it is reused across `.test()` calls below and a
+    // global regex's `.test()` mutates `lastIndex`, silently alternating
+    // matched/unmatched on repeat calls.
+    const isInterpolationRef = new RegExp(`^${INTERPOLATION_REF.source}$`);
 
     const offenders: string[] = [];
     for (const line of compose.split('\n')) {
@@ -147,12 +166,32 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
         continue;
       }
       const [, name, value] = match;
-      if (secretShapedName.test(name) && !/^\$\{[A-Z0-9_]+\}$/.test(value.trim())) {
+      if (secretShapedName.test(name) && !isInterpolationRef.test(value.trim())) {
         offenders.push(line.trim());
       }
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)', () => {
+  // One fixture line per form the resolver above must handle, independent of
+  // whatever forms `deploy/compose.yml` happens to use today -- so a future
+  // narrowing of INTERPOLATION_REF (e.g. back to bare `${VAR}` only) fails
+  // here immediately, rather than silently, the next time someone adds a new
+  // form to the real compose file.
+  const resolve = (line: string) => line.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
+
+  it.each([
+    ['bare reference', '${VAR}'],
+    ['required, error on unset/empty (:?)', '${VAR:?VAR is required}'],
+    ['default if unset or empty (:-)', '${VAR:-default}'],
+    ['default if unset only (-)', '${VAR-default}'],
+  ])('resolves the %s form to a placeholder with no ${...} left behind', (_label, fixture) => {
+    const resolved = resolve(fixture);
+    expect(resolved).toBe('placeholder-VAR');
+    expect(resolved).not.toContain('${');
   });
 });
 
