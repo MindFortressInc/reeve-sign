@@ -186,6 +186,7 @@ describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)'
   it.each([
     ['bare reference', '${VAR}'],
     ['required, error on unset/empty (:?)', '${VAR:?VAR is required}'],
+    ['required, error on unset only (?)', '${VAR?VAR is required}'],
     ['default if unset or empty (:-)', '${VAR:-default}'],
     ['default if unset only (-)', '${VAR-default}'],
   ])('resolves the %s form to a placeholder with no ${...} left behind', (_label, fixture) => {
