@@ -34,16 +34,18 @@ const nginx = readFileSync(NGINX_PATH, 'utf8');
 //
 // DEV-7617/DEV-9828: compose's interpolation grammar is wider than the bare
 // `${VAR}` form -- it also supports `${VAR:?err}` / `${VAR?err}` (required,
-// error if unset/empty) and `${VAR:-default}` / `${VAR-default}` (default if
-// unset/empty). `deploy/compose.yml` started using the `:?` form (DEV-8976)
-// and a resolver that only matched bare `${VAR}` left those refs unresolved,
-// which both broke the YAML-parse assertion below (`${` still present) and
-// made the secret-literal check flag the interpolation ref itself as a
-// "literal" value. `INTERPOLATION_REF` is the single source of truth for
-// this grammar -- reused below by the secret-literal allowlist and by the
-// dedicated per-form fixture tests, so a future regression to any one form
-// fails loudly in one place.
-const INTERPOLATION_REF = /\$\{([A-Z0-9_]+)(?:(?::?[-?])[^}]*)?\}/;
+// error if unset/empty), `${VAR:-default}` / `${VAR-default}` (default if
+// unset/empty), and `${VAR:+alt}` / `${VAR+alt}` (alternative value,
+// substituted only when VAR IS set -- see docs.docker.com's Compose file
+// interpolation reference). `deploy/compose.yml` started using the `:?` form
+// (DEV-8976) and a resolver that only matched bare `${VAR}` left those refs
+// unresolved, which both broke the YAML-parse assertion below (`${` still
+// present) and made the secret-literal check flag the interpolation ref
+// itself as a "literal" value. `INTERPOLATION_REF` is the single source of
+// truth for this grammar -- reused below by the secret-literal allowlist and
+// by the dedicated per-form fixture tests, so a future regression to any one
+// form (or an omitted one, e.g. `+`/`:+`) fails loudly in one place.
+const INTERPOLATION_REF = /\$\{([A-Z0-9_]+)(?:(?::?[-?+])[^}]*)?\}/;
 const resolvedCompose = compose.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
 
 type ComposeDocument = {
@@ -189,6 +191,8 @@ describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)'
     ['required, error on unset only (?)', '${VAR?VAR is required}'],
     ['default if unset or empty (:-)', '${VAR:-default}'],
     ['default if unset only (-)', '${VAR-default}'],
+    ['alternative value if set and non-empty (:+)', '${VAR:+alt}'],
+    ['alternative value if set (+)', '${VAR+alt}'],
   ])('resolves the %s form to a placeholder with no ${...} left behind', (_label, fixture) => {
     const resolved = resolve(fixture);
     expect(resolved).toBe('placeholder-VAR');
