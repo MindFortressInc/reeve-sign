@@ -107,12 +107,70 @@ function resolveInterpolationRefs(text: string): string {
 // `${...}` reference (which may itself nest to any depth) with a
 // Compose-valid variable name -- not a literal, and not a ref with trailing
 // text after its closing `}`.
+//
+// CR PR #50 (major): a naive `VAR_NAME.test(inner)` only checks that `inner`
+// *starts with* a valid variable name -- since `VAR_NAME` isn't end-anchored,
+// `${DATABASE_PASSWORD:-hard-coded-secret}` matched too, because
+// "DATABASE_PASSWORD" is a valid prefix of "DATABASE_PASSWORD:-hard-coded-secret".
+// That let the secret-literal check below treat the whole thing as a "pure
+// ref" and skip it, even though the `:-`/`-` (default) and `:+`/`+`
+// (alternative) modifiers each carry a VALUE that compose substitutes in
+// place of the variable -- so a secret-shaped name with a hard-coded
+// literal there is exactly the leak the check exists to catch. The `:?`/`?`
+// (required) modifiers only carry an error MESSAGE, never a substituted
+// value, so they can't leak a secret and are still treated as a pure ref.
 function isInterpolationRef(value: string): boolean {
   const end = matchInterpolationEnd(value, 0);
   if (end !== value.length) {
     return false;
   }
-  return VAR_NAME.test(value.slice(2, end - 1));
+  const inner = value.slice(2, end - 1);
+  const nameMatch = inner.match(VAR_NAME);
+  if (!nameMatch) {
+    return false;
+  }
+  const rest = inner.slice(nameMatch[0].length);
+  if (rest === '') {
+    // Bare `${VAR}`.
+    return true;
+  }
+  if (/^:?\?/.test(rest)) {
+    // `${VAR:?err}` / `${VAR?err}` -- error message only, no substituted value.
+    return true;
+  }
+  const modifierMatch = rest.match(/^(:-|-|:\+|\+)/);
+  if (!modifierMatch) {
+    // Unrecognized trailing content -- not a pure ref.
+    return false;
+  }
+  const branch = rest.slice(modifierMatch[0].length);
+  // The default/alternative branch is only safe if it is itself nothing but
+  // a nested interpolation ref -- any literal text in it means this
+  // assignment can resolve to a hard-coded value.
+  return branch !== '' && isInterpolationRef(branch);
+}
+
+// Shared by the real `deploy/compose.yml` secret-literal check below and by
+// its regression test, so the detection logic (what counts as a
+// "secret-shaped name" and how a compose env-assignment line is parsed) is
+// defined exactly once.
+const SECRET_SHAPED_NAME =
+  /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
+const ASSIGNMENT_LINE = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
+
+function findSecretLiteralOffenders(lines: string[]): string[] {
+  const offenders: string[] = [];
+  for (const line of lines) {
+    const match = line.match(ASSIGNMENT_LINE);
+    if (!match) {
+      continue;
+    }
+    const [, name, value] = match;
+    if (SECRET_SHAPED_NAME.test(name) && !isInterpolationRef(value.trim())) {
+      offenders.push(line.trim());
+    }
+  }
+  return offenders;
 }
 
 const resolvedCompose = resolveInterpolationRefs(compose);
@@ -221,23 +279,34 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     // that the named-credential words alone would miss. The `_URL` suffixes
     // catch connection strings (DATABASE_URL/REDIS_URL/SMTP_URL) whose
     // literal values typically embed user:password credentials.
-    const secretShapedName =
-      /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
-    const assignmentLine = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
-
-    const offenders: string[] = [];
-    for (const line of compose.split('\n')) {
-      const match = line.match(assignmentLine);
-      if (!match) {
-        continue;
-      }
-      const [, name, value] = match;
-      if (secretShapedName.test(name) && !isInterpolationRef(value.trim())) {
-        offenders.push(line.trim());
-      }
-    }
+    const offenders = findSecretLiteralOffenders(compose.split('\n'));
 
     expect(offenders).toEqual([]);
+  });
+
+  it('flags a secret-shaped var whose value is a hard-coded default behind a compose modifier (CR PR #50 major)', () => {
+    // Regression for the bug fixed in `isInterpolationRef` above: before the
+    // fix, `isInterpolationRef('${DATABASE_PASSWORD:-hard-coded-secret}')`
+    // returned `true` (a non-end-anchored `VAR_NAME.test()` only checked
+    // that the ref's body *started with* a valid variable name), so the
+    // real-compose check just above would have silently accepted a
+    // secret-shaped var whose `:-`/`-`/`:+`/`+` modifier smuggled in a
+    // literal default/alternative value instead of only ever referencing
+    // another variable.
+    expect(isInterpolationRef('${DATABASE_PASSWORD:-hard-coded-secret}')).toBe(false);
+    expect(isInterpolationRef('${DATABASE_PASSWORD-hard-coded-secret}')).toBe(false);
+    expect(isInterpolationRef('${DATABASE_PASSWORD:+hard-coded-secret}')).toBe(false);
+    expect(isInterpolationRef('${DATABASE_PASSWORD+hard-coded-secret}')).toBe(false);
+    // A default/alternative branch that is itself only a nested ref (no
+    // literal text) is still a pure interpolation ref, and required (`:?`/
+    // `?`) modifiers only ever carry an error message, not a value.
+    expect(isInterpolationRef('${DATABASE_PASSWORD:-${OTHER_VAR}}')).toBe(true);
+    expect(isInterpolationRef('${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}')).toBe(true);
+
+    const offenders = findSecretLiteralOffenders([
+      '      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-hard-coded-secret}',
+    ]);
+    expect(offenders).toEqual(['- DATABASE_PASSWORD=${DATABASE_PASSWORD:-hard-coded-secret}']);
   });
 });
 

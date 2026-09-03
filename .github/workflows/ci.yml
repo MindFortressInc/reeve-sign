@@ -11,6 +11,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+# Least-privilege default for every job's GITHUB_TOKEN (including build_app
+# and build_docker, which had no explicit block and so inherited whatever
+# the repo/org default happens to be). Jobs that need more scope declare
+# their own job-level `permissions` to widen it explicitly.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test
