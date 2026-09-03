@@ -41,23 +41,81 @@ const nginx = readFileSync(NGINX_PATH, 'utf8');
 // (DEV-8976) and a resolver that only matched bare `${VAR}` left those refs
 // unresolved, which both broke the YAML-parse assertion below (`${` still
 // present) and made the secret-literal check flag the interpolation ref
-// itself as a "literal" value. `INTERPOLATION_REF` is the single source of
-// truth for this grammar -- reused below by the secret-literal allowlist and
-// by the dedicated per-form fixture tests, so a future regression to any one
-// form (or an omitted one, e.g. `+`/`:+`) fails loudly in one place.
+// itself as a "literal" value. `resolveInterpolationRefs`/`isInterpolationRef`
+// below are the single source of truth for this grammar -- reused by the
+// secret-literal allowlist and by the dedicated per-form fixture tests, so a
+// future regression to any one form (or an omitted one, e.g. `+`/`:+`) fails
+// loudly in one place.
 //
-// CR PR #50 (minor): variable names are case-sensitive in Compose and are
-// not restricted to uppercase (docs.docker.com's interpolation reference
-// gives `[_a-zA-Z][_a-zA-Z0-9]*`), so the name class below accepts lower
-// and mixed case, not just `[A-Z0-9_]`. Compose interpolation is also
-// recursive -- the default/error/alt portion of an outer reference may
-// itself contain a nested `${...}` (e.g. `${VAR:-${OTHER:-default}}`, per
-// the same reference) -- so the tail after the operator is brace-aware: it
-// consumes either non-brace characters or one nested `${...}` (itself
-// brace-free inside), instead of stopping at the first `}` and leaving a
-// dangling one behind.
-const INTERPOLATION_REF = /\$\{([A-Za-z0-9_]+)(?:(?::?[-?+])(?:[^{}]|\$\{[^{}]*\})*)?\}/;
-const resolvedCompose = compose.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
+// CR PR #50 (minor, x2): variable names are case-sensitive in Compose and
+// are not restricted to uppercase (docs.docker.com's interpolation reference
+// gives `[_a-zA-Z][_a-zA-Z0-9]*`), so `VAR_NAME` accepts lower/mixed case and
+// requires a letter/underscore first character -- `${9VAR}` is not a valid
+// Compose reference and must be left untouched, not rewritten to
+// `placeholder-9VAR`. Compose interpolation also nests to arbitrary depth
+// (e.g. `${VAR:-${OTHER:-${THIRD}}}`, per the same reference); a single
+// non-recursive regex can only special-case a fixed number of nesting
+// levels (the prior version handled exactly one, so a second level of
+// nesting -- e.g. VAR/OTHER/THIRD -- still left a dangling `${` behind), so
+// resolution below walks the string tracking brace depth instead, which
+// resolves any depth of nesting correctly.
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*/;
+
+// Finds the `${...}` starting at `text[start]` (which must be `$`) via
+// brace-depth counting and returns the index just past its matching `}`,
+// or -1 if `text[start]` isn't `${` or the braces never balance.
+function matchInterpolationEnd(text: string, start: number): number {
+  if (text[start] !== '$' || text[start + 1] !== '{') {
+    return -1;
+  }
+  let depth = 1;
+  let i = start + 2;
+  while (i < text.length && depth > 0) {
+    if (text[i] === '{') {
+      depth += 1;
+    } else if (text[i] === '}') {
+      depth -= 1;
+    }
+    i += 1;
+  }
+  return depth === 0 ? i : -1;
+}
+
+// Replaces every top-level `${...}` reference in `text` with
+// `placeholder-<name>`, resolving nested references (of any depth) along
+// the way since they fall inside the outer reference's span. A `${...}`
+// whose name doesn't match Compose's grammar (e.g. digit-leading `${9VAR}`)
+// is left untouched, matching real Compose's literal-string fallback.
+function resolveInterpolationRefs(text: string): string {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    const end = matchInterpolationEnd(text, i);
+    const nameMatch = end === -1 ? null : text.slice(i + 2, end - 1).match(VAR_NAME);
+    if (nameMatch) {
+      result += `placeholder-${nameMatch[0]}`;
+      i = end;
+    } else {
+      result += text[i];
+      i += 1;
+    }
+  }
+  return result;
+}
+
+// True iff `value` (already trimmed) is, in its entirety, exactly one
+// `${...}` reference (which may itself nest to any depth) with a
+// Compose-valid variable name -- not a literal, and not a ref with trailing
+// text after its closing `}`.
+function isInterpolationRef(value: string): boolean {
+  const end = matchInterpolationEnd(value, 0);
+  if (end !== value.length) {
+    return false;
+  }
+  return VAR_NAME.test(value.slice(2, end - 1));
+}
+
+const resolvedCompose = resolveInterpolationRefs(compose);
 
 type ComposeDocument = {
   name?: string;
@@ -166,11 +224,6 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     const secretShapedName =
       /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
     const assignmentLine = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
-    // Anchored, non-global sibling of INTERPOLATION_REF -- deliberately not
-    // `g`-flagged since it is reused across `.test()` calls below and a
-    // global regex's `.test()` mutates `lastIndex`, silently alternating
-    // matched/unmatched on repeat calls.
-    const isInterpolationRef = new RegExp(`^${INTERPOLATION_REF.source}$`);
 
     const offenders: string[] = [];
     for (const line of compose.split('\n')) {
@@ -179,7 +232,7 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
         continue;
       }
       const [, name, value] = match;
-      if (secretShapedName.test(name) && !isInterpolationRef.test(value.trim())) {
+      if (secretShapedName.test(name) && !isInterpolationRef(value.trim())) {
         offenders.push(line.trim());
       }
     }
@@ -191,10 +244,11 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
 describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)', () => {
   // One fixture line per form the resolver above must handle, independent of
   // whatever forms `deploy/compose.yml` happens to use today -- so a future
-  // narrowing of INTERPOLATION_REF (e.g. back to bare `${VAR}` only) fails
-  // here immediately, rather than silently, the next time someone adds a new
-  // form to the real compose file.
-  const resolve = (line: string) => line.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
+  // narrowing of the interpolation grammar (e.g. back to bare `${VAR}` only,
+  // or back to a fixed nesting depth) fails here immediately, rather than
+  // silently, the next time someone adds a new form to the real compose
+  // file.
+  const resolve = (line: string) => resolveInterpolationRefs(line);
 
   it.each([
     ['bare reference', '${VAR}', 'VAR'],
@@ -210,17 +264,32 @@ describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)'
     ['lowercase variable name', '${my_var}', 'my_var'],
     ['mixed-case variable name', '${My_Var}', 'My_Var'],
     // CR PR #50 (minor): Compose interpolation nests -- the default value
-    // of an outer reference may itself be a `${...}` reference. Without
-    // brace-aware matching the inner `}` is consumed by the outer match
-    // (`[^}]*` stops at the *first* `}`) and the trailing `}` is left
-    // behind, breaking both the "no ${...} left behind" invariant here and
-    // the YAML-parse assertion above.
+    // of an outer reference may itself be a `${...}` reference, to
+    // arbitrary depth. A non-recursive regex can only special-case a fixed
+    // number of nesting levels; brace-depth-aware resolution handles any
+    // depth, so both a single level of nesting and the deeper
+    // VAR/OTHER/THIRD case below must resolve fully, with no `${...}` left
+    // behind.
     ['nested default value (recursive interpolation)', '${VAR:-${OTHER}}', 'VAR'],
     ['nested default-within-default', '${VAR:-${OTHER:-default}}', 'VAR'],
+    ['nested default three levels deep', '${VAR:-${OTHER:-${THIRD}}}', 'VAR'],
   ])('resolves the %s form to a placeholder with no ${...} left behind', (_label, fixture, varName) => {
     const resolved = resolve(fixture);
     expect(resolved).toBe(`placeholder-${varName}`);
     expect(resolved).not.toContain('${');
+  });
+
+  // CR PR #50 (minor): Compose variable names must start with a letter or
+  // underscore (`[_a-zA-Z][_a-zA-Z0-9]*`, per docs.docker.com's
+  // interpolation reference) -- a digit-leading name like `${9VAR}` is not
+  // a valid reference at all, so real Compose leaves it as a literal
+  // string. The resolver must do the same, not rewrite it to
+  // `placeholder-9VAR` -- doing so would let a malformed reference slip
+  // past the YAML-parse and secret-literal checks above as if it had been
+  // resolved.
+  it('leaves a digit-leading name (not a valid Compose reference) untouched', () => {
+    const resolved = resolve('${9VAR}');
+    expect(resolved).toBe('${9VAR}');
   });
 });
 
