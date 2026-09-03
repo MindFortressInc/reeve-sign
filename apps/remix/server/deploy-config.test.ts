@@ -45,7 +45,18 @@ const nginx = readFileSync(NGINX_PATH, 'utf8');
 // truth for this grammar -- reused below by the secret-literal allowlist and
 // by the dedicated per-form fixture tests, so a future regression to any one
 // form (or an omitted one, e.g. `+`/`:+`) fails loudly in one place.
-const INTERPOLATION_REF = /\$\{([A-Z0-9_]+)(?:(?::?[-?+])[^}]*)?\}/;
+//
+// CR PR #50 (minor): variable names are case-sensitive in Compose and are
+// not restricted to uppercase (docs.docker.com's interpolation reference
+// gives `[_a-zA-Z][_a-zA-Z0-9]*`), so the name class below accepts lower
+// and mixed case, not just `[A-Z0-9_]`. Compose interpolation is also
+// recursive -- the default/error/alt portion of an outer reference may
+// itself contain a nested `${...}` (e.g. `${VAR:-${OTHER:-default}}`, per
+// the same reference) -- so the tail after the operator is brace-aware: it
+// consumes either non-brace characters or one nested `${...}` (itself
+// brace-free inside), instead of stopping at the first `}` and leaving a
+// dangling one behind.
+const INTERPOLATION_REF = /\$\{([A-Za-z0-9_]+)(?:(?::?[-?+])(?:[^{}]|\$\{[^{}]*\})*)?\}/;
 const resolvedCompose = compose.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
 
 type ComposeDocument = {
@@ -186,16 +197,29 @@ describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)'
   const resolve = (line: string) => line.replace(new RegExp(INTERPOLATION_REF.source, 'g'), 'placeholder-$1');
 
   it.each([
-    ['bare reference', '${VAR}'],
-    ['required, error on unset/empty (:?)', '${VAR:?VAR is required}'],
-    ['required, error on unset only (?)', '${VAR?VAR is required}'],
-    ['default if unset or empty (:-)', '${VAR:-default}'],
-    ['default if unset only (-)', '${VAR-default}'],
-    ['alternative value if set and non-empty (:+)', '${VAR:+alt}'],
-    ['alternative value if set (+)', '${VAR+alt}'],
-  ])('resolves the %s form to a placeholder with no ${...} left behind', (_label, fixture) => {
+    ['bare reference', '${VAR}', 'VAR'],
+    ['required, error on unset/empty (:?)', '${VAR:?VAR is required}', 'VAR'],
+    ['required, error on unset only (?)', '${VAR?VAR is required}', 'VAR'],
+    ['default if unset or empty (:-)', '${VAR:-default}', 'VAR'],
+    ['default if unset only (-)', '${VAR-default}', 'VAR'],
+    ['alternative value if set and non-empty (:+)', '${VAR:+alt}', 'VAR'],
+    ['alternative value if set (+)', '${VAR+alt}', 'VAR'],
+    // CR PR #50 (minor): lowercase/mixed-case names are valid Compose
+    // variable names, not just the `deploy/compose.yml` convention of
+    // all-caps.
+    ['lowercase variable name', '${my_var}', 'my_var'],
+    ['mixed-case variable name', '${My_Var}', 'My_Var'],
+    // CR PR #50 (minor): Compose interpolation nests -- the default value
+    // of an outer reference may itself be a `${...}` reference. Without
+    // brace-aware matching the inner `}` is consumed by the outer match
+    // (`[^}]*` stops at the *first* `}`) and the trailing `}` is left
+    // behind, breaking both the "no ${...} left behind" invariant here and
+    // the YAML-parse assertion above.
+    ['nested default value (recursive interpolation)', '${VAR:-${OTHER}}', 'VAR'],
+    ['nested default-within-default', '${VAR:-${OTHER:-default}}', 'VAR'],
+  ])('resolves the %s form to a placeholder with no ${...} left behind', (_label, fixture, varName) => {
     const resolved = resolve(fixture);
-    expect(resolved).toBe('placeholder-VAR');
+    expect(resolved).toBe(`placeholder-${varName}`);
     expect(resolved).not.toContain('${');
   });
 });
