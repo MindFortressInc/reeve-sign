@@ -81,18 +81,48 @@ function matchInterpolationEnd(text: string, start: number): number {
   return depth === 0 ? i : -1;
 }
 
+// True iff `ref` (the full `${...}` span, braces included) uses one of
+// Compose's supported trailing forms: bare `${VAR}`, `${VAR:?err}`/
+// `${VAR?err}` (required), `${VAR:-default}`/`${VAR-default}` (default), or
+// `${VAR:+alt}`/`${VAR+alt}` (alternative) -- unlike `isInterpolationRef`
+// below, this does NOT require the default/alternative branch to itself be
+// literal-free, since compose resolves a literal default/alternative just
+// as validly as a nested ref; it only asks "is this syntax compose would
+// actually interpolate at all".
+//
+// CR PR #50 (major): `resolveInterpolationRefs` used to accept any body
+// that merely *started with* a valid variable name (via the non-anchored
+// `VAR_NAME.match()`), so `${VAR/foo}` -- trailing syntax Compose does not
+// support and `isInterpolationRef` already rejects -- was rewritten to
+// `placeholder-VAR`, silently dropping the unsupported `/foo` suffix and
+// letting a malformed reference masquerade as resolved.
+function hasSupportedInterpolationSyntax(ref: string): boolean {
+  const end = matchInterpolationEnd(ref, 0);
+  if (end !== ref.length) {
+    return false;
+  }
+  const inner = ref.slice(2, end - 1);
+  const nameMatch = inner.match(VAR_NAME);
+  if (!nameMatch) {
+    return false;
+  }
+  const rest = inner.slice(nameMatch[0].length);
+  return rest === '' || /^(:\?|\?|:-|-|:\+|\+)/.test(rest);
+}
+
 // Replaces every top-level `${...}` reference in `text` with
 // `placeholder-<name>`, resolving nested references (of any depth) along
 // the way since they fall inside the outer reference's span. A `${...}`
-// whose name doesn't match Compose's grammar (e.g. digit-leading `${9VAR}`)
-// is left untouched, matching real Compose's literal-string fallback.
+// whose name doesn't match Compose's grammar (e.g. digit-leading `${9VAR}`),
+// or whose trailing syntax Compose doesn't support (e.g. `${VAR/foo}`), is
+// left untouched, matching real Compose's literal-string fallback.
 function resolveInterpolationRefs(text: string): string {
   let result = '';
   let i = 0;
   while (i < text.length) {
     const end = matchInterpolationEnd(text, i);
     const nameMatch = end === -1 ? null : text.slice(i + 2, end - 1).match(VAR_NAME);
-    if (nameMatch) {
+    if (nameMatch && hasSupportedInterpolationSyntax(text.slice(i, end))) {
       result += `placeholder-${nameMatch[0]}`;
       i = end;
     } else {
@@ -156,16 +186,32 @@ function isInterpolationRef(value: string): boolean {
 // defined exactly once.
 const SECRET_SHAPED_NAME =
   /(SECRET|PASSWORD|PASSPHRASE|TOKEN|API_KEY|DSN|ACCESS_KEY|ENCRYPTION|CREDENTIAL|(?:DATABASE|REDIS|SMTP)_URL$|_KEY$)/;
-const ASSIGNMENT_LINE = /^\s*-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.+)$/;
+// CR PR #50 (major): the bare form below (`NAME=value` / `NAME: value`)
+// missed two valid YAML shapes compose accepts for a list-style env entry
+// or a mapping entry: the whole `-` list item quoted as one string (e.g.
+// `- "DATABASE_PASSWORD=hard-coded-secret"`) and a quoted mapping key (e.g.
+// `"DATABASE_PASSWORD": hard-coded-secret`). Neither matched the old
+// unquoted-only regex, so `findSecretLiteralOffenders` silently skipped a
+// hard-coded secret written in either form. Each alternative below is tried
+// in turn (double-quoted list item, single-quoted list item, double-quoted
+// key, single-quoted key, then the original bare form) via named groups so
+// `findSecretLiteralOffenders` can read whichever one matched.
+const ASSIGNMENT_LINE =
+  /^\s*-?\s*(?:"(?<dqName>[A-Z][A-Z0-9_]*)=(?<dqValue>.+)"|'(?<sqName>[A-Z][A-Z0-9_]*)=(?<sqValue>.+)'|"(?<dqKey>[A-Z][A-Z0-9_]*)"\s*:\s*(?<dqKeyValue>.+)|'(?<sqKey>[A-Z][A-Z0-9_]*)'\s*:\s*(?<sqKeyValue>.+)|(?<name>[A-Z][A-Z0-9_]*)\s*[:=]\s*(?<value>.+))\s*$/;
 
 function findSecretLiteralOffenders(lines: string[]): string[] {
   const offenders: string[] = [];
   for (const line of lines) {
     const match = line.match(ASSIGNMENT_LINE);
-    if (!match) {
+    if (!match || !match.groups) {
       continue;
     }
-    const [, name, value] = match;
+    const g = match.groups;
+    const name = g.dqName ?? g.sqName ?? g.dqKey ?? g.sqKey ?? g.name;
+    const value = g.dqValue ?? g.sqValue ?? g.dqKeyValue ?? g.sqKeyValue ?? g.value;
+    if (name === undefined || value === undefined) {
+      continue;
+    }
     if (SECRET_SHAPED_NAME.test(name) && !isInterpolationRef(value.trim())) {
       offenders.push(line.trim());
     }
@@ -308,6 +354,27 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     ]);
     expect(offenders).toEqual(['- DATABASE_PASSWORD=${DATABASE_PASSWORD:-hard-coded-secret}']);
   });
+
+  it('detects a secret-shaped literal in quoted YAML env-assignment forms (CR PR #50 major)', () => {
+    // Regression for the bug fixed in `ASSIGNMENT_LINE` above: before the
+    // fix, a quoted list-item assignment (`- "NAME=value"` / `- 'NAME=value'`)
+    // and a quoted mapping key (`"NAME": value` / `'NAME': value`) -- both
+    // valid YAML compose accepts for an environment: entry -- did not match
+    // the unquoted-only regex, so `findSecretLiteralOffenders` silently
+    // skipped a hard-coded secret written in either form.
+    const offenders = findSecretLiteralOffenders([
+      '      - "DATABASE_PASSWORD=hard-coded-secret"',
+      "      - 'DATABASE_PASSWORD=hard-coded-secret'",
+      '      "DATABASE_PASSWORD": hard-coded-secret',
+      "      'DATABASE_PASSWORD': hard-coded-secret",
+    ]);
+    expect(offenders).toEqual([
+      '- "DATABASE_PASSWORD=hard-coded-secret"',
+      "- 'DATABASE_PASSWORD=hard-coded-secret'",
+      '"DATABASE_PASSWORD": hard-coded-secret',
+      "'DATABASE_PASSWORD': hard-coded-secret",
+    ]);
+  });
 });
 
 describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)', () => {
@@ -359,6 +426,18 @@ describe('compose ${...} interpolation grammar (DEV-9828, folded into DEV-7617)'
   it('leaves a digit-leading name (not a valid Compose reference) untouched', () => {
     const resolved = resolve('${9VAR}');
     expect(resolved).toBe('${9VAR}');
+  });
+
+  // CR PR #50 (major): `resolveInterpolationRefs` used to accept any body
+  // that merely *started with* a valid variable name, so `${VAR/foo}` --
+  // trailing syntax Compose does not support, and which `isInterpolationRef`
+  // already rejects -- was rewritten to `placeholder-VAR`, silently dropping
+  // the unsupported `/foo` suffix. It must stay unresolved instead, matching
+  // real Compose's literal-string fallback for unsupported syntax.
+  it('leaves unsupported trailing syntax (e.g. ${VAR/foo}) unresolved, consistent with isInterpolationRef', () => {
+    expect(isInterpolationRef('${VAR/foo}')).toBe(false);
+    const resolved = resolve('${VAR/foo}');
+    expect(resolved).toBe('${VAR/foo}');
   });
 });
 
