@@ -306,7 +306,9 @@ msgid "{0} Teams"
 msgstr "{0} 个团队"
 
 #. placeholder {0}: currentStepData.order
+#. placeholder {0}: step.order
 #. placeholder {1}: envelopeEditorSteps.length
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgctxt "The step counter"
 msgid "{0}/{1}"
@@ -475,6 +477,11 @@ msgstr "{user} 添加了一个收件人"
 msgid "{user} approved the document"
 msgstr "{user} 已批准该文档"
 
+#. placeholder {0}: data.contact
+#: packages/lib/utils/document-audit-logs.ts
+msgid "{user} attested control of {0} (not independently verified)"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgid "{user} CC'd the document"
 msgstr "{user} 已对该文档添加抄送"
@@ -642,8 +649,8 @@ msgid "<0>{organisationName}</0> has requested to create an account on your beha
 msgstr "<0>{organisationName}</0> 请求代表您创建一个账户。"
 
 #: packages/email/templates/organisation-account-link-confirmation.tsx
-msgid "<0>{organisationName}</0> has requested to link your current Documenso account to their organisation."
-msgstr "<0>{organisationName}</0> 请求将您当前的 Documenso 账户关联到其组织。"
+msgid "<0>{organisationName}</0> has requested to link your current Reeve.Sign account to their organisation."
+msgstr ""
 
 #: apps/remix/app/components/general/document-signing/document-signing-page-view-v1.tsx
 msgid "<0>{senderName} {senderEmail}</0> has invited you to approve this document"
@@ -682,8 +689,8 @@ msgid "<0>{senderName} {senderEmail}</0> on behalf of \"{0}\" has invited you to
 msgstr "<0>{senderName} {senderEmail}</0> 代表 \"{0}\" 邀请你查看此文档"
 
 #: packages/email/templates/confirm-team-email.tsx
-msgid "<0>{teamName}</0> has requested to use your email address for their team on Documenso."
-msgstr "<0>{teamName}</0> 请求将您的邮箱地址用于其在 Documenso 上的团队。"
+msgid "<0>{teamName}</0> has requested to use your email address for their team on Reeve.Sign."
+msgstr ""
 
 #: apps/remix/app/routes/_unauthenticated+/organisation.sso.confirmation.$token.tsx
 msgid "<0>Account management:</0> Modify your account settings, permissions, and preferences"
@@ -818,6 +825,21 @@ msgstr "2FA 重置"
 msgid "2FA token"
 msgstr "双重验证令牌 (2FA token)"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "2FA token requested"
+msgstr ""
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "2FA token validated"
+msgstr ""
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "2FA token validation failed"
+msgstr ""
+
 #: apps/remix/app/components/forms/token.tsx
 msgid "3 months"
 msgstr "3 个月"
@@ -941,8 +963,8 @@ msgid "A means to print or download documents for your records"
 msgstr "用于打印或下载文档以作记录的方式"
 
 #: packages/email/templates/organisation-join.tsx
-msgid "A member has joined your organisation on Documenso"
-msgstr "有成员已在 Documenso 上加入您的组织"
+msgid "A member has joined your organisation on Reeve.Sign"
+msgstr ""
 
 #: packages/lib/jobs/definitions/emails/send-organisation-member-left-email.handler.ts
 msgid "A member has left your organisation"
@@ -953,8 +975,8 @@ msgid "A member has left your organisation {organisationName}"
 msgstr "有成员已离开您的组织 {organisationName}"
 
 #: packages/email/templates/organisation-leave.tsx
-msgid "A member has left your organisation on Documenso"
-msgstr "有成员已在 Documenso 上离开您的组织"
+msgid "A member has left your organisation on Reeve.Sign"
+msgstr ""
 
 #: packages/lib/jobs/definitions/emails/send-organisation-member-joined-email.handler.ts
 msgid "A new member has joined your organisation"
@@ -993,18 +1015,18 @@ msgid "A request has been made to create an account for you"
 msgstr "已收到为您创建账户的请求"
 
 #: packages/email/templates/organisation-account-link-confirmation.tsx
-msgid "A request has been made to link your Documenso account"
-msgstr "已收到关联您的 Documenso 账户的请求"
+msgid "A request has been made to link your Reeve.Sign account"
+msgstr ""
 
 #. placeholder {0}: team.name
 #: packages/lib/server-only/team/create-team-email-verification.ts
-msgid "A request to use your email has been initiated by {0} on Documenso"
-msgstr "{0} 在 Documenso 上发起了一个使用您邮箱的请求"
+msgid "A request to use your email has been initiated by {0} on Reeve.Sign"
+msgstr ""
 
 #: apps/remix/app/components/dialogs/webhook-create-dialog.tsx
 #: apps/remix/app/components/dialogs/webhook-edit-dialog.tsx
-msgid "A secret that will be sent to your URL so you can verify that the request has been sent by Documenso."
-msgstr "一个密钥将被发送到你的 URL，以便你验证该请求确实由 Documenso 发出。"
+msgid "A secret that will be sent to your URL so you can verify that the request has been sent by Reeve.Sign."
+msgstr ""
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
 msgid "A stable internet connection"
@@ -1050,13 +1072,17 @@ msgstr "接受"
 msgid "Accept & Link Account"
 msgstr "接受并关联账户"
 
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "Accept and continue"
+msgstr ""
+
 #: packages/email/templates/organisation-invite.tsx
-msgid "Accept invitation to join an organisation on Documenso"
-msgstr "接受加入 Documenso 组织的邀请"
+msgid "Accept invitation to join an organisation on Reeve.Sign"
+msgstr ""
 
 #: packages/email/templates/confirm-team-email.tsx
-msgid "Accept team email request for {teamName} on Documenso"
-msgstr "在 Documenso 上接受 {teamName} 的团队邮箱请求"
+msgid "Accept team email request for {teamName} on Reeve.Sign"
+msgstr ""
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
 msgid "Acceptance and Consent"
@@ -1286,6 +1312,7 @@ msgid "Add fields"
 msgstr "添加字段"
 
 #: apps/remix/app/components/general/document/document-edit-form.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-upload-page.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
@@ -1913,6 +1940,10 @@ msgstr "正在分析页面布局"
 msgid "Analyzing pages"
 msgstr "正在分析页面"
 
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "and"
+msgstr ""
+
 #: apps/remix/app/routes/_authenticated+/inbox.tsx
 msgid "Any documents that you have been invited to will appear here"
 msgstr "任何邀请您参与的文档都会显示在此处"
@@ -2220,6 +2251,10 @@ msgstr "基础背景颜色。"
 msgid "Base text colour."
 msgstr "基础文本颜色。"
 
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "Before you continue"
+msgstr ""
+
 #: packages/email/template-components/template-confirmation-email.tsx
 msgid "Before you get started, please confirm your email address by clicking the button below:"
 msgstr "在开始之前，请点击下方按钮确认您的邮箱地址："
@@ -2365,8 +2400,8 @@ msgid "By enabling 2FA, you will be required to enter a code from your authentic
 msgstr "启用 2FA 后，每次使用邮箱和密码登录时，您都需要输入来自验证器应用的验证码。"
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
-msgid "By proceeding to use the electronic signature service provided by Documenso, you affirm that you have read and understood this disclosure. You agree to all terms and conditions related to the use of electronic signatures and electronic transactions as outlined herein."
-msgstr "继续使用 Documenso 提供的电子签署服务，即表示你已阅读并理解本披露内容。你同意本文件中关于使用电子签名及电子交易的所有条款和条件。"
+msgid "By proceeding to use the electronic signature service provided by Reeve.Sign, you affirm that you have read and understood this disclosure. You agree to all terms and conditions related to the use of electronic signatures and electronic transactions as outlined herein."
+msgstr ""
 
 #: apps/remix/app/components/general/document-signing/document-signing-disclosure.tsx
 msgid "By proceeding with your electronic signature, you acknowledge and consent that it will be used to sign the given document and holds the same legal validity as a handwritten signature. By completing the electronic signing process, you affirm your understanding and acceptance of these conditions."
@@ -2601,6 +2636,10 @@ msgstr "从下方选择一个已存在的收件人以继续"
 #: apps/remix/app/components/dialogs/template-direct-link-dialog.tsx
 msgid "Choose Direct Link Recipient"
 msgstr "选择直接链接收件人"
+
+#: packages/ui/primitives/document-dropzone.tsx
+msgid "Choose file"
+msgstr ""
 
 #: apps/remix/app/components/general/document/document-edit-form.tsx
 msgid "Choose how the document will reach recipients"
@@ -2967,6 +3006,15 @@ msgstr "继续查看文档。"
 msgid "Continue to login"
 msgstr "继续登录"
 
+#: apps/remix/app/components/forms/signin.tsx
+#: apps/remix/app/components/forms/signup.tsx
+msgid "Continue with"
+msgstr ""
+
+#: apps/remix/app/components/forms/signup.tsx
+msgid "Continue with your Reeve account to start signing documents."
+msgstr ""
+
 #: apps/remix/app/components/forms/document-preferences-form.tsx
 msgid "Controls how long recipients have to complete signing before the document expires. After expiration, recipients can no longer sign the document."
 msgstr "控制收件人在文档过期前完成签署的时间长度。过期后，收件人将无法再签署该文档。"
@@ -3170,6 +3218,7 @@ msgid "Create Direct Signing Link"
 msgstr "创建直接签署链接"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 msgid "Create Document"
 msgstr "创建文档"
 
@@ -3256,6 +3305,7 @@ msgid "Create Team"
 msgstr "创建团队"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 msgid "Create Template"
 msgstr "创建模板"
 
@@ -3275,6 +3325,10 @@ msgstr "创建 Webhook"
 #: apps/remix/app/components/dialogs/webhook-create-dialog.tsx
 msgid "Create Webhook"
 msgstr "创建 Webhook"
+
+#: apps/remix/app/components/forms/signup.tsx
+msgid "Create your account"
+msgstr ""
 
 #: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
 msgid "Create your account and start using state-of-the-art document signing."
@@ -3920,14 +3974,6 @@ msgstr "已生成 DKIM 记录。请添加 DNS 记录以验证您的域名。"
 msgid "DNS Records"
 msgstr "DNS 记录"
 
-#: apps/remix/app/components/general/admin-license-card.tsx
-msgid "Documenso License"
-msgstr "Documenso 许可证"
-
-#: apps/remix/app/components/dialogs/account-delete-dialog.tsx
-msgid "Documenso will delete <0>all of your documents</0>, along with all of your completed documents, signatures, and all other resources belonging to your Account."
-msgstr "Documenso 将删除<0>你所有的文档</0>，包括所有已完成的文档、签名以及属于你账号的其他所有资源。"
-
 #: apps/remix/app/components/general/settings-nav-desktop.tsx
 #: apps/remix/app/components/general/template/template-page-view-documents-table.tsx
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings._layout.tsx
@@ -3967,6 +4013,11 @@ msgstr "文档与收件人"
 msgid "Document access"
 msgstr "文档访问"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document access auth updated"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document access auth updated"
@@ -3991,6 +4042,11 @@ msgstr "文档已取消"
 #: apps/remix/app/components/general/document/document-status.tsx
 msgid "Document completed"
 msgstr "文档已完成"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document completed"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 #: packages/lib/utils/document-audit-logs.ts
@@ -4017,6 +4073,11 @@ msgstr "文档转换暂时不可用。请稍后重试或上传 PDF 文件。"
 #: apps/remix/app/components/dialogs/template-use-dialog.tsx
 msgid "Document created"
 msgstr "文档已创建"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document created"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -4057,6 +4118,11 @@ msgstr "文档创建"
 msgid "Document deleted"
 msgstr "文档已删除"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document deleted"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document deleted"
@@ -4086,8 +4152,14 @@ msgid "Document Duplicated"
 msgstr "文档已复制"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgid "Document Editor"
 msgstr "文档编辑器"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document external ID updated"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -4139,6 +4211,11 @@ msgstr "文档指标"
 msgid "Document moved"
 msgstr "文档已移动"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document moved to team"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document moved to team"
@@ -4148,10 +4225,20 @@ msgstr "文档已移动到团队"
 msgid "Document no longer available to sign"
 msgstr "文档已不再可供签署"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document opened"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document opened"
 msgstr "文档已打开"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document ownership delegated"
+msgstr ""
 
 #: apps/remix/app/components/general/admin-global-settings-section.tsx
 #: apps/remix/app/components/general/document/document-status.tsx
@@ -4198,6 +4285,11 @@ msgstr "文档已重命名"
 msgid "Document sent"
 msgstr "文档已发送"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document sent"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document sent"
@@ -4211,6 +4303,11 @@ msgstr "文档设置"
 #: apps/remix/app/routes/_recipient+/sign.$token+/complete.tsx
 msgid "Document Signed"
 msgstr "文档已签署"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document signing auth updated"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -4239,10 +4336,20 @@ msgstr "文档标题"
 msgid "Document Title"
 msgstr "文档标题"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document title updated"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document title updated"
 msgstr "文档标题已更新"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document updated"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -4269,6 +4376,11 @@ msgstr "由于有未支付账单，已禁用文档上传"
 msgid "Document uploaded"
 msgstr "文档已上传"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document viewed"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Document viewed"
@@ -4285,6 +4397,11 @@ msgstr "文档已查看"
 #: packages/ui/primitives/template-flow/add-template-settings.tsx
 msgid "Document visibility"
 msgstr "文档可见性"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Document visibility updated"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -4631,8 +4748,8 @@ msgstr "电子签名披露"
 #: packages/lib/constants/document.ts
 #: packages/lib/server-only/pdf/generate-certificate-pdf.ts
 #: packages/lib/server-only/pdf/generate-certificate-pdf.ts
-#: packages/lib/server-only/pdf/render-certificate.ts
 #: packages/lib/utils/fields.ts
+#: packages/lib/utils/sender-verification.ts
 #: packages/ui/primitives/document-flow/add-fields.tsx
 #: packages/ui/primitives/document-flow/add-signers.tsx
 #: packages/ui/primitives/document-flow/add-signers.tsx
@@ -4751,6 +4868,11 @@ msgstr "电子邮件已重新发送"
 #: packages/ui/primitives/template-flow/add-template-settings.tsx
 msgid "Email Sender"
 msgstr "邮件发件人"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Email sent"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -5034,20 +5156,40 @@ msgstr "信封 ID"
 msgid "Envelope Item Count"
 msgstr "信封条目数量"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Envelope item created"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Envelope item created"
 msgstr "信封条目已创建"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Envelope item deleted"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Envelope item deleted"
 msgstr "信封条目已删除"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Envelope item PDF replaced"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Envelope item PDF replaced"
 msgstr "信封条目 PDF 已被替换"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Envelope item updated"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
@@ -5375,6 +5517,16 @@ msgstr "功能"
 msgid "Field character limit"
 msgstr "字段字符限制"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Field created"
+msgstr ""
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Field deleted"
+msgstr ""
+
 #: apps/remix/app/components/forms/editor/editor-field-generic-field-forms.tsx
 #: packages/ui/primitives/document-flow/field-items-advanced-settings/date-field.tsx
 #: packages/ui/primitives/document-flow/field-items-advanced-settings/email-field.tsx
@@ -5408,24 +5560,50 @@ msgstr "字段标签"
 msgid "Field placeholder"
 msgstr "字段占位符"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Field prefilled"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Field prefilled by assistant"
 msgstr "字段由助手预填"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Field signed"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Field signed"
 msgstr "字段已签署"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Field unsigned"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgctxt "Audit log format"
 msgid "Field unsigned"
 msgstr "字段未签署"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Field updated"
+msgstr ""
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 #: apps/remix/app/components/tables/admin-document-recipient-item-table.tsx
 msgid "Fields"
 msgstr "字段"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Fields auto inserted"
+msgstr ""
 
 #: apps/remix/app/components/general/legacy-field-warning-popover.tsx
 msgid "Fields updated"
@@ -5865,6 +6043,10 @@ msgstr "我需要接收此文档的副本"
 msgid "I am the owner of this document"
 msgstr "我是此文档的所有者"
 
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "I have read and agree to the"
+msgstr ""
+
 #: apps/remix/app/routes/_unauthenticated+/o.$orgUrl.signin.tsx
 msgid "I understand that I am providing my credentials to a 3rd party service configured by this organisation"
 msgstr "我理解我正在向此组织配置的第三方服务提供我的凭证"
@@ -6063,8 +6245,8 @@ msgid "Invalid License Key"
 msgstr "许可证密钥无效"
 
 #: apps/remix/app/components/general/admin-license-status-banner.tsx
-msgid "Invalid License Type - Your Documenso instance is using features that are not part of your license."
-msgstr "许可证类型无效 - 您的 Documenso 实例正在使用不在当前许可证范围内的功能。"
+msgid "Invalid License Type - Your Reeve.Sign instance is using features that are not part of your license."
+msgstr ""
 
 #: apps/remix/app/routes/_unauthenticated+/team.verify.email.$token.tsx
 msgid "Invalid link"
@@ -6198,8 +6380,8 @@ msgid "Japanese"
 msgstr "日语"
 
 #: packages/email/templates/organisation-invite.tsx
-msgid "Join {organisationName} on Documenso"
-msgstr "加入 {organisationName}，使用 Documenso"
+msgid "Join {organisationName} on Reeve.Sign"
+msgstr ""
 
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.support.tsx
 msgid "Join our community on <0>Discord</0> for community support and discussion."
@@ -6398,8 +6580,8 @@ msgid "Link template"
 msgstr "链接模板"
 
 #: packages/email/templates/organisation-account-link-confirmation.tsx
-msgid "Link your Documenso account"
-msgstr "关联您的 Documenso 账户"
+msgid "Link your Reeve.Sign account"
+msgstr ""
 
 #: apps/remix/app/routes/_authenticated+/settings+/security._index.tsx
 #: apps/remix/app/routes/_authenticated+/settings+/security.linked-accounts.tsx
@@ -6753,8 +6935,8 @@ msgid "Min"
 msgstr "最小值"
 
 #: apps/remix/app/components/general/admin-license-status-banner.tsx
-msgid "Missing License - Your Documenso instance is using features that require a license."
-msgstr "缺少许可证 - 您的 Documenso 实例正在使用需要许可证的功能。"
+msgid "Missing License - Your Reeve.Sign instance is using features that require a license."
+msgstr ""
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-fields-page.tsx
 msgid "Missing Recipients"
@@ -6781,6 +6963,10 @@ msgstr "月活跃用户：至少创建过一份文档的用户"
 #: apps/remix/app/routes/_authenticated+/admin+/stats.tsx
 msgid "Monthly Active Users: Users that had at least one of their documents completed"
 msgstr "月活跃用户：至少有一份文档被完成的用户"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
+msgid "More options"
+msgstr ""
 
 #: apps/remix/app/components/dialogs/document-move-to-folder-dialog.tsx
 #: apps/remix/app/components/dialogs/envelopes-bulk-move-dialog.tsx
@@ -7013,6 +7199,7 @@ msgstr "未找到文件夹"
 msgid "No folders found matching \"{searchTerm}\""
 msgstr "未找到与“{searchTerm}”匹配的文件夹"
 
+#: apps/remix/app/components/general/folder/folder-grid.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/documents.folders._index.tsx
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/templates.folders._index.tsx
 msgid "No folders yet."
@@ -7500,7 +7687,7 @@ msgstr "原始"
 msgid "Otherwise, the document will be created as a draft."
 msgstr "否则将把文档创建为草稿。"
 
-#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/utils/sender-verification.ts
 msgid "OTP"
 msgstr "OTP"
 
@@ -7922,6 +8109,10 @@ msgstr "请输入验证器生成的令牌或备份代码。如果你没有可用
 msgid "Please provide a token from your authenticator, or a backup code."
 msgstr "请输入验证器生成的令牌或备份代码。"
 
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "Please review and accept our Terms of Service and Privacy Policy to continue using Reeve.Sign."
+msgstr ""
+
 #: apps/remix/app/components/general/document-signing/document-signing-page-view-v1.tsx
 msgid "Please review the document before approving."
 msgstr "请在审批前先审阅文档。"
@@ -8045,6 +8236,10 @@ msgstr "主要操作颜色。"
 #: apps/remix/app/components/forms/branding-preferences-form.tsx
 msgid "Primary Foreground"
 msgstr "主前景色"
+
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "Privacy Policy"
+msgstr ""
 
 #: apps/remix/app/components/general/template/template-type.tsx
 #: apps/remix/app/components/tables/templates-table.tsx
@@ -8173,8 +8368,8 @@ msgid "Read Only"
 msgstr "只读"
 
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.support.tsx
-msgid "Read our documentation to get started with Documenso."
-msgstr "阅读我们的文档，开始使用 Documenso。"
+msgid "Read our documentation to get started with Reeve.Sign."
+msgstr ""
 
 #: apps/remix/app/routes/_authenticated+/admin+/documents.$id.tsx
 msgid "Read Status"
@@ -8263,9 +8458,24 @@ msgstr "收件人已批准此文档"
 msgid "Recipient CC'd the document"
 msgstr "收件人已将此文档加入抄送"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Recipient completed"
+msgstr ""
+
 #: packages/lib/utils/document-audit-logs.ts
 msgid "Recipient completed their task"
 msgstr "收件人已完成其任务"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Recipient created"
+msgstr ""
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Recipient deleted"
+msgstr ""
 
 #: packages/ui/components/document/document-email-checkboxes.tsx
 msgid "Recipient expired email"
@@ -8279,6 +8489,11 @@ msgstr "收件人未能验证此文档的双重验证 (2FA) 令牌"
 #: packages/ui/primitives/document-flow/field-item.tsx
 msgid "Recipient ID:"
 msgstr "收件人 ID："
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Recipient rejected"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "Recipient rejected the document"
@@ -8324,6 +8539,11 @@ msgstr "收件人签署时间窗口已过期"
 #: apps/remix/app/components/tables/admin-document-recipient-item-table.tsx
 msgid "Recipient updated"
 msgstr "收件人已更新"
+
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Recipient updated"
+msgstr ""
 
 #: packages/lib/utils/document-audit-logs.ts
 msgid "Recipient validated a 2FA token for the document"
@@ -8402,6 +8622,18 @@ msgstr "重定向 URL"
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/documents.$id.edit.tsx
 msgid "Redirecting"
 msgstr "正在重定向"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
+msgid "Reeve.Sign"
+msgstr ""
+
+#: apps/remix/app/components/general/admin-license-card.tsx
+msgid "Reeve.Sign License"
+msgstr ""
+
+#: apps/remix/app/components/dialogs/account-delete-dialog.tsx
+msgid "Reeve.Sign will delete <0>all of your documents</0>, along with all of your completed documents, signatures, and all other resources belonging to your Account."
+msgstr ""
 
 #: apps/remix/app/components/forms/signup.tsx
 #: apps/remix/app/components/general/claim-account.tsx
@@ -8652,6 +8884,7 @@ msgstr "重新发送确认邮件"
 
 #: apps/remix/app/components/dialogs/envelope-redistribute-dialog.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgid "Resend Document"
 msgstr "重新发送文档"
@@ -8754,10 +8987,7 @@ msgstr "返回"
 msgid "Return Home"
 msgstr "返回主页"
 
-#: apps/remix/app/routes/_unauthenticated+/o.$orgUrl.signin.tsx
-msgid "Return to Documenso sign in page here"
-msgstr "在此返回 Documenso 登录页面"
-
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgid "Return to documents"
 msgstr "返回文档列表"
@@ -8766,11 +8996,16 @@ msgstr "返回文档列表"
 msgid "Return to Home"
 msgstr "返回首页"
 
+#: apps/remix/app/routes/_unauthenticated+/o.$orgUrl.signin.tsx
+msgid "Return to Reeve.Sign sign in page here"
+msgstr ""
+
 #: apps/remix/app/routes/_unauthenticated+/check-email.tsx
 #: apps/remix/app/routes/_unauthenticated+/reset-password._index.tsx
 msgid "Return to sign in"
 msgstr "返回登录"
 
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgid "Return to templates"
 msgstr "返回模板列表"
@@ -9100,6 +9335,8 @@ msgid "Select passkey"
 msgstr "选择通行密钥"
 
 #: apps/remix/app/components/tables/documents-table.tsx
+#: apps/remix/app/components/tables/documents-table.tsx
+#: apps/remix/app/components/tables/templates-table.tsx
 #: apps/remix/app/components/tables/templates-table.tsx
 msgid "Select row"
 msgstr "选择行"
@@ -9194,6 +9431,7 @@ msgstr "发送文档"
 
 #: apps/remix/app/components/dialogs/envelope-distribute-dialog.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 #: packages/ui/primitives/document-flow/send-document-action-dialog.tsx
 msgid "Send Document"
@@ -9241,8 +9479,13 @@ msgstr "发送状态"
 msgid "Sender"
 msgstr "发件人"
 
-#: packages/lib/server-only/pdf/render-certificate.ts
-#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Sender contact attested"
+msgstr ""
+
+#. Shown in two places: as the signing-certificate footer label, followed by ": <contact> — <method> OTP, <timestamp>"; and on its own as an audit-log activity row. Must read correctly both as a label and as a standalone sentence.
+#: packages/lib/constants/document-audit-logs.ts
 msgid "Sender-attested contact verification (not independently verified)"
 msgstr "发件人自证的联系方式验证（未经独立核实）"
 
@@ -9286,6 +9529,7 @@ msgstr "设置模板属性和收件人信息"
 #: apps/remix/app/components/general/app-command-menu.tsx
 #: apps/remix/app/components/general/app-nav-mobile.tsx
 #: apps/remix/app/components/general/app-nav-mobile.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 #: apps/remix/app/components/general/folder/folder-card.tsx
@@ -9388,8 +9632,8 @@ msgid "Sign Document"
 msgstr "签署文档"
 
 #: apps/remix/app/routes/_recipient+/_layout.tsx
-msgid "Sign Document - Documenso"
-msgstr "签署文档 - Documenso"
+msgid "Sign Document - Reeve.Sign"
+msgstr ""
 
 #: apps/remix/app/components/embed/multisign/multi-sign-document-list.tsx
 msgid "Sign Documents"
@@ -9594,6 +9838,11 @@ msgstr "签署提醒"
 msgid "Signing Status"
 msgstr "签署状态"
 
+#: packages/lib/constants/document-audit-logs.ts
+msgctxt "Audit log event type"
+msgid "Signing window expired"
+msgstr ""
+
 #: apps/remix/app/components/embed/embed-recipient-expired.tsx
 msgid "Signing Window Expired"
 msgstr "签署时间窗口已过期"
@@ -9637,7 +9886,7 @@ msgstr "站点设置"
 msgid "Skip"
 msgstr "跳过"
 
-#: packages/lib/server-only/pdf/render-certificate.ts
+#: packages/lib/utils/sender-verification.ts
 msgid "SMS"
 msgstr "SMS"
 
@@ -9752,6 +10001,7 @@ msgid "Something went wrong!"
 msgstr "出错了！"
 
 #: packages/ui/primitives/data-table.tsx
+#: packages/ui/primitives/data-table.tsx
 msgid "Something went wrong."
 msgstr "发生了一些错误。"
 
@@ -9776,6 +10026,7 @@ msgstr "抱歉，我们未能下载审计日志。请稍后再试。"
 msgid "Sorry, we were unable to download the certificate. Please try again later."
 msgstr "抱歉，我们未能下载证书。请稍后再试。"
 
+#: apps/remix/app/components/general/reeve/agpl-source-link.tsx
 #: apps/remix/app/components/general/template/template-page-view-documents-table.tsx
 #: apps/remix/app/components/tables/team-members-table.tsx
 msgid "Source"
@@ -9818,6 +10069,7 @@ msgstr "状态"
 #. placeholder {0}: currentStepData.order
 #. placeholder {1}: envelopeEditorSteps.length
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgctxt "The step counter"
 msgid "Step {0}/{1}"
 msgstr "步骤 {0}/{1}"
@@ -9825,6 +10077,10 @@ msgstr "步骤 {0}/{1}"
 #: packages/ui/primitives/document-flow/document-flow-root.tsx
 msgid "Step <0>{step} of {maxStep}</0>"
 msgstr "步骤 <0>{step} / {maxStep}</0>"
+
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
+msgid "Steps"
+msgstr ""
 
 #: apps/remix/app/components/tables/admin-organisations-table.tsx
 msgid "Stripe"
@@ -10023,6 +10279,10 @@ msgstr "系统要求"
 msgid "System Theme"
 msgstr "系统主题"
 
+#: packages/ui/primitives/document-dropzone.tsx
+msgid "Tap to choose a file"
+msgstr ""
+
 #: apps/remix/app/components/dialogs/admin-swap-subscription-dialog.tsx
 msgid "Target Organisation"
 msgstr "目标组织"
@@ -10038,8 +10298,8 @@ msgstr "团队"
 
 #. placeholder {0}: team.name
 #: packages/lib/server-only/team/delete-team.ts
-msgid "Team \"{0}\" has been deleted on Documenso"
-msgstr "团队“{0}”已在 Documenso 上被删除"
+msgid "Team \"{0}\" has been deleted on Reeve.Sign"
+msgstr ""
 
 #: packages/lib/constants/teams-translations.ts
 msgid "Team Admin"
@@ -10090,8 +10350,8 @@ msgid "Team email removed"
 msgstr "团队邮箱已被移除"
 
 #: packages/email/templates/team-email-removed.tsx
-msgid "Team email removed for {teamName} on Documenso"
-msgstr "Documenso 上团队 {teamName} 的团队邮箱已被移除"
+msgid "Team email removed for {teamName} on Reeve.Sign"
+msgstr ""
 
 #: apps/remix/app/routes/_unauthenticated+/team.verify.email.$token.tsx
 msgid "Team email verification"
@@ -10243,6 +10503,7 @@ msgid "Template Duplicated"
 msgstr "模板已复制"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor.tsx
 msgid "Template Editor"
 msgstr "模板编辑器"
 
@@ -10323,6 +10584,14 @@ msgstr "模板已删除"
 msgid "Templates partially deleted"
 msgstr "模板已部分删除"
 
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "Terms & Privacy"
+msgstr ""
+
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "Terms of Service"
+msgstr ""
+
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.webhooks.$id._index.tsx
 msgid "Test"
 msgstr "测试"
@@ -10381,8 +10650,8 @@ msgid "Thank you for completing the signing process."
 msgstr "感谢您完成签署流程。"
 
 #: apps/remix/app/routes/_unauthenticated+/articles.signature-disclosure.tsx
-msgid "Thank you for using Documenso to perform your electronic document signing. The purpose of this disclosure is to inform you about the process, legality, and your rights regarding the use of electronic signatures on our platform. By opting to use an electronic signature, you are agreeing to the terms and conditions outlined below."
-msgstr "感谢你使用 Documenso 进行电子文档签署。本披露旨在向你说明在我们平台上使用电子签名的流程、合法性以及你的权利。选择使用电子签名，即表示你同意以下条款和条件。"
+msgid "Thank you for using Reeve.Sign to perform your electronic document signing. The purpose of this disclosure is to inform you about the process, legality, and your rights regarding the use of electronic signatures on our platform. By opting to use an electronic signature, you are agreeing to the terms and conditions outlined below."
+msgstr ""
 
 #: packages/email/template-components/template-forgot-password.tsx
 msgid "That's okay, it happens! Click the button below to reset your password."
@@ -10769,8 +11038,8 @@ msgstr "收件人在签署文档时允许使用的签名类型。"
 
 #: apps/remix/app/components/dialogs/webhook-create-dialog.tsx
 #: apps/remix/app/components/dialogs/webhook-edit-dialog.tsx
-msgid "The URL for Documenso to send webhook events to."
-msgstr "Documenso 向其发送 Webhook 事件的 URL。"
+msgid "The URL for Reeve.Sign to send webhook events to."
+msgstr ""
 
 #: apps/remix/app/routes/_authenticated+/admin+/users.$id.tsx
 msgid "The user you are looking for may have been removed, renamed or may have never existed."
@@ -10916,8 +11185,8 @@ msgid "This document has been signed by all recipients"
 msgstr "该文档已由所有收件人签署"
 
 #: apps/remix/app/components/general/document/document-certificate-qr-view.tsx
-msgid "This document is available in your Documenso account. You can view more details, recipients, and audit logs there."
-msgstr "此文档在您的 Documenso 账户中可用。您可以在那里查看更多详情、收件人和审计日志。"
+msgid "This document is available in your Reeve.Sign account. You can view more details, recipients, and audit logs there."
+msgstr ""
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/documents.$id._index.tsx
 msgid "This document is currently a draft and has not been sent"
@@ -10936,8 +11205,8 @@ msgid "This document was created using a direct link."
 msgstr "此文档是通过直接链接创建的。"
 
 #: packages/email/template-components/template-footer.tsx
-msgid "This document was sent using <0>Documenso</0>."
-msgstr "此文档是使用 <0>Documenso</0> 发送的。"
+msgid "This document was sent using <0>Reeve.Sign</0>."
+msgstr ""
 
 #: apps/remix/app/components/dialogs/envelope-duplicate-dialog.tsx
 msgid "This document will be duplicated."
@@ -11148,6 +11417,7 @@ msgstr "时区"
 
 #: apps/remix/app/components/dialogs/envelope-rename-dialog.tsx
 #: apps/remix/app/components/embed/authoring/configure-document-view.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 #: apps/remix/app/components/general/template/template-page-view-documents-table.tsx
 #: apps/remix/app/components/tables/documents-table.tsx
 #: apps/remix/app/components/tables/inbox-table.tsx
@@ -11655,6 +11925,7 @@ msgid "Update current organisation"
 msgstr "更新当前组织"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 msgid "Update Document"
 msgstr "更新文档"
 
@@ -11724,6 +11995,7 @@ msgstr "更新团队组"
 msgid "Update team member"
 msgstr "更新团队成员"
 
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 msgid "Update Template"
 msgstr "更新模板"
@@ -11892,6 +12164,7 @@ msgid "Use Backup Code"
 msgstr "使用备份代码"
 
 #: apps/remix/app/components/dialogs/template-use-dialog.tsx
+#: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-header.tsx
 msgid "Use Template"
 msgstr "使用模板"
@@ -12232,8 +12505,8 @@ msgstr "正在等待你的顺序"
 
 #: apps/remix/app/routes/_recipient+/sign.$token+/_index.tsx
 #: apps/remix/app/routes/_recipient+/sign.$token+/_index.tsx
-msgid "Want to send slick signing links like this one? <0>Check out Documenso</0>."
-msgstr "想要发送像这样顺畅好用的签署链接吗？<0>来了解一下 Documenso</0>。"
+msgid "Want to send slick signing links like this one? <0>Check out Reeve.Sign</0>."
+msgstr ""
 
 #: apps/remix/app/routes/_profile+/_layout.tsx
 msgid "Want your own public profile?"
@@ -12680,8 +12953,8 @@ msgid "Welcome to {organisationName}"
 msgstr "欢迎加入 {organisationName}"
 
 #: packages/email/template-components/template-confirmation-email.tsx
-msgid "Welcome to Documenso!"
-msgstr "欢迎来到 Documenso！"
+msgid "Welcome to Reeve.Sign!"
+msgstr ""
 
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl.settings.sso.tsx
 msgid "Well-known URL is required"
@@ -12723,8 +12996,8 @@ msgid "Whether to enable the SSO portal for your organisation"
 msgstr "是否为您的组织启用 SSO 门户"
 
 #: apps/remix/app/routes/_profile+/p.$url.tsx
-msgid "While waiting for them to do so you can create your own Documenso account and get started with document signing right away."
-msgstr "在等待对方操作期间，你可以创建自己的 Documenso 账号，立即开始使用文档签署功能。"
+msgid "While waiting for them to do so you can create your own Reeve.Sign account and get started with document signing right away."
+msgstr ""
 
 #: apps/remix/app/components/dialogs/organisation-create-dialog.tsx
 msgid "Whitelabeling, unlimited members and more"
@@ -12957,6 +13230,11 @@ msgstr "您无权启用此用户。"
 msgid "You are not authorized to reset two factor authentcation for this user."
 msgstr "您无权为此用户重置双重身份验证。"
 
+#. placeholder {0}: data.contact
+#: packages/lib/utils/document-audit-logs.ts
+msgid "You attested control of {0} (not independently verified)"
+msgstr ""
+
 #: apps/remix/app/components/dialogs/ai-field-detection-dialog.tsx
 msgid "You can add fields manually in the editor."
 msgstr "您可以在编辑器中手动添加字段。"
@@ -12991,8 +13269,8 @@ msgid "You can only detect fields in draft envelopes"
 msgstr "您只能在草稿信封中检测字段"
 
 #: packages/email/templates/confirm-team-email.tsx
-msgid "You can revoke access at any time in your team settings on Documenso <0>here</0>."
-msgstr "你可以随时在 Documenso 的团队设置中撤销访问权限，入口在<0>这里</0>。"
+msgid "You can revoke access at any time in your team settings on Reeve.Sign <0>here</0>."
+msgstr ""
 
 #: apps/remix/app/components/forms/public-profile-form.tsx
 msgid "You can update the profile URL by updating the team URL in the general settings page."
@@ -13136,8 +13414,8 @@ msgstr "您已被 <0>{0}</0> 邀请加入其组织。"
 
 #. placeholder {0}: organisation.name
 #: packages/lib/server-only/organisation/create-organisation-member-invites.ts
-msgid "You have been invited to join {0} on Documenso"
-msgstr "您已被邀请加入 Documenso 上的 {0}"
+msgid "You have been invited to join {0} on Reeve.Sign"
+msgstr ""
 
 #: packages/email/templates/organisation-invite.tsx
 msgid "You have been invited to join the following organisation"
@@ -13288,6 +13566,10 @@ msgstr "你已验证在 <0>{0}</0> 的邮箱地址。"
 #: packages/lib/utils/document-audit-logs.ts
 msgid "You moved the document to team"
 msgstr "你已将此文档移动到团队"
+
+#: apps/remix/app/routes/_authenticated+/legal-consent.tsx
+msgid "You must accept the Terms of Service and Privacy Policy to continue."
+msgstr ""
 
 #: apps/remix/app/components/dialogs/admin-organisation-delete-dialog.tsx
 #: apps/remix/app/components/dialogs/organisation-delete-dialog.tsx
@@ -13692,12 +13974,12 @@ msgid "Your Email"
 msgstr "您的邮箱"
 
 #: apps/remix/app/routes/_unauthenticated+/verify-email.$token.tsx
-msgid "Your email has already been confirmed. You can now use all features of Documenso."
-msgstr "您的邮箱已确认。您现在可以使用 Documenso 的全部功能。"
+msgid "Your email has already been confirmed. You can now use all features of Reeve.Sign."
+msgstr ""
 
 #: apps/remix/app/routes/_unauthenticated+/verify-email.$token.tsx
-msgid "Your email has been successfully confirmed! You can now use all features of Documenso."
-msgstr "你的邮箱已成功确认！你现在可以使用 Documenso 的所有功能。"
+msgid "Your email has been successfully confirmed! You can now use all features of Reeve.Sign."
+msgstr ""
 
 #. placeholder {0}: teamEmail.team.name
 #. placeholder {1}: teamEmail.team.url
@@ -13770,8 +14052,8 @@ msgid "Your plan does not support inviting members. Please upgrade or your plan 
 msgstr "您的套餐不支持邀请成员。请升级您的套餐或通过 <0>{SUPPORT_EMAIL}</0> 联系销售了解更多选项。"
 
 #: apps/remix/app/components/general/organisations/organisation-billing-banner.tsx
-msgid "Your plan is no longer valid. Please subscribe to a new plan to continue using Documenso."
-msgstr "您的套餐已无效。请订阅新套餐以继续使用 Documenso。"
+msgid "Your plan is no longer valid. Please subscribe to a new plan to continue using Reeve.Sign."
+msgstr ""
 
 #: apps/remix/app/components/forms/profile.tsx
 msgid "Your profile has been updated successfully."
