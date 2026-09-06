@@ -48,8 +48,32 @@ permissions:
   contents: read
 
 jobs:
+  # reeve-sign is a PUBLIC repo, so a pull_request from a fork receives NO
+  # secrets. Probe for the token first and report the validate job as SKIPPED
+  # rather than letting it fail red on something a fork contributor cannot fix
+  # (and rather than passing it, which would be a lie).
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      has_token: ${{ steps.probe.outputs.has_token }}
+    steps:
+      - name: Probe for GH_REPO_TOKEN
+        id: probe
+        env:
+          GH_REPO_TOKEN: ${{ secrets.GH_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GH_REPO_TOKEN:-}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GH_REPO_TOKEN unavailable (fork PR) - deploy.toml validation skipped, not passed."
+          fi
+
   validate:
     name: Validate deploy.toml
+    needs: preflight
+    if: needs.preflight.outputs.has_token == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -62,8 +86,19 @@ jobs:
           python-version: '3.12'
 
       - name: Install reeve-deploy-contract (pinned to T3's sha)
+        env:
+          GH_REPO_TOKEN: ${{ secrets.GH_REPO_TOKEN }}
         run: |
           set -euo pipefail
+          # reeve-services is PRIVATE, so pip's git fetch has to be
+          # authenticated; the default GITHUB_TOKEN cannot read another repo.
+          # `url.<base>.insteadOf` does that without putting the token on the
+          # pip command line or in a requirements file, where it would be
+          # logged. This is the org's standing mechanism -- same GH_REPO_TOKEN
+          # secret and same rewrite used by reeve-tenant-backend, cleardraft-api,
+          # ivorydesk-api, agentpik-backend and reeve-tenant-deploy (DEV-7629).
+          git config --global url."https://x-access-token:${GH_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+          trap 'git config --global --unset-all url."https://x-access-token:${GH_REPO_TOKEN}@github.com/".insteadOf || true' EXIT
           pip install "git+https://github.com/MindFortressInc/reeve-services.git@473b2b194f7da59fafcadd67b2c332b4f843d8f6#subdirectory=packages/deploy_contract"
 
       - name: Validate deploy.toml
