@@ -31,11 +31,11 @@ type CheckStatus = 'ok' | 'warning' | 'error';
  * `initServerSentry(dsn)` in ./sentry.ts: an injectable parameter is
  * trivially testable without mocking global process state.
  */
-export function resolveGitSha(env: NodeJS.ProcessEnv = process.env): string | null {
+export const resolveGitSha = (env: NodeJS.ProcessEnv = process.env): string | null => {
   const sha = env.GIT_SHA?.trim();
 
   return sha ? sha : null;
-}
+};
 
 export const loader = async () => {
   const checks: {
