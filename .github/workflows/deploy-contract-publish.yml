@@ -1,0 +1,61 @@
+name: Deploy contract validate
+
+# DEV-7600 (T5b of epic DEV-4419 "the box holds nothing") — validates
+# deploy.toml against the T3 (DEV-5836) schema on every push/PR touching it.
+# This repo has no packages/deploy_contract of its own, so the composite
+# action fetches reeve-services' own main for it (see
+# .github/actions/deploy-contract-publish/action.yml's own module doc,
+# "Cross-repo case (reeve-sign, T5b/DEV-7600)").
+#
+# Pinned to matt/dev-5836-t3-deploytoml-schema-parser-ci-derived-central-index
+# @473b2b194 (T3's PR, still open as of this writing) rather than main, so
+# this workflow validates against the exact schema this deploy.toml was
+# written against. Re-pin to reeve-services' main (or a release tag, once
+# the package cuts one) after DEV-5836 merges — see this PR's body.
+#
+# No ingest-url/api-key inputs: those arm a separate ops ticket (secrets not
+# in this ticket's scope). Per action.yml's own inputs doc, omitting them
+# leaves reeve-deploy-validate running as a hard CI gate while the publish
+# step skips itself cleanly (not a failure) — so this workflow calls the
+# shared composite action directly rather than inlining validate.
+
+on:
+  push:
+    branches: ['main']
+    paths:
+      - 'deploy.toml'
+      - '.github/workflows/deploy-contract-publish.yml'
+  pull_request:
+    branches: ['main']
+    paths:
+      - 'deploy.toml'
+      - '.github/workflows/deploy-contract-publish.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate deploy.toml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Fetch reeve-services' deploy-contract-publish action
+        uses: actions/checkout@v4
+        with:
+          repository: MindFortressInc/reeve-services
+          ref: matt/dev-5836-t3-deploytoml-schema-parser-ci-derived-central-index
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/deploy-contract-publish
+          sparse-checkout-cone-mode: false
+          path: .deploy-contract-action
+
+      - name: Validate (no ingest inputs — hard gate only, publish stays skipped)
+        uses: ./.deploy-contract-action/.github/actions/deploy-contract-publish
+        with:
+          contract-path: deploy.toml
