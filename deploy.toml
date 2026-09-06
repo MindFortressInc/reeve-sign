@@ -32,10 +32,15 @@ image   = "ghcr.io/mindfortressinc/reeve-sign"
 
 # --- [[config]] — repo -> box path mapping, byte-matched to deploy/README.md's table ---
 
+# `--project-directory`, not `-f`, matching deploy/check-image-drift.sh's
+# own BOX_COMPOSE_DIR convention (:48,:94) — both work here since
+# compose.yml pins an explicit top-level `name:`, but matching the existing
+# script's invocation keeps there being exactly one way this box runs
+# compose, not two equivalent-but-different ones.
 [[config]]
 repo   = "deploy/compose.yml"
 box    = "/home/ubuntu/reeve-sign/compose.yml"
-reload = "docker compose -f /home/ubuntu/reeve-sign/compose.yml up -d"
+reload = "docker compose --project-directory /home/ubuntu/reeve-sign up -d"
 
 # deploy/README.md: "The nginx filename mismatch is intentional and
 # permanent" — the box's live site file is named `sign-meetreeve`, no
@@ -48,31 +53,44 @@ box    = "/etc/nginx/sites-available/sign-meetreeve"
 reload = "nginx -t && systemctl reload nginx"
 
 # --- [verify] ---
-# DEV-7600's "open problem": reeve-sign pins by tag (`sha-<shortsha>`), not
-# a `@sha256:` digest — .github/workflows/publish.yml pushes both `:<tag>`
-# and `:sha-<shortsha>`, and there is no digest anywhere in the pipeline to
-# compare against directly. PR #25 (merged) shipped the digest-pinning
-# groundwork this ticket's comment (2026-08-05) resolved the ambiguity
-# around: sha_field names the CONFIG digest comparison — the box's running
-# container's `docker inspect '{{.Image}}'` (a config digest) must equal
-# the config digest of the manifest the compose-pinned tag currently
-# resolves to — never a bare tag-string comparison, which would pass while
-# a moving tag silently serves different bytes underneath it (the epic's
-# own failure class one layer up). This is NOT the manifest digest (what a
-# registry `HEAD` on the tag returns); reeve-deploy-verify's docker-on-box
-# owner/served-sha primitives resolve which comparison `sha_field` denotes
-# at verify time.
+# sha_field names the JSON key in the /api/health response body that carries
+# the deployed sha (read by `reeve-deploy-verify served-sha`/`served-sha-
+# external`, assertions.py) — it is NOT a docker-digest algorithm selector.
+# "git_sha" matches schema.py's own docstring, which uses reeve-sign
+# verbatim as its worked example with this exact value, and T4's
+# (reeve-services') own deploy.toml precedent.
+#
+# KNOWN GAP, not fixed here (out of this ticket's file allowlist —
+# apps/remix is app code): apps/remix/app/routes/api+/health.ts today
+# returns only {status, timestamp, checks: {database, certificate}} — no
+# git_sha field exists yet, so `served-sha`/`served-sha-external` cannot
+# actually run against it until that route is extended. Tracked as a
+# same-epic follow-up (see this PR's body) rather than silently declaring a
+# field that doesn't exist with no record of the gap.
+#
+# This is a DIFFERENT question from DEV-7600's "open problem" (tag vs.
+# digest for the box's *running container image*, not the app's health
+# JSON): that comparison has no field in this schema at all — T1's
+# `reeve-deploy-verify owner docker-on-box` is unimplemented (cli.py raises
+# NotImplementedError, exit 3), and the box-level check that exists today,
+# `deploy/check-image-drift.sh`, is documented (docs/deployment-staleness.md,
+# DEV-9526) as producing an inconclusive byte-level result under the box's
+# containerd snapshotter image store — a pre-existing, already-tracked gap
+# this ticket's schema section cannot resolve, since T3 built no field for
+# it. Not something [verify] configures either way.
 [verify]
 internal  = "http://127.0.0.1:3000/api/health"
 external  = "https://sign.meetreeve.com/api/health"
-sha_field = "config_digest"
+sha_field = "git_sha"
 
 # --- [[runtime_env]] — NAMES only, each backed by an observed failure ---
 # Not exhaustive against .env.example's 94 keys (same deferral T4 used) —
 # these six are the ones with a cited reader and an evidenced on_missing
-# severity. All reach "app" (the `documenso` compose service) or
-# "gotenberg" per DEV-2900: presence in the host .env proves nothing: only
-# an explicit compose `environment:` block passes a var into a container.
+# severity. `reaches` names the actual compose service ("documenso" or
+# "gotenberg", deploy/compose.yml's own service keys) per DEV-2900:
+# presence in the host .env proves nothing — only an explicit compose
+# `environment:` block passes a var into a container, and only that
+# container's own service name says which one.
 
 [[runtime_env]]
 # apps/remix/server/sentry.ts:55 — `environment: process.env.NODE_ENV ??
@@ -84,7 +102,7 @@ sha_field = "config_digest"
 # boot silently wrong again.
 name       = "NODE_ENV"
 on_missing = "fail_boot"
-reaches    = ["app"]
+reaches    = ["documenso"]
 
 [[runtime_env]]
 # apps/remix/server/sentry.ts:43 — `initServerSentry` logs "[sentry]
@@ -94,7 +112,7 @@ reaches    = ["app"]
 # deploy/compose.yml:41 (`SENTRY_DSN=${SENTRY_DSN}`).
 name       = "SENTRY_DSN"
 on_missing = "degrade"
-reaches    = ["app"]
+reaches    = ["documenso"]
 
 [[runtime_env]]
 # Client-side counterpart of SENTRY_DSN above — same silent-disable class
@@ -103,7 +121,7 @@ reaches    = ["app"]
 # (`NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}`).
 name       = "NEXT_PUBLIC_SENTRY_DSN"
 on_missing = "degrade"
-reaches    = ["app"]
+reaches    = ["documenso"]
 
 [[runtime_env]]
 # packages/lib/utils/env.ts:59 — NEXT_PUBLIC_DOCUMENT_CONVERSION_ENABLED
@@ -115,7 +133,7 @@ reaches    = ["app"]
 # too) with no error surfaced anywhere in the request path.
 name       = "NEXT_PRIVATE_DOCUMENT_CONVERSION_URL"
 on_missing = "fail_boot"
-reaches    = ["app"]
+reaches    = ["documenso"]
 
 [[runtime_env]]
 # deploy/compose.yml:58 — passed into the `gotenberg` service's own

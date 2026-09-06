@@ -82,10 +82,14 @@ the other way around.
 * The image is pinned by a moving `sha-<shortsha>` **tag**, not a
   `@sha256:` **digest**. A tag can be force-pushed to point at a different
   image; a digest can't. [PR #25](https://github.com/MindFortressInc/reeve-sign/pull/25)
-  shipped the digest-pinning groundwork; `../deploy.toml`'s
-  `[verify].sha_field = "config_digest"` (DEV-7600) is the check-time
-  assertion that resolves the tag to the image config digest actually
-  running on the box, rather than comparing tag strings.
+  shipped the digest-pinning groundwork, and [DEV-9526](https://linear.app/mindfortress/issue/DEV-9526)
+  tracks the box's containerd-snapshotter store making `docker inspect`'s
+  digest fields unusable for the byte-level half of that check today (see
+  `docs/deployment-staleness.md`'s "Digest pinning" section). `../deploy.toml`
+  (DEV-7600) does not have a schema field for this comparison — T3
+  (DEV-5836)'s `[verify].sha_field` names a JSON key in `/api/health`'s own
+  response body (for `reeve-deploy-verify served-sha`), a different check
+  entirely; `deploy/check-image-drift.sh` remains the mechanism for this one.
 * `reeve-sign-gotenberg:8` has **no tracked acquisition path**: nothing in
   this repo (or any registry reference) builds, pulls, or tags that exact
   image name — it exists only in the box's local Docker image store, so a
