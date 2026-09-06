@@ -1,5 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
+// Builds a `resolveGitSha` arg from a `ProcessEnv`-typed base (the real
+// `process.env`) rather than a bare object literal cast past its type --
+// Documenso's `ProcessEnv` augmentation
+// (packages/tsconfig/process-env.d.ts) declares several members as
+// required (NEXT_PRIVATE_DATABASE_URL, NEXT_PRIVATE_ENCRYPTION_KEY, ...)
+// that `{ GIT_SHA: '...' }` alone doesn't satisfy, but the real
+// process.env does. GIT_SHA is always explicitly overridden (never left
+// to whatever happens to be set on the machine running the test) so every
+// case here stays deterministic.
+const envWithGitSha = (gitSha: string | undefined): NodeJS.ProcessEnv => ({
+  ...process.env,
+  GIT_SHA: gitSha,
+});
+
 // DEV-7600 (T5b): /api/health must report the deployed commit so
 // `reeve-deploy-verify served-sha`/`served-sha-external` can confirm the
 // process ACTUALLY serving traffic is running the sha just deployed (the
@@ -28,25 +42,25 @@ describe('resolveGitSha', () => {
   it('returns the sha when GIT_SHA is set', async () => {
     const { resolveGitSha } = await import('./health');
 
-    expect(resolveGitSha({ GIT_SHA: 'abc1234' })).toBe('abc1234');
+    expect(resolveGitSha(envWithGitSha('abc1234'))).toBe('abc1234');
   });
 
   it('trims surrounding whitespace', async () => {
     const { resolveGitSha } = await import('./health');
 
-    expect(resolveGitSha({ GIT_SHA: '  abc1234\n' })).toBe('abc1234');
+    expect(resolveGitSha(envWithGitSha('  abc1234\n'))).toBe('abc1234');
   });
 
   it('returns null, never a placeholder string, when GIT_SHA is unset', async () => {
     const { resolveGitSha } = await import('./health');
 
-    expect(resolveGitSha({})).toBeNull();
+    expect(resolveGitSha(envWithGitSha(undefined))).toBeNull();
   });
 
   it('returns null when GIT_SHA is empty (the Dockerfile ARG default when no build-arg is passed)', async () => {
     const { resolveGitSha } = await import('./health');
 
-    expect(resolveGitSha({ GIT_SHA: '' })).toBeNull();
+    expect(resolveGitSha(envWithGitSha(''))).toBeNull();
   });
 });
 
