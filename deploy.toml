@@ -1,0 +1,157 @@
+# reeve-sign's deploy contract (DEV-7600, T5b of epic DEV-4419 "the box
+# holds nothing"). Validated by `reeve-deploy-validate` (packages/deploy_contract,
+# T3/DEV-5836) in CI (.github/workflows/deploy-contract-publish.yml).
+#
+# `target = "docker-on-box"` is the real target: deploy/compose.yml pins
+# ghcr.io/mindfortressinc/reeve-sign by tag, and the box builds nothing —
+# it only pulls + restarts. `host = "reeve-ec2"` is the ~/.ssh/config alias
+# (deploy/check-drift.sh's own default), the same physical box T4
+# (reeve-services' own deploy.toml, DEV-5837) registers under that name —
+# never an IP, per the schema's own guard against the
+# `ubuntu@98.95.108.209`-shaped literal that caused an earlier incident.
+#
+# [[config]] and [[runtime_env]] below declare, they do not repatriate —
+# DEV-5838 (T5a) already committed deploy/compose.yml and
+# deploy/nginx/sign.meetreeve.com.conf into this repo as the source of
+# truth; this file only tells the detector (T2, DEV-5835) where each one
+# renders on the box and which env vars each container name actually reads.
+
+[service]
+name   = "reeve-sign"
+target = "docker-on-box"
+host   = "reeve-ec2"
+
+[build]
+# The `COPY . /app` trap (schema.py's own docstring, decision 3 of the
+# epic): reeve-sign's Dockerfile bakes the source at build time, so a
+# `git pull` on the box changes nothing until the image is rebuilt and
+# re-pulled. rebuild=true is explicit and required for docker-on-box — no
+# default is allowed by the schema.
+rebuild = true
+image   = "ghcr.io/mindfortressinc/reeve-sign"
+
+# --- [[config]] — repo -> box path mapping, byte-matched to deploy/README.md's table ---
+
+# `--project-directory`, not `-f`, matching deploy/check-image-drift.sh's
+# own BOX_COMPOSE_DIR convention (:48,:94) — both work here since
+# compose.yml pins an explicit top-level `name:`, but matching the existing
+# script's invocation keeps there being exactly one way this box runs
+# compose, not two equivalent-but-different ones.
+[[config]]
+repo   = "deploy/compose.yml"
+box    = "/home/ubuntu/reeve-sign/compose.yml"
+reload = "docker compose --project-directory /home/ubuntu/reeve-sign up -d"
+
+# deploy/README.md: "The nginx filename mismatch is intentional and
+# permanent" — the box's live site file is named `sign-meetreeve`, no
+# `.conf` suffix, a hyphen instead of dots, symlinked from sites-enabled.
+# This [[config]] entry is exactly why the schema requires repo/box to be
+# declared explicitly rather than inferred from a shared filename.
+[[config]]
+repo   = "deploy/nginx/sign.meetreeve.com.conf"
+box    = "/etc/nginx/sites-available/sign-meetreeve"
+reload = "nginx -t && systemctl reload nginx"
+
+# --- [verify] ---
+# sha_field names the JSON key in the /api/health response body that carries
+# the deployed sha (read by `reeve-deploy-verify served-sha`/`served-sha-
+# external`, assertions.py) — it is NOT a docker-digest algorithm selector.
+# "git_sha" matches schema.py's own docstring, which uses reeve-sign
+# verbatim as its worked example with this exact value, and T4's
+# (reeve-services') own deploy.toml precedent.
+#
+# apps/remix/app/routes/api+/health.ts's `git_sha` is the SHORT sha (7-12
+# hex chars, matching the image's own `sha-<shortsha>` tag and
+# .github/workflows/publish.yml's GIT_SHA shell variable — the SAME value,
+# not a second one computed independently), never a full 40-char sha. It is
+# `null`, not a placeholder string, when docker/Dockerfile's GIT_SHA build
+# ARG was not passed — a placeholder could make a served-sha comparison
+# pass or fail for the wrong reason; `null` never equals a real sha.
+#
+# This is a DIFFERENT question from DEV-7600's "open problem" (tag vs.
+# digest for the box's *running container image*, not the app's health
+# JSON): that comparison has no field in this schema at all — T1's
+# `reeve-deploy-verify owner docker-on-box` is unimplemented (cli.py raises
+# NotImplementedError, exit 3), and the box-level check that exists today,
+# `deploy/check-image-drift.sh`, is documented (docs/deployment-staleness.md,
+# DEV-9526) as producing an inconclusive byte-level result under the box's
+# containerd snapshotter image store — a pre-existing, already-tracked gap
+# this ticket's schema section cannot resolve, since T3 built no field for
+# it. Not something [verify] configures either way.
+[verify]
+internal  = "http://127.0.0.1:3000/api/health"
+external  = "https://sign.meetreeve.com/api/health"
+sha_field = "git_sha"
+
+# --- [[runtime_env]] — NAMES only, each backed by an observed failure ---
+# Not exhaustive against .env.example's 94 keys (same deferral T4 used) —
+# these six are the ones with a cited reader and an evidenced on_missing
+# severity. `reaches` names the actual compose service ("documenso" or
+# "gotenberg", deploy/compose.yml's own service keys) per DEV-2900:
+# presence in the host .env proves nothing — only an explicit compose
+# `environment:` block passes a var into a container, and only that
+# container's own service name says which one.
+
+[[runtime_env]]
+# apps/remix/server/sentry.ts:55 — `environment: process.env.NODE_ENV ??
+# 'development'`. Absent on the box: prod Sentry reported
+# `environment: development` (the observed bug this ticket exists to
+# close). deploy/compose.yml has NO `NODE_ENV=` line in `documenso`'s
+# `environment:` block at all — DEV-2900's exact gotcha: it may be set in
+# the box's .env yet never reach the container. fail_boot: this must not
+# boot silently wrong again.
+name       = "NODE_ENV"
+on_missing = "fail_boot"
+reaches    = ["documenso"]
+
+[[runtime_env]]
+# apps/remix/server/sentry.ts:43 — `initServerSentry` logs "[sentry]
+# SENTRY_DSN not set; server-side error monitoring disabled" and returns
+# false: silent by design, the exact "degrade" class this epic exists to
+# catch (never crashes, never alerts on its own). Passed through at
+# deploy/compose.yml:41 (`SENTRY_DSN=${SENTRY_DSN}`).
+name       = "SENTRY_DSN"
+on_missing = "degrade"
+reaches    = ["documenso"]
+
+[[runtime_env]]
+# Client-side counterpart of SENTRY_DSN above — same silent-disable class
+# (apps/remix/app/entry.client.tsx's Sentry.init no-ops without a DSN, no
+# crash, no alert). Passed through at deploy/compose.yml:42
+# (`NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}`).
+name       = "NEXT_PUBLIC_SENTRY_DSN"
+on_missing = "degrade"
+reaches    = ["documenso"]
+
+[[runtime_env]]
+# packages/lib/utils/env.ts:59 — NEXT_PUBLIC_DOCUMENT_CONVERSION_ENABLED
+# auto-derives from this var (`process.env.NEXT_PRIVATE_DOCUMENT_CONVERSION_URL
+# ? 'true' : 'false'`); the client flag must NOT be declared as its own
+# [[runtime_env]] entry — it is derived, not independently configured.
+# Passed through at deploy/compose.yml:44. fail_boot: absence silently
+# disables .docx/.doc -> PDF conversion end-to-end (client flag flips off
+# too) with no error surfaced anywhere in the request path.
+name       = "NEXT_PRIVATE_DOCUMENT_CONVERSION_URL"
+on_missing = "fail_boot"
+reaches    = ["documenso"]
+
+[[runtime_env]]
+# deploy/compose.yml:58 — passed into the `gotenberg` service's own
+# `environment:` block (`GOTENBERG_API_BASIC_AUTH_USERNAME:
+# ${GOTENBERG_API_BASIC_AUTH_USERNAME}`), started with
+# `--api-enable-basic-auth`. Absent: gotenberg's basic-auth check has
+# nothing to compare against and document conversion requests fail at the
+# gotenberg boundary — fail_boot, not a soft degrade, because the flag that
+# requires auth is already hard-coded on in the compose command.
+name       = "GOTENBERG_API_BASIC_AUTH_USERNAME"
+on_missing = "fail_boot"
+reaches    = ["gotenberg"]
+
+[[runtime_env]]
+# deploy/compose.yml:59 — same gotenberg `environment:` block, the password
+# half of the pair above. Same fail_boot reasoning: `--api-enable-basic-auth`
+# is unconditional in the compose `command:`, so a missing password breaks
+# every conversion request the same way a missing username does.
+name       = "GOTENBERG_API_BASIC_AUTH_PASSWORD"
+on_missing = "fail_boot"
+reaches    = ["gotenberg"]

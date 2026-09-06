@@ -16,9 +16,11 @@ hand-edits made on 2026-07-26/27 (an image-pin bump, the Sentry env
 passthrough, and the entire `gotenberg` service). This directory retires
 that risk for the compose file and the nginx vhost. See the epic,
 [DEV-4419](https://linear.app/mindfortress/issue/DEV-4419), for the full
-`deploy.toml` / `[[config]]` contract these files will eventually be
-declared under — that half (5b) is a separate, deferred ticket blocked on
-DEV-5836. This PR is repatriation only: `git add`, nothing more.
+`deploy.toml` / `[[config]]` contract these files are now declared under —
+see `../deploy.toml` at the repo root
+([DEV-7600](https://linear.app/mindfortress/issue/DEV-7600), T5b, built
+against T3/DEV-5836's schema). This PR (T5a) was repatriation only:
+`git add`, nothing more.
 
 ## Repo → box path mapping
 
@@ -31,10 +33,10 @@ The nginx filename mismatch is **intentional and permanent**: the box's
 live site file is named `sign-meetreeve` — no `.conf` suffix, a hyphen
 instead of dots — not `sign.meetreeve.com.conf`. The repo copy here uses
 the conventional `<domain>.conf` name instead of mirroring the box's
-filename. A future `[[config]]` entry (DEV-4419 T3, this ticket's deferred
-5b half) maps `repo` → `box` explicitly, so the names never need to match —
-but the mapping has to be written down somewhere a human finds it, which is
-what this table is.
+filename. `../deploy.toml`'s `[[config]]` entries (DEV-7600, T5b) map
+`repo` → `box` explicitly, matching this table byte-for-byte, so the names
+never need to match — but the mapping has to be written down somewhere a
+human finds it, which is what this table is.
 
 ## How to verify repo == box
 
@@ -71,15 +73,26 @@ Hand-editing the box directly — `vim compose.yml` over SSH, `sudo vim
 /etc/nginx/sites-available/sign-meetreeve` — and never bringing the change
 back into this repo. That is exactly how `compose.yml` ended up with three
 undocumented edits and zero git history behind them. From now on: edit
-`deploy/`, review, merge, then render the change onto the box (by hand
-today; through the `[[config]]` contract once DEV-4419 T3/5b lands). Never
-the other way around.
+`deploy/`, review, merge, then render the change onto the box. `../deploy.toml`
+(DEV-7600, T5b) now *declares* the repo→box mapping and lets T2's evaluator
+(DEV-5835) detect drift against it, but nothing yet *renders* deploy.toml
+onto the box automatically — that render/apply step is still done by hand
+(`scp` + the `reload` command each `[[config]]` entry names) until a future
+ticket builds an executor against this contract. Never the other way around.
 
 ## Known pre-existing gaps (not fixed in this PR — out of scope for DEV-5838's 5a half)
 
 * The image is pinned by a moving `sha-<shortsha>` **tag**, not a
   `@sha256:` **digest**. A tag can be force-pushed to point at a different
-  image; a digest can't. Flagged here per the ticket, not changed here.
+  image; a digest can't. [PR #25](https://github.com/MindFortressInc/reeve-sign/pull/25)
+  shipped the digest-pinning groundwork, and [DEV-9526](https://linear.app/mindfortress/issue/DEV-9526)
+  tracks the box's containerd-snapshotter store making `docker inspect`'s
+  digest fields unusable for the byte-level half of that check today (see
+  `docs/deployment-staleness.md`'s "Digest pinning" section). `../deploy.toml`
+  (DEV-7600) does not have a schema field for this comparison — T3
+  (DEV-5836)'s `[verify].sha_field` names a JSON key in `/api/health`'s own
+  response body (for `reeve-deploy-verify served-sha`), a different check
+  entirely; `deploy/check-image-drift.sh` remains the mechanism for this one.
 * `reeve-sign-gotenberg:8` has **no tracked acquisition path**: nothing in
   this repo (or any registry reference) builds, pulls, or tags that exact
   image name — it exists only in the box's local Docker image store, so a
@@ -93,5 +106,10 @@ the other way around.
   it is flagged, not fixed, in this repatriation-only PR.
 * `deploy.toml`, `[[config]]`, and `[[runtime_env]]` (including the
   `NODE_ENV` `fail_boot` gap that caused prod Sentry to report
-  `environment: development`) are DEV-5838's 5b half, deferred pending
-  DEV-5836.
+  `environment: development`) now exist at `../deploy.toml`
+  ([DEV-7600](https://linear.app/mindfortress/issue/DEV-7600), T5b) —
+  `reeve-deploy-validate` gates it in CI
+  (`.github/workflows/deploy-contract-publish.yml`). It only declares six
+  of `.env.example`'s 94 keys — the ones with a cited reader and an
+  evidenced `on_missing` severity today; a fuller pass is a natural
+  follow-on, not blocking here.
