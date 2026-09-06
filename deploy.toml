@@ -60,13 +60,13 @@ reload = "nginx -t && systemctl reload nginx"
 # verbatim as its worked example with this exact value, and T4's
 # (reeve-services') own deploy.toml precedent.
 #
-# KNOWN GAP, not fixed here (out of this ticket's file allowlist —
-# apps/remix is app code): apps/remix/app/routes/api+/health.ts today
-# returns only {status, timestamp, checks: {database, certificate}} — no
-# git_sha field exists yet, so `served-sha`/`served-sha-external` cannot
-# actually run against it until that route is extended. Tracked as a
-# same-epic follow-up (see this PR's body) rather than silently declaring a
-# field that doesn't exist with no record of the gap.
+# apps/remix/app/routes/api+/health.ts's `git_sha` is the SHORT sha (7-12
+# hex chars, matching the image's own `sha-<shortsha>` tag and
+# .github/workflows/publish.yml's GIT_SHA shell variable — the SAME value,
+# not a second one computed independently), never a full 40-char sha. It is
+# `null`, not a placeholder string, when docker/Dockerfile's GIT_SHA build
+# ARG was not passed — a placeholder could make a served-sha comparison
+# pass or fail for the wrong reason; `null` never equals a real sha.
 #
 # This is a DIFFERENT question from DEV-7600's "open problem" (tag vs.
 # digest for the box's *running container image*, not the app's health

@@ -81,9 +81,15 @@ jobs:
           set -euo pipefail
           GIT_SHA="$(git rev-parse --short HEAD)"
 
+          # --build-arg GIT_SHA (DEV-7600): the SAME short sha already used
+          # for the sha-<shortsha> tag two lines below, baked into the image
+          # so /api/health can report it (docker/Dockerfile's GIT_SHA ARG/ENV,
+          # read by apps/remix/app/routes/api+/health.ts). One source of
+          # truth, not a second sha computed independently.
           docker build \
             -f ./docker/Dockerfile \
             --progress=plain \
+            --build-arg GIT_SHA="${GIT_SHA}" \
             -t "${IMAGE}:${TAG}" \
             -t "${IMAGE}:sha-${GIT_SHA}" \
             .
