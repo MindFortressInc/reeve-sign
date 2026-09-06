@@ -2,22 +2,35 @@ name: Deploy contract validate
 
 # DEV-7600 (T5b of epic DEV-4419 "the box holds nothing") — validates
 # deploy.toml against the T3 (DEV-5836) schema on every push/PR touching it.
-# This repo has no packages/deploy_contract of its own, so the composite
-# action fetches reeve-services' own main for it (see
-# .github/actions/deploy-contract-publish/action.yml's own module doc,
-# "Cross-repo case (reeve-sign, T5b/DEV-7600)").
 #
-# Pinned to matt/dev-5836-t3-deploytoml-schema-parser-ci-derived-central-index
-# @473b2b194 (T3's PR, still open as of this writing) rather than main, so
-# this workflow validates against the exact schema this deploy.toml was
-# written against. Re-pin to reeve-services' main (or a release tag, once
-# the package cuts one) after DEV-5836 merges — see this PR's body.
+# Inlines pip-install + `reeve-deploy-validate` rather than calling
+# reeve-services' `.github/actions/deploy-contract-publish` composite action
+# directly, even though that action's own module doc names reeve-sign as
+# exactly its intended cross-repo caller. Verified (2026-09-06) that its
+# "Install reeve-deploy-contract" step's cross-repo branch has no `@ref` on
+# the git URL (`pip install "git+https://github.com/MindFortressInc/reeve-services.git#subdirectory=packages/deploy_contract"`),
+# so it always installs from reeve-services' DEFAULT branch, regardless of
+# which sha this workflow pins its own `uses:` to. reeve-services' `main`
+# already carries `packages/deploy_contract` (T1/T2, collect+verify) but NOT
+# `schema.py` or the `reeve-deploy-validate` entry point — those are T3-only
+# (confirmed: `pyproject.toml` on main registers only reeve-deploy-collect
+# and reeve-deploy-verify). Calling the composite action today would checkout
+# the right action.yml but still pip-install the wrong package version and
+# fail every run with "command not found: reeve-deploy-validate" — a broken
+# CI gate on every push to main, not a validate result. Inlining pins the
+# pip install to T3's own sha explicitly, sidestepping that gap entirely.
 #
-# No ingest-url/api-key inputs: those arm a separate ops ticket (secrets not
-# in this ticket's scope). Per action.yml's own inputs doc, omitting them
-# leaves reeve-deploy-validate running as a hard CI gate while the publish
-# step skips itself cleanly (not a failure) — so this workflow calls the
-# shared composite action directly rather than inlining validate.
+# Pinned to 473b2b194f7da59fafcadd67b2c332b4f843d8f6 (T3's PR #4383,
+# matt/dev-5836-t3-deploytoml-schema-parser-ci-derived-central-index, still
+# open as of this writing) so this workflow validates against the exact
+# schema this deploy.toml was written against. Re-pin to reeve-services'
+# main (or switch to calling the composite action directly, once its
+# cross-repo install step pins a ref) after DEV-5836 merges — see this PR's
+# body.
+#
+# No ingest-url/api-key publish step: arming the central-index credentials
+# is a separate ops ticket, out of scope here. This workflow is a hard
+# validate gate only.
 
 on:
   push:
@@ -44,18 +57,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Fetch reeve-services' deploy-contract-publish action
-        uses: actions/checkout@v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          repository: MindFortressInc/reeve-services
-          ref: matt/dev-5836-t3-deploytoml-schema-parser-ci-derived-central-index
-          persist-credentials: false
-          sparse-checkout: |
-            .github/actions/deploy-contract-publish
-          sparse-checkout-cone-mode: false
-          path: .deploy-contract-action
+          python-version: '3.12'
 
-      - name: Validate (no ingest inputs — hard gate only, publish stays skipped)
-        uses: ./.deploy-contract-action/.github/actions/deploy-contract-publish
-        with:
-          contract-path: deploy.toml
+      - name: Install reeve-deploy-contract (pinned to T3's sha)
+        run: |
+          set -euo pipefail
+          pip install "git+https://github.com/MindFortressInc/reeve-services.git@473b2b194f7da59fafcadd67b2c332b4f843d8f6#subdirectory=packages/deploy_contract"
+
+      - name: Validate deploy.toml
+        run: |
+          set -euo pipefail
+          reeve-deploy-validate deploy.toml --json
