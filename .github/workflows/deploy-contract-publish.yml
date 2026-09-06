@@ -61,13 +61,17 @@ jobs:
         id: probe
         env:
           GH_REPO_TOKEN: ${{ secrets.GH_REPO_TOKEN }}
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           set -euo pipefail
           if [ -n "${GH_REPO_TOKEN:-}" ]; then
             echo "has_token=true" >> "$GITHUB_OUTPUT"
-          else
+          elif [ "${IS_FORK_PR}" = "true" ]; then
             echo "has_token=false" >> "$GITHUB_OUTPUT"
             echo "::notice::GH_REPO_TOKEN unavailable (fork PR) - deploy.toml validation skipped, not passed."
+          else
+            echo "::error::GH_REPO_TOKEN unavailable on a trusted event (push or same-repo PR) - failing instead of silently skipping deploy.toml validation."
+            exit 1
           fi
 
   validate:
