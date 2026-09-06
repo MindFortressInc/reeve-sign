@@ -73,9 +73,12 @@ Hand-editing the box directly — `vim compose.yml` over SSH, `sudo vim
 /etc/nginx/sites-available/sign-meetreeve` — and never bringing the change
 back into this repo. That is exactly how `compose.yml` ended up with three
 undocumented edits and zero git history behind them. From now on: edit
-`deploy/`, review, merge, then render the change onto the box (by hand
-today; through the `[[config]]` contract once DEV-4419 T3/5b lands). Never
-the other way around.
+`deploy/`, review, merge, then render the change onto the box. `../deploy.toml`
+(DEV-7600, T5b) now *declares* the repo→box mapping and lets T2's evaluator
+(DEV-5835) detect drift against it, but nothing yet *renders* deploy.toml
+onto the box automatically — that render/apply step is still done by hand
+(`scp` + the `reload` command each `[[config]]` entry names) until a future
+ticket builds an executor against this contract. Never the other way around.
 
 ## Known pre-existing gaps (not fixed in this PR — out of scope for DEV-5838's 5a half)
 
