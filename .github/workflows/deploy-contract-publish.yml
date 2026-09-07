@@ -77,9 +77,18 @@ jobs:
   validate:
     name: Validate deploy.toml
     needs: preflight
-    if: needs.preflight.outputs.has_token == 'true'
+    # DEV-7600 CR-CLI fix: run unconditionally (not gated on has_token) so a
+    # fork PR without GH_REPO_TOKEN FAILS this required check instead of
+    # having GitHub report a conditionally-skipped required job as passing.
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Reject unavailable token
+        if: needs.preflight.outputs.has_token != 'true'
+        run: |
+          echo "::error::GH_REPO_TOKEN unavailable. A trusted validation run is required before merge."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
