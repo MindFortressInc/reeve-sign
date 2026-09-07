@@ -98,6 +98,19 @@ ENV NEXT_PRIVATE_TELEMETRY_KEY="$NEXT_PRIVATE_TELEMETRY_KEY"
 ARG NEXT_PRIVATE_TELEMETRY_HOST=""
 ENV NEXT_PRIVATE_TELEMETRY_HOST="$NEXT_PRIVATE_TELEMETRY_HOST"
 
+# DEV-7600: the commit this image was built from, baked in at build time
+# (.github/workflows/publish.yml passes the SAME short sha already used for
+# the image's `sha-<shortsha>` tag -- one source of truth). Read by
+# apps/remix/app/routes/api+/health.ts's `resolveGitSha()` so /api/health
+# reports the sha the running process is actually serving, the same
+# platform-wide `GIT_SHA` convention reeve-services' health.py and
+# packages/monitor already use for their own /health + Sentry release.
+# Empty default (never a placeholder sha) means an image built without the
+# build-arg reports git_sha: null rather than a value that could pass a
+# served-sha check for the wrong reason.
+ARG GIT_SHA=""
+ENV GIT_SHA="$GIT_SHA"
+
 # Don't run production as root
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nodejs
