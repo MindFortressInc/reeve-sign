@@ -171,12 +171,19 @@ export const getAbsolutePresignPostUrl = async (key: string) => {
   return { key, url };
 };
 
-export const getPresignGetUrl = async (key: string, options?: { responseContentDisposition?: string }) => {
+export const getPresignGetUrl = async (
+  key: string,
+  options?: { responseContentDisposition?: string; responseContentType?: string },
+) => {
   if (env('NEXT_PRIVATE_UPLOAD_DISTRIBUTION_DOMAIN')) {
     const distributionUrl = new URL(key, `${env('NEXT_PRIVATE_UPLOAD_DISTRIBUTION_DOMAIN')}`);
 
     if (options?.responseContentDisposition) {
       distributionUrl.searchParams.set('response-content-disposition', options.responseContentDisposition);
+    }
+
+    if (options?.responseContentType) {
+      distributionUrl.searchParams.set('response-content-type', options.responseContentType);
     }
 
     const { getSignedUrl: getCloudfrontSignedUrl } = await import('@aws-sdk/cloudfront-signer');
@@ -199,6 +206,7 @@ export const getPresignGetUrl = async (key: string, options?: { responseContentD
     Bucket: env('NEXT_PRIVATE_UPLOAD_BUCKET'),
     Key: key,
     ResponseContentDisposition: options?.responseContentDisposition,
+    ResponseContentType: options?.responseContentType,
   });
 
   const url = await getS3SignedUrl(client, getObjectCommand, {

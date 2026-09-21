@@ -40,7 +40,13 @@ const assertHeadSatisfiesPolicy = (head: HeadResult, notFoundMessage: string) =>
     });
   }
 
-  if (head.size === null || head.size > FIELD_FILE_UPLOAD_SIZE_LIMIT_MB * 1024 * 1024) {
+  if (head.size === null || head.size <= 0) {
+    throw new AppError(AppErrorCode.INVALID_BODY, {
+      message: 'Uploaded file is empty',
+    });
+  }
+
+  if (head.size > FIELD_FILE_UPLOAD_SIZE_LIMIT_MB * 1024 * 1024) {
     throw new AppError(AppErrorCode.INVALID_BODY, {
       message: `Uploaded file exceeds the ${FIELD_FILE_UPLOAD_SIZE_LIMIT_MB}MB limit`,
     });
@@ -70,12 +76,27 @@ export const finalizeFieldFileUpload = async ({
 }: FinalizeFieldFileUploadOptions): Promise<string> => {
   const tmpHead = await headS3File(tmpKey);
 
-  assertHeadSatisfiesPolicy(tmpHead, 'Uploaded file was not found — please re-upload');
+  // Best-effort cleanup helper — a rejected upload (whatever the reason)
+  // should not linger in the tmp key space forever. Never lets a cleanup
+  // failure mask the real rejection reason.
+  const cleanupTmpAndRethrow = async (err: unknown): Promise<never> => {
+    if (tmpHead.exists) {
+      await deleteS3File(tmpKey).catch(() => undefined);
+    }
 
-  if (tmpHead.size !== claimedSize || tmpHead.contentType !== claimedMimeType) {
-    throw new AppError(AppErrorCode.INVALID_BODY, {
-      message: 'Uploaded file does not match the declared size or type — please re-upload',
-    });
+    throw err;
+  };
+
+  try {
+    assertHeadSatisfiesPolicy(tmpHead, 'Uploaded file was not found — please re-upload');
+
+    if (tmpHead.size !== claimedSize || tmpHead.contentType !== claimedMimeType) {
+      throw new AppError(AppErrorCode.INVALID_BODY, {
+        message: 'Uploaded file does not match the declared size or type — please re-upload',
+      });
+    }
+  } catch (err) {
+    return cleanupTmpAndRethrow(err);
   }
 
   const finalKey = buildFinalizedFieldFileUploadKey({ envelopeId, fieldId, fileName });
@@ -87,12 +108,16 @@ export const finalizeFieldFileUpload = async ({
   // HEAD-then-copy sequence that could theoretically race.
   const finalHead = await headS3File(finalKey);
 
-  assertHeadSatisfiesPolicy(finalHead, 'Failed to finalize the uploaded file');
+  try {
+    assertHeadSatisfiesPolicy(finalHead, 'Failed to finalize the uploaded file');
 
-  if (finalHead.size !== tmpHead.size || finalHead.contentType !== tmpHead.contentType) {
-    throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
-      message: 'Finalized file metadata did not match the uploaded file',
-    });
+    if (finalHead.size !== tmpHead.size || finalHead.contentType !== tmpHead.contentType) {
+      throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+        message: 'Finalized file metadata did not match the uploaded file',
+      });
+    }
+  } catch (err) {
+    return cleanupTmpAndRethrow(err);
   }
 
   // Best-effort cleanup — the final copy is already valid and referenced;

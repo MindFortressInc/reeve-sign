@@ -88,6 +88,12 @@ export const getEnvelopeFieldFileDownloadUrlByTokenRoute = procedure
 
     const { url } = await getPresignGetUrl(uploadedFile.key, {
       responseContentDisposition: buildSafeAttachmentContentDisposition(uploadedFile.fileName),
+      // Force a generic binary type regardless of the stored (client-set-at-
+      // upload-time, never content-sniffed) mimeType — the attachment
+      // disposition above already stops inline rendering in the browser,
+      // this closes the same risk for any embed/client that only respects
+      // Content-Type.
+      responseContentType: 'application/octet-stream',
     });
 
     return { url, fileName: uploadedFile.fileName };
