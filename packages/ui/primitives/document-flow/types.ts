@@ -53,6 +53,7 @@ export const FRIENDLY_FIELD_TYPE: Record<FieldType, MessageDescriptor> = {
   [FieldType.RADIO]: msg`Radio`,
   [FieldType.CHECKBOX]: msg`Checkbox`,
   [FieldType.DROPDOWN]: msg`Select`,
+  [FieldType.FILE_UPLOAD]: msg`File Upload`,
 };
 
 export interface DocumentFlowStep {

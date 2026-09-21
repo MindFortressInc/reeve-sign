@@ -1,7 +1,9 @@
 import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { validateFieldAuth } from '@documenso/lib/server-only/document/validate-field-auth';
+import { finalizeFieldFileUpload } from '@documenso/lib/server-only/field/finalize-field-file-upload';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
+import { parseFileUploadCustomText } from '@documenso/lib/types/field-file-upload';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
 import { prisma } from '@documenso/prisma';
@@ -126,6 +128,34 @@ export const signEnvelopeFieldRoute = procedure
     }
 
     const insertionValues = extractFieldInsertionValues({ fieldValue, field, documentMeta });
+
+    // The client only ever submits a key from the TMP (presign-mintable) key
+    // space. Never trust its claimed size/mimeType, and never persist that
+    // key directly: a presigned PUT stays valid for up to an hour, so
+    // without finalizing to a copy the client (or anyone who captured the
+    // URL) could replay a PUT to the same key after the field is marked
+    // signed and silently swap the accepted bytes with no new
+    // authorization. `finalizeFieldFileUpload` re-verifies the ACTUAL
+    // stored object against policy and copies it to a key no route ever
+    // mints a PUT for before returning what actually gets persisted.
+    if (field.type === FieldType.FILE_UPLOAD && insertionValues.inserted) {
+      const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
+
+      if (!submittedUpload) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: 'Invalid file upload value',
+        });
+      }
+
+      insertionValues.customText = await finalizeFieldFileUpload({
+        tmpKey: submittedUpload.key,
+        fileName: submittedUpload.fileName,
+        envelopeId: field.envelopeId,
+        fieldId: field.id,
+        claimedSize: submittedUpload.size,
+        claimedMimeType: submittedUpload.mimeType,
+      });
+    }
 
     // Early return for uninserting fields.
     if (!insertionValues.inserted) {
@@ -262,10 +292,17 @@ export const signEnvelopeFieldRoute = procedure
                 type,
                 data: updatedField.customText,
               }))
-              .with(FieldType.NUMBER, FieldType.RADIO, FieldType.CHECKBOX, FieldType.DROPDOWN, (type) => ({
-                type,
-                data: updatedField.customText,
-              }))
+              .with(
+                FieldType.NUMBER,
+                FieldType.RADIO,
+                FieldType.CHECKBOX,
+                FieldType.DROPDOWN,
+                FieldType.FILE_UPLOAD,
+                (type) => ({
+                  type,
+                  data: updatedField.customText,
+                }),
+              )
               .exhaustive(),
             fieldSecurity: derivedRecipientActionAuth
               ? {

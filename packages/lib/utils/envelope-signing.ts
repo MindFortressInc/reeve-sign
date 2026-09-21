@@ -8,6 +8,12 @@ import { DEFAULT_DOCUMENT_TIME_ZONE } from '@documenso/lib/constants/time-zones'
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import type { TDocumentMeta } from '@documenso/lib/types/document-meta';
 import {
+  FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES,
+  FIELD_FILE_UPLOAD_SIZE_LIMIT_MB,
+  isFieldFileUploadTmpKeyOwnedBy,
+  toFileUploadCustomText,
+} from '@documenso/lib/types/field-file-upload';
+import {
   ZCheckboxFieldMeta,
   ZDropdownFieldMeta,
   ZNumberFieldMeta,
@@ -246,6 +252,51 @@ export const extractFieldInsertionValues = ({
 
       return {
         customText: '',
+        inserted: true,
+      };
+    })
+    .with({ type: FieldType.FILE_UPLOAD }, (fieldValue) => {
+      if (fieldValue.value === null) {
+        return {
+          customText: '',
+          inserted: false,
+        };
+      }
+
+      const upload = fieldValue.value;
+
+      // Structural, offline checks only — this function has no I/O and runs
+      // client-side too (direct-template preview), so it cannot HEAD S3.
+      // These are a fast-fail first pass on an obviously malformed or lying
+      // client; they are NOT the security boundary. The caller
+      // (`signEnvelopeFieldRoute`) is responsible for re-verifying against
+      // the ACTUAL uploaded object's real size/content-type after this
+      // returns, finalizing to an immutable key, and overwriting
+      // `customText` with that server-verified value before persisting.
+      if (!isFieldFileUploadTmpKeyOwnedBy({ key: upload.key, envelopeId: field.envelopeId, fieldId: field.id })) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: 'Uploaded file does not belong to this field',
+        });
+      }
+
+      if (
+        !FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES.includes(
+          upload.mimeType as (typeof FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES)[number],
+        )
+      ) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: 'File type is not allowed',
+        });
+      }
+
+      if (upload.size > FIELD_FILE_UPLOAD_SIZE_LIMIT_MB * 1024 * 1024) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: `File exceeds the ${FIELD_FILE_UPLOAD_SIZE_LIMIT_MB}MB limit`,
+        });
+      }
+
+      return {
+        customText: toFileUploadCustomText(upload),
         inserted: true,
       };
     })

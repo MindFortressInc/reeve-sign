@@ -20,6 +20,7 @@ import {
   HashIcon,
   ListIcon,
   MailIcon,
+  PaperclipIcon,
   TextIcon,
   UserIcon,
 } from 'lucide-react';
@@ -82,6 +83,11 @@ export const fieldButtonList = [
     type: FieldType.DROPDOWN,
     icon: ListIcon,
     name: msg`Dropdown`,
+  },
+  {
+    type: FieldType.FILE_UPLOAD,
+    icon: PaperclipIcon,
+    name: msg`File Upload`,
   },
 ];
 
