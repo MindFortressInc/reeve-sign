@@ -3,6 +3,7 @@ import { DocumentSigningOrder, DocumentStatus, EnvelopeType, RecipientRole, Sign
 
 import { isRecipientExpired } from '../../utils/recipients';
 import { getEnvelopeById } from '../envelope/get-envelope-by-id';
+import { verifyHandoffCapability } from './handoff-capability';
 
 /**
  * Roles that represent an actual in-person action (sign / approve) and can
@@ -48,7 +49,7 @@ const isActionable = (recipient: Recipient) =>
  * Resolves the set of recipients who could be handed the device to next,
  * recomputed fresh from the DB on every call -- never from a client-supplied
  * "I just completed" claim. Authorization is entirely via getEnvelopeById's
- * owner/team check; a recipient token is never accepted here.
+ * owner/team check; a recipient token is never accepted as authorization.
  */
 const resolveEligibleRecipients = async ({ documentId, userId, teamId }: GetHandoffOptions) => {
   const envelope = await getEnvelopeById({
@@ -92,24 +93,25 @@ const toCandidate = (r: Recipient): THandoffCandidate => ({
 // authenticated document management page, before anyone has signed anything
 // yet. Never used from a post-completion page; carries no proof of, and
 // makes no claim about, any prior signer having completed.
+//
+// The "before anyone has signed" boundary is enforced here, not just
+// documented: once any SIGNER/APPROVER has signed, START discloses nothing,
+// so the only way to hand the device on mid-envelope is ADVANCE with its
+// completion proof. Without this, START would be an ADVANCE bypass.
 // ---------------------------------------------------------------------------
 
-// A genuine START never has a SIGNED recipient on the envelope yet -- the
-// instant anyone has actually completed, the only server-authorized way to
-// disclose the next link is ADVANCE, which re-verifies completedRecipientId
-// fresh. This is what stops an authenticated host from calling START again
-// mid-sequence (SEQUENTIAL) or for a still-outstanding co-signer (PARALLEL)
-// to sidestep ADVANCE's completion proof -- derived from existing
-// recipient.signingStatus rows, no new state to track.
-const isGenuineStart = (envelope: { recipients: Recipient[] }) =>
-  !envelope.recipients.some((r) => r.signingStatus === SigningStatus.SIGNED);
-
-export const getStartHandoffCandidates = async (options: GetHandoffOptions): Promise<THandoffCandidate[]> => {
+const resolveStartEligibleRecipients = async (options: GetHandoffOptions) => {
   const { envelope, eligible } = await resolveEligibleRecipients(options);
 
-  if (!isGenuineStart(envelope)) {
-    return [];
-  }
+  const anyoneHasSigned = envelope.recipients.some(
+    (r) => HANDOFF_ELIGIBLE_ROLES.includes(r.role) && r.signingStatus === SigningStatus.SIGNED,
+  );
+
+  return { envelope, eligible: anyoneHasSigned ? [] : eligible };
+};
+
+export const getStartHandoffCandidates = async (options: GetHandoffOptions): Promise<THandoffCandidate[]> => {
+  const { eligible } = await resolveStartEligibleRecipients(options);
 
   return eligible.map(toCandidate);
 };
@@ -121,47 +123,68 @@ export type GetStartHandoffSigningTokenOptions = GetHandoffOptions & {
 export const getStartHandoffSigningToken = async ({
   recipientId,
   ...options
-}: GetStartHandoffSigningTokenOptions): Promise<THandoffSigningToken | null> => {
-  const { envelope, eligible } = await resolveEligibleRecipients(options);
-
-  if (!isGenuineStart(envelope)) {
-    return null;
-  }
+}: GetStartHandoffSigningTokenOptions): Promise<(THandoffSigningToken & { envelopeId: string }) | null> => {
+  const { envelope, eligible } = await resolveStartEligibleRecipients(options);
 
   const match = eligible.find((r) => r.id === recipientId);
 
-  return match ? { token: match.token, name: match.name, email: match.email } : null;
+  return match ? { token: match.token, name: match.name, email: match.email, envelopeId: envelope.id } : null;
 };
 
 // ---------------------------------------------------------------------------
 // ADVANCE -- handing the device to the *next* signer after a specific
-// recipient has genuinely finished. Deliberately a separate, non-bypassable
-// operation from START: `completedRecipientId` is required (not optional)
-// and is re-verified against a fresh DB read on every call -- a caller can
-// never skip this by simply omitting it, and host authorization alone is
-// never sufficient without it.
+// recipient has genuinely finished. Runs on the handoff device, where the
+// host's session was revoked at START, so it is authorized by the
+// host-minted handoff capability rather than any session:
+//
+//   - the capability (HMAC-signed, envelope-bound, expiring) proves the
+//     host started an in-person session for THIS envelope on this device.
+//     A recipient token alone is never sufficient -- any emailed recipient
+//     could otherwise fetch another recipient's link;
+//   - the host's access to the envelope is re-verified fresh through
+//     getEnvelopeById using the host identity inside the capability;
+//   - the outgoing recipient is identified by its own token (the /complete
+//     page it is shown on) and must be SIGNED under this fresh read.
 // ---------------------------------------------------------------------------
 
-export type AdvanceHandoffOptions = GetHandoffOptions & {
-  /** The recipient who must have actually just completed, proven fresh below -- never trusted as a bare claim. */
-  completedRecipientId: number;
+export type AdvanceHandoffOptions = {
+  handoffCapability: string;
+  /** Token of the recipient who must have actually just completed -- proven fresh below, never trusted as a bare claim. */
+  completedRecipientToken: string;
 };
 
-const resolveAdvanceEligibleRecipients = async ({ completedRecipientId, ...options }: AdvanceHandoffOptions) => {
-  const { envelope, eligible } = await resolveEligibleRecipients(options);
+const resolveAdvanceEligibleRecipients = async ({
+  handoffCapability,
+  completedRecipientToken,
+}: AdvanceHandoffOptions) => {
+  const capability = verifyHandoffCapability(handoffCapability);
 
-  const completedRecipient = envelope.recipients.find((r) => r.id === completedRecipientId);
+  if (!capability || !completedRecipientToken) {
+    return [] as Recipient[];
+  }
+
+  const { envelope, eligible } = await resolveEligibleRecipients({
+    documentId: capability.documentId,
+    userId: capability.hostUserId,
+    teamId: capability.teamId,
+  });
+
+  if (envelope.id !== capability.envelopeId) {
+    return [] as Recipient[];
+  }
+
+  const completedRecipient = envelope.recipients.find((r) => r.token === completedRecipientToken);
 
   // The outgoing recipient must belong to this exact envelope and must have
   // an actually-SIGNED status under this fresh read -- NOT_SIGNED, REJECTED,
-  // or a foreign recipientId all fail closed here. This is what stops a host
+  // or a foreign token all fail closed here. This is what stops the device
   // from advancing past a signer who hasn't finished (or hasn't even
   // started), independent of whatever the client claims.
   if (!completedRecipient || completedRecipient.signingStatus !== SigningStatus.SIGNED) {
     return [] as Recipient[];
   }
 
-  return eligible.filter((r) => r.id !== completedRecipientId);
+  return eligible.filter((r) => r.id !== completedRecipient.id);
 };
 
 export const getAdvanceHandoffCandidates = async (options: AdvanceHandoffOptions): Promise<THandoffCandidate[]> => {

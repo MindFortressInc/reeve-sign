@@ -7,6 +7,7 @@ import { cn } from '@documenso/ui/lib/utils';
 import { Button } from '@documenso/ui/primitives/button';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useEffect } from 'react';
 import { data, Link, Outlet, redirect, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import { AppBanner } from '~/components/general/app-banner';
@@ -71,6 +72,22 @@ export default function Layout({ loaderData, params, matches }: Route.ComponentP
   const { banner } = loaderData;
 
   const { user, organisations } = useSession();
+
+  // A page restored from the back/forward cache skips the loader, so after an
+  // in-person handoff (DEV-654) revokes this session, Back would otherwise
+  // show a signer the host's account pages. Reloading re-runs the loader,
+  // which redirects a revoked session to sign-in.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    };
+
+    window.addEventListener('pageshow', onPageShow);
+
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
 
   const teamUrl = params.teamUrl;
   const orgUrl = params.orgUrl;

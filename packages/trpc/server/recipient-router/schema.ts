@@ -239,10 +239,28 @@ export const ZStartHandoffSigningLinkRequestSchema = z.object({
   recipientId: z.number(),
 });
 
-export const ZAdvanceHandoffSigningLinkRequestSchema = z.object({
-  documentId: z.number(),
-  teamId: z.number(),
-  /** The recipient who must have actually just completed -- re-verified server-side, never trusted as a bare claim. */
-  completedRecipientId: z.number(),
+export const ZStartHandoffSigningLinkResponseSchema = ZHandoffSigningLinkResponseSchema.extend({
+  /**
+   * Envelope-bound, expiring capability authorizing ADVANCE on this device
+   * only. START revokes the host's session in the same call, so this -- not
+   * a host session -- is what the handoff device carries between signers.
+   */
+  handoffCapability: z.string(),
+});
+
+/**
+ * ADVANCE is called from the recipient /complete page on the handoff device,
+ * where no host session exists (START revoked it). Authorized by the
+ * host-minted capability plus the just-completed recipient's own token;
+ * neither alone is sufficient, and both are re-verified server-side, fresh.
+ */
+export const ZAdvanceHandoffCandidatesRequestSchema = z.object({
+  handoffCapability: z.string().min(1),
+  completedRecipientToken: z.string().min(1),
+});
+
+export const ZAdvanceHandoffCandidatesResponseSchema = z.array(ZHandoffCandidateSchema);
+
+export const ZAdvanceHandoffSigningLinkRequestSchema = ZAdvanceHandoffCandidatesRequestSchema.extend({
   nextRecipientId: z.number(),
 });

@@ -1,19 +1,19 @@
 /**
  * Real-Postgres integration test for the DEV-654 in-person handoff tRPC
  * procedures (`recipientRouter.startHandoffCandidates`,
- * `startHandoffSigningLink`, `advanceHandoffSigningLink`) -- exercised
- * through a real server-side caller (not a reimplementation), against a real
- * database, proving the two review findings this ticket fixed actually hold
- * end to end and not just against a mocked `getEnvelopeById`:
+ * `startHandoffSigningLink`, `advanceHandoffCandidates`,
+ * `advanceHandoffSigningLink`) -- exercised through a real server-side
+ * caller (not a reimplementation), against a real database:
  *
- *   1. `advanceHandoffSigningLink` refuses to disclose the next recipient's
- *      token when the outgoing (`completedRecipientId`) recipient has not
- *      actually reached SIGNED status under a fresh DB read -- a caller
- *      cannot skip this by only being an authorized host.
- *   2. Every handoff procedure requires real, server-verified owner/team
- *      authorization: no session at all, and an authenticated user with no
- *      access to this specific envelope, are both refused -- a recipient's
- *      own signing token is never accepted as authorization here at all.
+ *   1. START requires real, server-verified owner/team authorization, only
+ *      works before anyone has signed, and REVOKES the host's session (a
+ *      real Session row) while minting the envelope-bound handoff capability
+ *      -- so no signer ever holds the host's account on the handoff device.
+ *   2. ADVANCE runs with no session at all, authorized only by that
+ *      capability plus the completed recipient's own token; it refuses to
+ *      disclose the next recipient's token until the outgoing recipient is
+ *      SIGNED under a fresh DB read, and a recipient token without the
+ *      capability (what every emailed recipient has) discloses nothing.
  *
  * Opt-in only, via RUN_DB_INTEGRATION_TESTS=true, mirroring
  * conditional-visibility-consent.integration.test.ts's pattern: excluded
@@ -130,85 +130,116 @@ describe('DEV-654 handoff procedures -- real Postgres integration', () => {
     return { envelope, signerOne, signerTwo };
   };
 
-  it('rejects an unauthenticated caller outright (no session at all)', async () => {
-    const { envelope, signerOne, signerTwo } = await seedSequentialEnvelope();
+  /** A real Session row, so START's revocation (and its session guard) run against the database. */
+  const sessionFor = async (userId: number) =>
+    prisma.session.create({
+      data: {
+        sessionToken: nanoid(),
+        userId,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
 
-    const caller = callerAs(null, teamId);
+  const ownerSession = async () => sessionFor(ownerId);
 
-    const documentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+  const sessionCaller = (session: { id: string; userId: number }, callerTeamId = teamId) =>
+    callHandoffRouter({
+      session: session as never,
+      user: { id: session.userId } as never,
+      teamId: callerTeamId,
+      req: new Request('http://localhost/trpc/recipient.startHandoffSigningLink'),
+      res: new Response(),
+      metadata: { requestMetadata: {}, source: 'app', auth: 'session' },
+      logger,
+    });
 
-    await expect(
-      caller.advanceHandoffSigningLink({
-        documentId,
-        teamId: envelope.teamId,
-        completedRecipientId: signerOne.id,
-        nextRecipientId: signerTwo.id,
-      }),
-    ).rejects.toThrow();
-  });
+  const ownerCaller = (session: { id: string; userId: number }) => sessionCaller(session);
 
-  it('rejects a foreign host who has no access to this envelope', async () => {
-    const { envelope, signerOne, signerTwo } = await seedSequentialEnvelope();
+  it('START: rejects an unauthenticated caller and a foreign host who has no access to this envelope', async () => {
+    const { envelope, signerOne } = await seedSequentialEnvelope();
     const { owner: foreignOwner } = await seedTeam();
 
     const documentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+    const input = { documentId, teamId: envelope.teamId, recipientId: signerOne.id };
 
-    // Complete signerOne for real first, so this call would otherwise be a
-    // valid, eligible advance. Without this, signerOne is still NOT_SIGNED
-    // and the call rejects for that unrelated reason regardless of who's
-    // calling -- which would let a real authorization regression here pass
-    // undetected (CR PR #58 finding). With signerOne genuinely SIGNED, a
-    // .rejects.toThrow() below can only be explained by the foreign-host
-    // authorization boundary.
-    await completeDocumentWithToken({
-      token: signerOne.token,
-      id: { type: 'envelopeId', id: envelope.id },
-      ...REQUEST_METADATA,
+    await expect(callerAs(null, teamId).startHandoffSigningLink(input)).rejects.toThrow();
+
+    // The foreign caller sends the envelope's OWN team, as a real client
+    // would, so the refusal comes from getEnvelopeById's membership check.
+    const foreignSession = await sessionFor(foreignOwner.id);
+
+    // getEnvelopeById's team-membership check is what refuses it.
+    await expect(sessionCaller(foreignSession, envelope.teamId).startHandoffSigningLink(input)).rejects.toThrow(
+      'Team not found',
+    );
+
+    // Refused at the membership check -- the foreign host's session is untouched.
+    expect(await prisma.session.findUnique({ where: { id: foreignSession.id } })).not.toBeNull();
+  });
+
+  it('START: discloses the first signer, mints a capability and revokes the host session on this device', async () => {
+    const { envelope, signerOne } = await seedSequentialEnvelope();
+    const session = await ownerSession();
+
+    const documentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
+    const result = await ownerCaller(session).startHandoffSigningLink({
+      documentId,
+      teamId: envelope.teamId,
+      recipientId: signerOne.id,
     });
 
-    // A real client always sends the envelope's OWN team (as complete.tsx's
-    // loader / documents.$id._index.tsx do) -- never a team the foreign
-    // caller happens to belong to. This is the case that actually matters:
-    // an authenticated user who is simply not a member of THIS envelope's team.
-    const caller = callerAs({ id: foreignOwner.id }, envelope.teamId);
+    expect(result.signingLink).toContain(signerOne.token);
+    expect(result.handoffCapability).toBeTruthy();
 
-    await expect(
-      caller.advanceHandoffSigningLink({
-        documentId,
-        teamId: envelope.teamId,
-        completedRecipientId: signerOne.id,
-        nextRecipientId: signerTwo.id,
-      }),
-    ).rejects.toThrow();
+    expect(await prisma.session.findUnique({ where: { id: session.id } })).toBeNull();
   });
 
-  it('DEV-654 review finding: denies advance when the outgoing recipient has NOT actually signed, even for the real authorized owner', async () => {
+  it('ADVANCE: a recipient token without the capability discloses nothing, and an unsigned outgoing recipient blocks advance', async () => {
     const { envelope, signerOne, signerTwo } = await seedSequentialEnvelope();
 
     const documentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
 
-    const caller = callerAs({ id: ownerId }, teamId);
+    const { handoffCapability } = await ownerCaller(await ownerSession()).startHandoffSigningLink({
+      documentId,
+      teamId: envelope.teamId,
+      recipientId: signerOne.id,
+    });
 
-    // signerOne is still NOT_SIGNED (never completed) -- this must be refused
-    // even though the caller is the real, verified owner of this envelope.
+    const device = callerAs(null);
+
     await expect(
-      caller.advanceHandoffSigningLink({
-        documentId,
-        teamId: envelope.teamId,
-        completedRecipientId: signerOne.id,
+      device.advanceHandoffSigningLink({
+        handoffCapability: 'not-a-capability',
+        completedRecipientToken: signerOne.token,
         nextRecipientId: signerTwo.id,
       }),
     ).rejects.toThrow();
 
-    // And confirm no token leaked into the candidate list either.
-    const candidates = await caller.startHandoffCandidates({ documentId, teamId: envelope.teamId });
-    expect(candidates.map((c) => c.recipientId)).toEqual([signerOne.id]);
+    // signerOne is still NOT_SIGNED -- refused even with the real capability.
+    await expect(
+      device.advanceHandoffSigningLink({
+        handoffCapability,
+        completedRecipientToken: signerOne.token,
+        nextRecipientId: signerTwo.id,
+      }),
+    ).rejects.toThrow();
+
+    expect(
+      await device.advanceHandoffCandidates({ handoffCapability, completedRecipientToken: signerOne.token }),
+    ).toEqual([]);
   });
 
-  it('allows advance once signerOne has genuinely completed through the real completion route, to signerTwo only', async () => {
+  it('ADVANCE: once signerOne genuinely completes, the session-less device advances to signerTwo only, and START is closed', async () => {
     const { envelope, signerOne, signerTwo } = await seedSequentialEnvelope();
 
     const documentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
+    const { handoffCapability } = await ownerCaller(await ownerSession()).startHandoffSigningLink({
+      documentId,
+      teamId: envelope.teamId,
+      recipientId: signerOne.id,
+    });
 
     // Real completion, through the real production function -- not a raw DB update.
     await completeDocumentWithToken({
@@ -217,12 +248,11 @@ describe('DEV-654 handoff procedures -- real Postgres integration', () => {
       ...REQUEST_METADATA,
     });
 
-    const caller = callerAs({ id: ownerId }, teamId);
+    const device = callerAs(null);
 
-    const result = await caller.advanceHandoffSigningLink({
-      documentId,
-      teamId: envelope.teamId,
-      completedRecipientId: signerOne.id,
+    const result = await device.advanceHandoffSigningLink({
+      handoffCapability,
+      completedRecipientToken: signerOne.token,
       nextRecipientId: signerTwo.id,
     });
 
@@ -231,12 +261,19 @@ describe('DEV-654 handoff procedures -- real Postgres integration', () => {
 
     // signerOne themselves is never offered back as a next candidate.
     await expect(
-      caller.advanceHandoffSigningLink({
-        documentId,
-        teamId: envelope.teamId,
-        completedRecipientId: signerOne.id,
+      device.advanceHandoffSigningLink({
+        handoffCapability,
+        completedRecipientToken: signerOne.token,
         nextRecipientId: signerOne.id,
       }),
+    ).rejects.toThrow();
+
+    // START boundary: with signerOne signed, a host can no longer START mid-envelope.
+    const hostAgain = ownerCaller(await ownerSession());
+
+    expect(await hostAgain.startHandoffCandidates({ documentId, teamId: envelope.teamId })).toEqual([]);
+    await expect(
+      hostAgain.startHandoffSigningLink({ documentId, teamId: envelope.teamId, recipientId: signerTwo.id }),
     ).rejects.toThrow();
   });
 });

@@ -1,24 +1,29 @@
+import { invalidateSessions } from '@documenso/auth/server/lib/session/session';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { completeDocumentWithToken } from '@documenso/lib/server-only/document/complete-document-with-token';
 import { rejectDocumentWithToken } from '@documenso/lib/server-only/document/reject-document-with-token';
 import { createEnvelopeRecipients } from '@documenso/lib/server-only/recipient/create-envelope-recipients';
 import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/delete-envelope-recipient';
 import {
+  getAdvanceHandoffCandidates,
   getAdvanceHandoffSigningToken,
   getStartHandoffCandidates,
   getStartHandoffSigningToken,
 } from '@documenso/lib/server-only/recipient/get-handoff-eligibility';
 import { getRecipientById } from '@documenso/lib/server-only/recipient/get-recipient-by-id';
+import { mintHandoffCapability } from '@documenso/lib/server-only/recipient/handoff-capability';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { setTemplateRecipients } from '@documenso/lib/server-only/recipient/set-template-recipients';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
 import { formatSigningLink } from '@documenso/lib/utils/recipients';
 import { EnvelopeType } from '@prisma/client';
-
+import type { TrpcContext } from '../context';
 import { ZGenericSuccessResponse, ZSuccessResponseSchema } from '../schema';
 import { authenticatedProcedure, procedure, router } from '../trpc';
 import { findRecipientSuggestionsRoute } from './find-recipient-suggestions';
 import {
+  ZAdvanceHandoffCandidatesRequestSchema,
+  ZAdvanceHandoffCandidatesResponseSchema,
   ZAdvanceHandoffSigningLinkRequestSchema,
   ZCompleteDocumentWithTokenMutationSchema,
   ZCreateDocumentRecipientRequestSchema,
@@ -42,6 +47,7 @@ import {
   ZStartHandoffCandidatesRequestSchema,
   ZStartHandoffCandidatesResponseSchema,
   ZStartHandoffSigningLinkRequestSchema,
+  ZStartHandoffSigningLinkResponseSchema,
   ZUpdateDocumentRecipientRequestSchema,
   ZUpdateDocumentRecipientResponseSchema,
   ZUpdateDocumentRecipientsRequestSchema,
@@ -644,12 +650,29 @@ export const recipientRouter = router({
 
   /**
    * @private
+   *
+   * Besides disclosing the first signer's link, START hands the device over:
+   * it mints the envelope-bound handoff capability that authorizes every
+   * later ADVANCE, and revokes the host's current session server-side so no
+   * signer holding this device ever acts inside the host's account.
    */
   startHandoffSigningLink: authenticatedProcedure
     .input(ZStartHandoffSigningLinkRequestSchema)
-    .output(ZHandoffSigningLinkResponseSchema)
+    .output(ZStartHandoffSigningLinkResponseSchema)
     .mutation(async ({ input, ctx }) => {
       const { documentId, teamId, recipientId } = input;
+
+      // There must be a browser session to hand over (and revoke) -- an
+      // API-token caller has none, so it can never start an in-person session.
+      // authenticatedMiddleware's two `next()` branches (session vs API token)
+      // merge to a `null`-typed session; widen back to TrpcContext's own type.
+      const sessionId = (ctx.session as TrpcContext['session'])?.id;
+
+      if (!sessionId) {
+        throw new AppError(AppErrorCode.UNAUTHORIZED, {
+          message: 'In-person signing can only be started from a signed-in browser session',
+        });
+      }
 
       ctx.logger.info({
         input: {
@@ -671,10 +694,25 @@ export const recipientRouter = router({
         });
       }
 
+      const handoffCapability = mintHandoffCapability({
+        envelopeId: handoff.envelopeId,
+        documentId,
+        hostUserId: ctx.user.id,
+        teamId,
+      });
+
+      await invalidateSessions({
+        userId: ctx.user.id,
+        sessionIds: [sessionId],
+        metadata: ctx.metadata.requestMetadata,
+        isRevoke: false,
+      });
+
       return {
         signingLink: formatSigningLink(handoff.token),
         name: handoff.name,
         email: handoff.email,
+        handoffCapability,
       };
     }),
 
@@ -682,34 +720,35 @@ export const recipientRouter = router({
    * @private
    *
    * DEV-654 in-person handoff -- ADVANCE. Handing the device to the next
-   * signer after `completedRecipientId` has genuinely finished. Deliberately
-   * a separate, non-bypassable operation from START:
-   * `completedRecipientId` is required (not optional) and is re-verified
-   * against a fresh DB read (actually SIGNED, belongs to this envelope) by
-   * getAdvanceHandoffSigningToken before any token is disclosed -- host
-   * authorization alone is never sufficient without it.
+   * signer once the recipient behind `completedRecipientToken` has genuinely
+   * finished. Deliberately NOT authenticatedProcedure: it runs on the handoff
+   * device, where START revoked the host's session. Authorized instead by the
+   * host-minted, envelope-bound handoff capability; getAdvanceHandoff*
+   * re-verify the host's envelope access and the outgoing recipient's SIGNED
+   * status fresh before anything is disclosed. A recipient token without the
+   * capability gets nothing.
    */
-  advanceHandoffSigningLink: authenticatedProcedure
+  advanceHandoffCandidates: procedure
+    .input(ZAdvanceHandoffCandidatesRequestSchema)
+    .output(ZAdvanceHandoffCandidatesResponseSchema)
+    .query(async ({ input }) => {
+      return await getAdvanceHandoffCandidates(input).catch(() => []);
+    }),
+
+  /**
+   * @private
+   */
+  advanceHandoffSigningLink: procedure
     .input(ZAdvanceHandoffSigningLinkRequestSchema)
     .output(ZHandoffSigningLinkResponseSchema)
     .mutation(async ({ input, ctx }) => {
-      const { documentId, teamId, completedRecipientId, nextRecipientId } = input;
-
       ctx.logger.info({
         input: {
-          documentId,
-          completedRecipientId,
-          nextRecipientId,
+          nextRecipientId: input.nextRecipientId,
         },
       });
 
-      const handoff = await getAdvanceHandoffSigningToken({
-        documentId,
-        completedRecipientId,
-        nextRecipientId,
-        userId: ctx.user.id,
-        teamId,
-      });
+      const handoff = await getAdvanceHandoffSigningToken(input).catch(() => null);
 
       if (!handoff) {
         throw new AppError(AppErrorCode.NOT_FOUND, {

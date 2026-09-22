@@ -1,5 +1,5 @@
 import { DocumentSigningOrder, DocumentStatus, RecipientRole, SigningStatus } from '@prisma/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getEnvelopeByIdMock } = vi.hoisted(() => ({
   getEnvelopeByIdMock: vi.fn(),
@@ -15,6 +15,15 @@ import {
   getStartHandoffCandidates,
   getStartHandoffSigningToken,
 } from './get-handoff-eligibility';
+import { HANDOFF_CAPABILITY_TTL_MS, mintHandoffCapability } from './handoff-capability';
+
+beforeAll(() => {
+  vi.stubEnv('NEXTAUTH_SECRET', 'test-secret');
+});
+
+/** A valid capability for the default fixture envelope, as minted by START. */
+const capability = (overrides: Partial<Parameters<typeof mintHandoffCapability>[0]> = {}, now?: number) =>
+  mintHandoffCapability({ envelopeId: 'envelope-1', documentId: 1, hostUserId: 1, teamId: 1, ...overrides }, now);
 
 const baseRecipient = (overrides: Partial<Record<string, unknown>> = {}) => ({
   id: 1,
@@ -24,7 +33,7 @@ const baseRecipient = (overrides: Partial<Record<string, unknown>> = {}) => ({
   role: RecipientRole.SIGNER,
   signingOrder: null,
   signingStatus: SigningStatus.NOT_SIGNED,
-  token: 'token-1',
+  token: `token-${overrides.id ?? 1}`,
   expiresAt: null,
   ...overrides,
 });
@@ -74,7 +83,7 @@ describe('getStartHandoffCandidates', () => {
       baseEnvelope({
         documentMeta: { signingOrder: DocumentSigningOrder.PARALLEL },
         recipients: [
-          baseRecipient({ id: 1, role: RecipientRole.SIGNER, signingStatus: SigningStatus.NOT_SIGNED }),
+          baseRecipient({ id: 1, role: RecipientRole.CC, signingStatus: SigningStatus.NOT_SIGNED }),
           baseRecipient({ id: 2, role: RecipientRole.SIGNER, signingStatus: SigningStatus.NOT_SIGNED }),
           baseRecipient({ id: 3, role: RecipientRole.APPROVER, signingStatus: SigningStatus.NOT_SIGNED }),
         ],
@@ -83,24 +92,7 @@ describe('getStartHandoffCandidates', () => {
 
     const result = await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 });
 
-    expect(result.map((c) => c.recipientId).sort()).toEqual([1, 2, 3]);
-  });
-
-  it('PARALLEL: returns no candidates once any recipient has already signed -- START is only a genuine start; ADVANCE (with completion proof) is required once signing has begun (CR PR #58 finding)', async () => {
-    getEnvelopeByIdMock.mockResolvedValue(
-      baseEnvelope({
-        documentMeta: { signingOrder: DocumentSigningOrder.PARALLEL },
-        recipients: [
-          baseRecipient({ id: 1, role: RecipientRole.SIGNER, signingStatus: SigningStatus.SIGNED }),
-          baseRecipient({ id: 2, role: RecipientRole.SIGNER, signingStatus: SigningStatus.NOT_SIGNED }),
-          baseRecipient({ id: 3, role: RecipientRole.APPROVER, signingStatus: SigningStatus.NOT_SIGNED }),
-        ],
-      }),
-    );
-
-    const result = await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 });
-
-    expect(result).toEqual([]);
+    expect(result.map((c) => c.recipientId).sort()).toEqual([2, 3]);
   });
 
   it('PARALLEL: excludes CC, VIEWER and ASSISTANT roles', async () => {
@@ -139,14 +131,14 @@ describe('getStartHandoffCandidates', () => {
     expect(result).toEqual([]);
   });
 
-  it('SEQUENTIAL: returns only the earliest-ordered eligible recipient, for a genuine (nobody-signed) start', async () => {
+  it('SEQUENTIAL: returns only the earliest-ordered unsigned eligible recipient', async () => {
     getEnvelopeByIdMock.mockResolvedValue(
       baseEnvelope({
         documentMeta: { signingOrder: DocumentSigningOrder.SEQUENTIAL },
         recipients: [
+          baseRecipient({ id: 3, signingOrder: 3, signingStatus: SigningStatus.NOT_SIGNED }),
           baseRecipient({ id: 1, signingOrder: 1, signingStatus: SigningStatus.NOT_SIGNED }),
           baseRecipient({ id: 2, signingOrder: 2, signingStatus: SigningStatus.NOT_SIGNED }),
-          baseRecipient({ id: 3, signingOrder: 3, signingStatus: SigningStatus.NOT_SIGNED }),
         ],
       }),
     );
@@ -156,33 +148,16 @@ describe('getStartHandoffCandidates', () => {
     expect(result.map((c) => c.recipientId)).toEqual([1]);
   });
 
-  it('SEQUENTIAL: returns no candidates once the first signer has already completed -- an authenticated host must use ADVANCE (with completion proof), not re-call START mid-sequence (CR PR #58 finding)', async () => {
-    getEnvelopeByIdMock.mockResolvedValue(
-      baseEnvelope({
-        documentMeta: { signingOrder: DocumentSigningOrder.SEQUENTIAL },
-        recipients: [
-          baseRecipient({ id: 1, signingOrder: 1, signingStatus: SigningStatus.SIGNED }),
-          baseRecipient({ id: 2, signingOrder: 2, signingStatus: SigningStatus.NOT_SIGNED }),
-          baseRecipient({ id: 3, signingOrder: 3, signingStatus: SigningStatus.NOT_SIGNED }),
-        ],
-      }),
-    );
-
-    const result = await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 });
-
-    expect(result).toEqual([]);
-  });
-
   it('SEQUENTIAL: surfaces nobody when the next-in-order recipient is not an eligible role (e.g. CC)', async () => {
     getEnvelopeByIdMock.mockResolvedValue(
       baseEnvelope({
         documentMeta: { signingOrder: DocumentSigningOrder.SEQUENTIAL },
         recipients: [
-          baseRecipient({ id: 1, role: RecipientRole.CC, signingOrder: 1, signingStatus: SigningStatus.NOT_SIGNED }),
+          baseRecipient({ id: 2, role: RecipientRole.CC, signingOrder: 2, signingStatus: SigningStatus.NOT_SIGNED }),
           baseRecipient({
-            id: 2,
+            id: 3,
             role: RecipientRole.SIGNER,
-            signingOrder: 2,
+            signingOrder: 3,
             signingStatus: SigningStatus.NOT_SIGNED,
           }),
         ],
@@ -208,6 +183,53 @@ describe('getStartHandoffCandidates', () => {
     const result = await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 });
 
     expect(result).toEqual([]);
+  });
+
+  it('START boundary: discloses nobody once any SIGNER/APPROVER has signed (PARALLEL) -- mid-envelope handoff must go through ADVANCE', async () => {
+    getEnvelopeByIdMock.mockResolvedValue(
+      baseEnvelope({
+        documentMeta: { signingOrder: DocumentSigningOrder.PARALLEL },
+        recipients: [
+          baseRecipient({ id: 1, role: RecipientRole.SIGNER, signingStatus: SigningStatus.SIGNED }),
+          baseRecipient({ id: 2, role: RecipientRole.SIGNER, signingStatus: SigningStatus.NOT_SIGNED }),
+          baseRecipient({ id: 3, role: RecipientRole.APPROVER, signingStatus: SigningStatus.NOT_SIGNED }),
+        ],
+      }),
+    );
+
+    expect(await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 })).toEqual([]);
+    expect(await getStartHandoffSigningToken({ documentId: 1, userId: 1, teamId: 1, recipientId: 2 })).toBeNull();
+  });
+
+  it('START boundary: discloses nobody once the first SEQUENTIAL signer has signed', async () => {
+    getEnvelopeByIdMock.mockResolvedValue(
+      baseEnvelope({
+        documentMeta: { signingOrder: DocumentSigningOrder.SEQUENTIAL },
+        recipients: [
+          baseRecipient({ id: 1, signingOrder: 1, signingStatus: SigningStatus.SIGNED }),
+          baseRecipient({ id: 2, signingOrder: 2, signingStatus: SigningStatus.NOT_SIGNED }),
+        ],
+      }),
+    );
+
+    expect(await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 })).toEqual([]);
+    expect(await getStartHandoffSigningToken({ documentId: 1, userId: 1, teamId: 1, recipientId: 2 })).toBeNull();
+  });
+
+  it('START boundary: a VIEWER having viewed does not close it (only signing roles count)', async () => {
+    getEnvelopeByIdMock.mockResolvedValue(
+      baseEnvelope({
+        documentMeta: { signingOrder: DocumentSigningOrder.PARALLEL },
+        recipients: [
+          baseRecipient({ id: 1, role: RecipientRole.VIEWER, signingStatus: SigningStatus.SIGNED }),
+          baseRecipient({ id: 2, role: RecipientRole.SIGNER, signingStatus: SigningStatus.NOT_SIGNED }),
+        ],
+      }),
+    );
+
+    const result = await getStartHandoffCandidates({ documentId: 1, userId: 1, teamId: 1 });
+
+    expect(result.map((c) => c.recipientId)).toEqual([2]);
   });
 
   it('never includes a token field on candidates', async () => {
@@ -239,23 +261,12 @@ describe('getStartHandoffSigningToken', () => {
 
     const result = await getStartHandoffSigningToken({ documentId: 1, userId: 1, teamId: 1, recipientId: 2 });
 
-    expect(result).toEqual({ token: 'real-token', name: 'Recipient', email: 'recipient@example.com' });
-  });
-
-  it('returns null once any recipient on the envelope has already signed, even for an otherwise-eligible recipientId -- START must not bypass ADVANCE mid-sequence (CR PR #58 finding)', async () => {
-    getEnvelopeByIdMock.mockResolvedValue(
-      baseEnvelope({
-        documentMeta: { signingOrder: DocumentSigningOrder.PARALLEL },
-        recipients: [
-          baseRecipient({ id: 1, signingStatus: SigningStatus.SIGNED }),
-          baseRecipient({ id: 2, token: 'real-token', signingStatus: SigningStatus.NOT_SIGNED }),
-        ],
-      }),
-    );
-
-    const result = await getStartHandoffSigningToken({ documentId: 1, userId: 1, teamId: 1, recipientId: 2 });
-
-    expect(result).toBeNull();
+    expect(result).toEqual({
+      token: 'real-token',
+      name: 'Recipient',
+      email: 'recipient@example.com',
+      envelopeId: 'envelope-1',
+    });
   });
 
   it('returns null for a recipientId that is not currently eligible (e.g. already SIGNED)', async () => {
@@ -308,19 +319,15 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     );
 
     const candidates = await getAdvanceHandoffCandidates({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
     });
 
     expect(candidates).toEqual([]);
 
     const token = await getAdvanceHandoffSigningToken({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
       nextRecipientId: 2,
     });
 
@@ -338,10 +345,8 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     );
 
     const token = await getAdvanceHandoffSigningToken({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
       nextRecipientId: 2,
     });
 
@@ -356,10 +361,8 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     );
 
     const token = await getAdvanceHandoffSigningToken({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 999,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-999',
       nextRecipientId: 2,
     });
 
@@ -385,10 +388,8 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     );
 
     const candidates = await getAdvanceHandoffCandidates({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
     });
 
     expect(candidates).toEqual([
@@ -396,10 +397,8 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     ]);
 
     const token = await getAdvanceHandoffSigningToken({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
       nextRecipientId: 2,
     });
 
@@ -414,10 +413,8 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     );
 
     const token = await getAdvanceHandoffSigningToken({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
       nextRecipientId: 1,
     });
 
@@ -436,10 +433,8 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
     );
 
     const token = await getAdvanceHandoffSigningToken({
-      documentId: 1,
-      userId: 1,
-      teamId: 1,
-      completedRecipientId: 1,
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
       nextRecipientId: 2,
     });
 
@@ -451,12 +446,92 @@ describe('getAdvanceHandoffCandidates / getAdvanceHandoffSigningToken -- complet
 
     await expect(
       getAdvanceHandoffSigningToken({
-        documentId: 1,
-        userId: 999,
-        teamId: 1,
-        completedRecipientId: 1,
+        handoffCapability: capability({ hostUserId: 999 }),
+        completedRecipientToken: 'token-1',
         nextRecipientId: 2,
       }),
     ).rejects.toThrow('NOT_FOUND');
+
+    // Host access is re-verified with the identity the capability was minted for.
+    expect(getEnvelopeByIdMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 999, teamId: 1 }));
+  });
+});
+
+describe('ADVANCE authorization -- host-minted handoff capability (the host session is revoked at START)', () => {
+  const signedThenPending = () =>
+    baseEnvelope({
+      recipients: [
+        baseRecipient({ id: 1, signingStatus: SigningStatus.SIGNED }),
+        baseRecipient({ id: 2, token: 'signer-2-token', signingStatus: SigningStatus.NOT_SIGNED }),
+      ],
+    });
+
+  beforeEach(() => {
+    getEnvelopeByIdMock.mockReset();
+    getEnvelopeByIdMock.mockResolvedValue(signedThenPending());
+  });
+
+  it('allows advance with a valid capability and the completed recipient token', async () => {
+    const token = await getAdvanceHandoffSigningToken({
+      handoffCapability: capability(),
+      completedRecipientToken: 'token-1',
+      nextRecipientId: 2,
+    });
+
+    expect(token?.token).toBe('signer-2-token');
+  });
+
+  it('a completed recipient token WITHOUT the capability discloses nothing (any emailed recipient has one)', async () => {
+    expect(
+      await getAdvanceHandoffSigningToken({
+        handoffCapability: '',
+        completedRecipientToken: 'token-1',
+        nextRecipientId: 2,
+      }),
+    ).toBeNull();
+    expect(getEnvelopeByIdMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forged capability (payload re-signed with the wrong key or tampered)', async () => {
+    const [payload] = capability().split('.');
+    const tamperedPayload = Buffer.from(
+      JSON.stringify({
+        envelopeId: 'envelope-1',
+        documentId: 1,
+        hostUserId: 1,
+        teamId: 1,
+        expiresAt: Date.now() + 1e9,
+      }),
+    ).toString('base64url');
+
+    for (const forged of [`${payload}.not-the-signature`, `${tamperedPayload}.${capability().split('.')[1]}`]) {
+      expect(
+        await getAdvanceHandoffCandidates({ handoffCapability: forged, completedRecipientToken: 'token-1' }),
+      ).toEqual([]);
+    }
+
+    expect(getEnvelopeByIdMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an expired capability', async () => {
+    const expired = capability({}, Date.now() - HANDOFF_CAPABILITY_TTL_MS - 1);
+
+    expect(
+      await getAdvanceHandoffSigningToken({
+        handoffCapability: expired,
+        completedRecipientToken: 'token-1',
+        nextRecipientId: 2,
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects a capability minted for a different envelope', async () => {
+    expect(
+      await getAdvanceHandoffSigningToken({
+        handoffCapability: capability({ envelopeId: 'envelope-other' }),
+        completedRecipientToken: 'token-1',
+        nextRecipientId: 2,
+      }),
+    ).toBeNull();
   });
 });

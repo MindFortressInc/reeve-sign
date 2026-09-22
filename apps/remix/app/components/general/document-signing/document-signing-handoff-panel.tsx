@@ -4,38 +4,50 @@ import { Label } from '@documenso/ui/primitives/label';
 import { RadioGroup, RadioGroupItem } from '@documenso/ui/primitives/radio-group';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangleIcon, ArrowRightIcon, Loader2Icon } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-export type DocumentSigningHandoffCandidate = {
-  recipientId: number;
-  name: string;
-  email: string;
-};
+import { clearHandoffCapability, readHandoffCapability } from '~/utils/handoff-capability-storage';
 
 export type DocumentSigningHandoffPanelProps = {
   documentId: number;
-  teamId: number;
-  /** The recipient who must have actually just completed -- re-verified server-side on every call. */
-  completedRecipientId: number;
-  candidates: DocumentSigningHandoffCandidate[];
+  /** Token of the recipient who must have actually just completed -- re-verified server-side on every call. */
+  completedRecipientToken: string;
 };
 
 /**
- * DEV-654: shown only when the loader has verified BOTH (a) an authenticated
- * owner/team member is viewing this page and (b) completedRecipientId has
- * actually reached SIGNED status. Fetching the actual next signing link
- * happens on explicit click via the ADVANCE mutation, which re-verifies both
- * of those server-side, fresh, independent of anything this component sends.
+ * DEV-654: renders only on the handoff device -- the tab where the host ran
+ * START and received the envelope-bound handoff capability (the host's own
+ * session there was revoked at the same time). Candidates and the next
+ * signing link both come from capability-authorized procedures that
+ * re-verify the host's envelope access and this recipient's SIGNED status
+ * fresh, independent of anything this component sends.
  */
 export const DocumentSigningHandoffPanel = ({
   documentId,
-  teamId,
-  completedRecipientId,
-  candidates,
+  completedRecipientToken,
 }: DocumentSigningHandoffPanelProps) => {
   const { t } = useLingui();
 
-  const [selectedRecipientId, setSelectedRecipientId] = useState<number | null>(candidates[0]?.recipientId ?? null);
+  // sessionStorage only exists in the browser; read after mount so SSR and
+  // hydration agree (both render nothing).
+  const [handoffCapability, setHandoffCapability] = useState<string | null>(null);
+  const [selectedRecipientId, setSelectedRecipientId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setHandoffCapability(readHandoffCapability(documentId));
+  }, [documentId]);
+
+  const { data: candidates } = trpc.recipient.advanceHandoffCandidates.useQuery(
+    { handoffCapability: handoffCapability ?? '', completedRecipientToken },
+    { enabled: !!handoffCapability },
+  );
+
+  // Nobody left to hand to: the in-person session is over on this device.
+  useEffect(() => {
+    if (candidates?.length === 0) {
+      clearHandoffCapability(documentId);
+    }
+  }, [candidates, documentId]);
 
   const {
     mutateAsync: advanceHandoffSigningLink,
@@ -43,27 +55,26 @@ export const DocumentSigningHandoffPanel = ({
     error,
   } = trpc.recipient.advanceHandoffSigningLink.useMutation();
 
-  if (candidates.length === 0) {
+  if (!handoffCapability || !candidates || candidates.length === 0) {
     return null;
   }
 
-  const handOffDevice = async () => {
-    if (!selectedRecipientId) {
-      return;
-    }
+  const selectionStillValid = candidates.some((c) => c.recipientId === selectedRecipientId);
+  const effectiveSelectedId = (selectionStillValid ? selectedRecipientId : null) ?? candidates[0].recipientId;
 
+  const handOffDevice = async () => {
     const { signingLink } = await advanceHandoffSigningLink({
-      documentId,
-      teamId,
-      completedRecipientId,
-      nextRecipientId: selectedRecipientId,
+      handoffCapability,
+      completedRecipientToken,
+      nextRecipientId: effectiveSelectedId,
     });
 
     // Hard navigation is required, not a SPA transition: it is what forces a
     // fresh loader run and a fresh DocumentSigningProvider/SignaturePad
     // mount for the next recipient's token, so no name/signature/auth state
-    // from this signer carries over to the next one.
-    window.location.href = signingLink;
+    // from this signer carries over to the next one. replace() keeps the
+    // previous signer's pages out of the back stack.
+    window.location.replace(signingLink);
   };
 
   return (
@@ -81,7 +92,7 @@ export const DocumentSigningHandoffPanel = ({
       ) : (
         <RadioGroup
           className="mt-4"
-          value={selectedRecipientId ? String(selectedRecipientId) : undefined}
+          value={String(effectiveSelectedId)}
           onValueChange={(value) => setSelectedRecipientId(Number(value))}
         >
           {candidates.map((candidate) => (
@@ -112,7 +123,7 @@ export const DocumentSigningHandoffPanel = ({
       <Button
         type="button"
         className="mt-4 w-full"
-        disabled={!selectedRecipientId || isPending}
+        disabled={isPending}
         onClick={handOffDevice}
         aria-label={t`Hand off device to next signer`}
       >

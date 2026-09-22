@@ -1,4 +1,3 @@
-import { authClient } from '@documenso/auth/client';
 import { trpc } from '@documenso/trpc/react';
 import { Button } from '@documenso/ui/primitives/button';
 import {
@@ -17,6 +16,8 @@ import { Trans } from '@lingui/react/macro';
 import { AlertTriangleIcon, SmartphoneIcon } from 'lucide-react';
 import { useState } from 'react';
 
+import { saveHandoffCapability } from '~/utils/handoff-capability-storage';
+
 export type DocumentStartHandoffDialogProps = {
   documentId: number;
   teamId: number;
@@ -26,9 +27,11 @@ export type DocumentStartHandoffDialogProps = {
  * DEV-654 native in-person handoff entry point. The host explicitly starts
  * a session here (authenticated owner/team member, same authorization
  * boundary as the existing "Copy Signing Links" dialog on this page) and
- * hands the device to the first eligible signer. Every subsequent hop is
- * driven from DocumentSigningHandoffPanel on the recipient completion page,
- * which re-verifies actual completion before advancing further.
+ * hands the device to the first eligible signer. START also revokes the
+ * host's session on this device, so no signer ever holds the host's account;
+ * every subsequent hop is driven from DocumentSigningHandoffPanel on the
+ * recipient completion page, authorized by the envelope-bound capability
+ * START returns, which re-verifies actual completion before advancing.
  */
 export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStartHandoffDialogProps) => {
   const [open, setOpen] = useState(false);
@@ -66,19 +69,18 @@ export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStart
       return;
     }
 
-    const { signingLink } = await startHandoffSigningLink({ documentId, teamId, recipientId: effectiveSelectedId });
+    const { signingLink, handoffCapability } = await startHandoffSigningLink({
+      documentId,
+      teamId,
+      recipientId: effectiveSelectedId,
+    });
 
-    // Sign the host out before handing the device over. A plain
-    // `window.location.href` navigation (the panel's approach for the
-    // ADVANCE hop) would leave the host's own authenticated session cookie
-    // active in this same browser -- the next signer could then navigate to
-    // authenticated host routes. `authClient.signOut` POSTs to the real
-    // server-side /signout route (invalidating the session, see
-    // packages/auth/server/routes/sign-out.ts) before doing the hard
-    // navigation itself -- the same pattern DocumentSigningAuthAccount uses
-    // to force a fresh, unauthenticated context before a different signer's
-    // link is used (CR PR #58).
-    await authClient.signOut({ redirectPath: signingLink });
+    saveHandoffCapability(documentId, handoffCapability);
+
+    // Hard navigation, same reason as the handoff panel: forces a fresh
+    // loader run and a fresh signing provider mount for this recipient.
+    // replace() keeps this (now signed-out) page out of the back stack.
+    window.location.replace(signingLink);
   };
 
   return (
@@ -102,6 +104,10 @@ export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStart
               signature before the device is handed to the next signer.
             </Trans>
           </DialogDescription>
+
+          <p className="text-muted-foreground text-sm">
+            <Trans>You will be signed out on this device so signers cannot access your account.</Trans>
+          </p>
         </DialogHeader>
 
         {isLoading && (
