@@ -202,6 +202,19 @@ export const createDocumentFromDirectTemplate = async ({
     fieldsToProcess.map(async (templateField) => {
       const signedFieldValue = signedFieldValues.find((value) => value.fieldId === templateField.id);
 
+      // FILE_UPLOAD values must go through `finalizeFieldFileUpload` (S3 key
+      // validation, immutable-key finalization, tmp-object cleanup) before
+      // they can be trusted as `customText`. Direct templates have no upload
+      // dialog wired up to produce that finalized value, so a client-supplied
+      // value here would be stored verbatim -- reject it instead of trusting
+      // it, mirroring the same interim guard already applied to the v1 API
+      // create/update paths for this field type.
+      if (templateField.type === FieldType.FILE_UPLOAD && signedFieldValue) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'FILE_UPLOAD fields are not supported in direct templates yet',
+        });
+      }
+
       if (isRequiredField(templateField) && !signedFieldValue) {
         throw new AppError(AppErrorCode.INVALID_BODY, {
           message: 'Invalid, missing or changed fields',
@@ -546,52 +559,54 @@ export const createDocumentFromDirectTemplate = async ({
           accessAuth: derivedRecipientAccessAuth || undefined,
         },
       }),
-      ...createdDirectRecipientFields.map(({ field, derivedRecipientActionAuth }) =>
-        createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
-          envelopeId: createdEnvelope.id,
-          user: {
-            id: user?.id,
-            name: user?.name,
-            email: directRecipientEmail,
-          },
-          metadata: requestMetadata,
-          data: {
-            recipientEmail: createdDirectRecipient.email,
-            recipientId: createdDirectRecipient.id,
-            recipientName: createdDirectRecipient.name,
-            recipientRole: createdDirectRecipient.role,
-            fieldId: field.secondaryId,
-            field: match(field.type)
-              .with(FieldType.SIGNATURE, FieldType.FREE_SIGNATURE, (type) => ({
-                type,
-                data: field.signature?.signatureImageAsBase64 || field.signature?.typedSignature || '',
-              }))
-              .with(
-                FieldType.DATE,
-                FieldType.EMAIL,
-                FieldType.INITIALS,
-                FieldType.NAME,
-                FieldType.TEXT,
-                FieldType.NUMBER,
-                FieldType.CHECKBOX,
-                FieldType.DROPDOWN,
-                FieldType.RADIO,
-                FieldType.FILE_UPLOAD,
-                (type) => ({
+      ...createdDirectRecipientFields
+        .filter(({ field }) => field.inserted === true)
+        .map(({ field, derivedRecipientActionAuth }) =>
+          createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
+            envelopeId: createdEnvelope.id,
+            user: {
+              id: user?.id,
+              name: user?.name,
+              email: directRecipientEmail,
+            },
+            metadata: requestMetadata,
+            data: {
+              recipientEmail: createdDirectRecipient.email,
+              recipientId: createdDirectRecipient.id,
+              recipientName: createdDirectRecipient.name,
+              recipientRole: createdDirectRecipient.role,
+              fieldId: field.secondaryId,
+              field: match(field.type)
+                .with(FieldType.SIGNATURE, FieldType.FREE_SIGNATURE, (type) => ({
                   type,
-                  data: field.customText,
-                }),
-              )
-              .exhaustive(),
-            fieldSecurity: derivedRecipientActionAuth
-              ? {
-                  type: derivedRecipientActionAuth,
-                }
-              : undefined,
-          },
-        }),
-      ),
+                  data: field.signature?.signatureImageAsBase64 || field.signature?.typedSignature || '',
+                }))
+                .with(
+                  FieldType.DATE,
+                  FieldType.EMAIL,
+                  FieldType.INITIALS,
+                  FieldType.NAME,
+                  FieldType.TEXT,
+                  FieldType.NUMBER,
+                  FieldType.CHECKBOX,
+                  FieldType.DROPDOWN,
+                  FieldType.RADIO,
+                  FieldType.FILE_UPLOAD,
+                  (type) => ({
+                    type,
+                    data: field.customText,
+                  }),
+                )
+                .exhaustive(),
+              fieldSecurity: derivedRecipientActionAuth
+                ? {
+                    type: derivedRecipientActionAuth,
+                  }
+                : undefined,
+            },
+          }),
+        ),
       createDocumentAuditLogData({
         type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_COMPLETED,
         envelopeId: createdEnvelope.id,

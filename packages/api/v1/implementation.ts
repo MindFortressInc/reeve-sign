@@ -6,7 +6,7 @@ import { tsr } from '@ts-rest/serverless/fetch';
 import { match } from 'ts-pattern';
 import '@documenso/lib/constants/time-zones';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { deleteDocument } from '@documenso/lib/server-only/document/delete-document';
 import { findDocuments } from '@documenso/lib/server-only/document/find-documents';
 import { resendDocument } from '@documenso/lib/server-only/document/resend-document';
@@ -1415,7 +1415,17 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
               .exhaustive();
 
             if (!result.success) {
-              throw new Error('Field meta parsing failed');
+              let reason = 'Field meta parsing failed';
+
+              if ('error' in result) {
+                const resultError: unknown = result.error;
+
+                if (typeof resultError === 'string') {
+                  reason = resultError;
+                }
+              }
+
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: reason });
             }
 
             const field = await tx.field.create({
