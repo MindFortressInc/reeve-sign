@@ -140,10 +140,14 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
         assertValidFieldConditionGraph(fields, fields);
 
         if (fieldsContainUnsignedRequiredVisibleField(fields, fields)) {
-          throw new Error(`Document ${envelope.id} has unsigned required fields`);
+          throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+            message: `Document ${envelope.id} has unsigned required fields`,
+          });
         }
       } else if (fieldsContainUnsignedRequiredField(fields)) {
-        throw new Error(`Document ${envelope.id} has unsigned required fields`);
+        throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+          message: `Document ${envelope.id} has unsigned required fields`,
+        });
       }
     }
 

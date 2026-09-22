@@ -698,10 +698,20 @@ export const createDocumentFromTemplate = async ({
 
     const newFields = await Promise.all(
       fieldsToCreate.map(async ({ oldFieldId, payload }) => {
+        // `safeParse` with a fallback to the raw value, not `.parse`: a
+        // template field carrying legacy/obsolete metadata (predates a schema
+        // tightening, or an enum value since removed) must still be copyable —
+        // throwing here would block using the template at all over metadata
+        // this write path isn't actually changing.
+        const parsedFieldMeta = payload.fieldMeta ? ZFieldMetaSchema.safeParse(payload.fieldMeta) : undefined;
+
         const newField = await tx.field.create({
           data: {
             ...payload,
-            fieldMeta: payload.fieldMeta ? ZFieldMetaSchema.parse(payload.fieldMeta) : undefined,
+            fieldMeta: parsedFieldMeta
+              ? // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+                ((parsedFieldMeta.success ? parsedFieldMeta.data : payload.fieldMeta) as PrismaJson.FieldMeta)
+              : undefined,
           },
         });
 

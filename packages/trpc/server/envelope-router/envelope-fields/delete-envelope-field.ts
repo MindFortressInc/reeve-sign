@@ -134,9 +134,21 @@ export const deleteEnvelopeFieldRoute = authenticatedProcedure
       const allEnvelopeFields = freshRecipients.flatMap((r) => r.fields);
       const remainingFields = allEnvelopeFields.filter((field) => field.id !== fieldToDelete.id);
 
+      // Scan for conditions that were ALREADY dangling before this delete (a
+      // pre-existing malformed/dangling condition unrelated to the field being
+      // deleted) so they can be excluded below — otherwise an unrelated deletion
+      // could either silently self-heal a pre-existing broken condition that
+      // wasn't its concern, or get wrongly rejected because that pre-existing
+      // problem happens to belong to an already-signed recipient.
+      const preExistingDanglingFieldIds = new Set(
+        findFieldsWithDanglingConditions(allEnvelopeFields, allEnvelopeFields).map((field) => field.id),
+      );
+
       // Any other field whose condition points at the one being deleted would
       // otherwise be left with a dangling reference.
-      const danglingDependents = findFieldsWithDanglingConditions(remainingFields, remainingFields);
+      const danglingDependents = findFieldsWithDanglingConditions(remainingFields, remainingFields).filter(
+        (field) => !preExistingDanglingFieldIds.has(field.id),
+      );
 
       const signedRecipientIds = new Set(
         freshRecipients.filter((r) => r.signingStatus === SigningStatus.SIGNED).map((r) => r.id),

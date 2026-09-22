@@ -24,12 +24,11 @@ import { DOCUMENT_AUDIT_LOG_TYPE, RECIPIENT_DIFF_TYPE } from '../../types/docume
 import type { TRecipientActionAuthTypes } from '../../types/document-auth';
 import { DocumentAccessAuth, ZRecipientAuthOptionsSchema } from '../../types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
-import { ZFieldMetaSchema } from '../../types/field-meta';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import type { ApiRequestMetadata } from '../../universal/extract-request-metadata';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { putPdfFileServerSide } from '../../universal/upload/put-file.server';
-import { isRequiredField } from '../../utils/advanced-fields-helpers';
+import { fieldsContainUnsignedRequiredField, isRequiredField } from '../../utils/advanced-fields-helpers';
 import { extractDerivedDocumentMeta } from '../../utils/document';
 import type { CreateDocumentAuditLogDataResponse } from '../../utils/document-audit-logs';
 import { createDocumentAuditLogData } from '../../utils/document-audit-logs';
@@ -225,6 +224,15 @@ export const createDocumentFromDirectTemplate = async ({
   // path uses (see `projectDirectRecipientFields`'s doc comment).
   const projectedRecipientFields = projectDirectRecipientFields(directTemplateRecipient.fields, signedFieldValues);
 
+  // Conditional visibility is a V2-only feature — every authoring write path
+  // (`update-envelope-fields.ts`, `resolveBulkFieldConditions`) rejects a
+  // `condition` on a V1 field, so a V1 template should never legitimately
+  // carry one. Still, this exemption must not be evaluated at all for V1: if
+  // a legacy/bypassed row somehow retains `condition` metadata, treating it
+  // as hidden-and-exempt here would silently waive a genuinely required V1
+  // field's validation, which V1 signing has never known how to do.
+  const directTemplateSupportsConditions = directTemplateEnvelope.internalVersion === 2;
+
   // Associate, validate and map to a query every direct template recipient field with the provided fields.
   // Only process fields that are either required or have been signed by the user
   const fieldsToProcess = directTemplateRecipient.fields.filter((templateField) => {
@@ -260,7 +268,7 @@ export const createDocumentFromDirectTemplate = async ({
       if (
         isRequiredField(templateField) &&
         !signedFieldValue &&
-        isFieldVisible(templateField, projectedRecipientFields)
+        (!directTemplateSupportsConditions || isFieldVisible(templateField, projectedRecipientFields))
       ) {
         throw new AppError(AppErrorCode.INVALID_BODY, {
           message: 'Invalid, missing or changed fields',
@@ -312,8 +320,10 @@ export const createDocumentFromDirectTemplate = async ({
         // unmet condition, with nothing meaningful to sign — that is not a
         // missing-signature error, it's the expected shape for a field that
         // was never supposed to be filled in. A visible signature field
-        // still legitimately requires content.
-        if (!isFieldVisible(templateField, projectedRecipientFields)) {
+        // still legitimately requires content. V1 has no visibility concept,
+        // so this exemption never applies there — see
+        // `directTemplateSupportsConditions`'s doc comment above.
+        if (directTemplateSupportsConditions && !isFieldVisible(templateField, projectedRecipientFields)) {
           return {
             templateField,
             customText: '',
@@ -490,10 +500,16 @@ export const createDocumentFromDirectTemplate = async ({
 
     await Promise.all(
       nonDirectRecipientFieldsToCreate.map(async ({ oldFieldId, payload }) => {
+        // Copy the stored metadata through unvalidated, same as the direct-
+        // recipient field creation below (`templateField.fieldMeta || Prisma.JsonNull`)
+        // — a non-direct recipient's field isn't being changed by this
+        // submission, so `ZFieldMetaSchema.parse` throwing on legacy/obsolete
+        // metadata would block creating a document from a template over
+        // metadata this write path never touches.
         const newField = await tx.field.create({
           data: {
             ...payload,
-            fieldMeta: payload.fieldMeta ? ZFieldMetaSchema.parse(payload.fieldMeta) : undefined,
+            fieldMeta: payload.fieldMeta || Prisma.JsonNull,
           },
         });
 
@@ -622,8 +638,13 @@ export const createDocumentFromDirectTemplate = async ({
     // complete — the same defense-in-depth `complete-document-with-token.ts`
     // does under its own lock. A required field that's visible per the real
     // stored data and still wasn't inserted must block, even if some earlier
-    // check had a gap.
-    if (fieldsContainUnsignedRequiredVisibleField(directRecipientFieldsAfterRemap, allNewFieldsAfterRemap)) {
+    // check had a gap. V1 uses the plain (non-visibility-aware) check, same as
+    // `directTemplateSupportsConditions` everywhere else in this function.
+    const hasUnsignedRequiredField = directTemplateSupportsConditions
+      ? fieldsContainUnsignedRequiredVisibleField(directRecipientFieldsAfterRemap, allNewFieldsAfterRemap)
+      : fieldsContainUnsignedRequiredField(directRecipientFieldsAfterRemap);
+
+    if (hasUnsignedRequiredField) {
       throw new AppError(AppErrorCode.INVALID_BODY, {
         message: 'Invalid, missing or changed fields',
       });

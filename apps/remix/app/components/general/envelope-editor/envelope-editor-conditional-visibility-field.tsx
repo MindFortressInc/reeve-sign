@@ -86,7 +86,14 @@ export const EditorConditionalVisibilityField = ({
 
     setSelectedControllerId(controller.id);
     setSelectedOptionIds(defaultOptionIds);
-    onChange({ fieldId: controller.id, optionIds: defaultOptionIds });
+
+    // A controller with no configured values yet (e.g. a checkbox placed but
+    // never given any options) has nothing to select — `ZFieldCondition`
+    // requires a non-empty `optionIds`, so persisting one here would send an
+    // invalid condition. Keep it selected locally (so the author sees which
+    // controller they picked and the — currently empty — option list) without
+    // persisting anything until it actually has options to check.
+    onChange(defaultOptionIds.length > 0 ? { fieldId: controller.id, optionIds: defaultOptionIds } : null);
   };
 
   const handleOptionToggle = (optionId: number, checked: boolean) => {

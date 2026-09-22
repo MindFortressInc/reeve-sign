@@ -29,7 +29,7 @@ import { Sheet, SheetContent, SheetTitle } from '@documenso/ui/primitives/sheet'
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui as useLinguiMacro } from '@lingui/react/macro';
 import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
 import { FileTextIcon, PencilIcon, SparklesIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -86,6 +86,7 @@ export const EnvelopeEditorFieldsPage = () => {
   const { currentEnvelopeItem } = useCurrentEnvelopeRender();
 
   const { _ } = useLingui();
+  const { t } = useLinguiMacro();
 
   const [isAiFieldDialogOpen, setIsAiFieldDialogOpen] = useState(false);
   const [isAiEnableDialogOpen, setIsAiEnableDialogOpen] = useState(false);
@@ -131,7 +132,7 @@ export const EnvelopeEditorFieldsPage = () => {
 
         return {
           id: field.id,
-          label: meta?.label || `Checkbox #${field.id}`,
+          label: meta?.label || t`Checkbox #${field.id}`,
           values: (meta?.values ?? []).map((value) => ({ id: value.id, value: value.value })),
         };
       });

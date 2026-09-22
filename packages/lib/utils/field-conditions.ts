@@ -155,7 +155,22 @@ const resolveFieldConditionStateInternal = (
     };
   }
 
-  const selectedOptionIds = getCheckboxSelectedOptionIds(controllingField);
+  // `customText` is untyped JSON at the DB layer: malformed data (a stray
+  // manual edit, corrupted legacy row) can make `JSON.parse` throw, or parse
+  // to a non-array (`.map` then throws a TypeError). Either must resolve to
+  // 'invalid', never silently fold into "hidden" (which `assertValidFieldConditionGraph`
+  // would treat as fine to seal) or crash the caller (completion/sealing).
+  let selectedOptionIds: number[];
+
+  try {
+    selectedOptionIds = getCheckboxSelectedOptionIds(controllingField);
+  } catch {
+    return {
+      status: 'invalid',
+      reason: `Controlling checkbox ${condition.fieldId} has invalid customText`,
+    };
+  }
+
   const met = condition.optionIds.some((optionId) => selectedOptionIds.includes(optionId));
 
   return { status: met ? 'visible' : 'hidden' };

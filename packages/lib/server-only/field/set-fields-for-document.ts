@@ -157,7 +157,7 @@ export const setFieldsForDocument = async ({
           const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
 
           if (errors.length > 0) {
-            throw new Error(errors.join(', '));
+            throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
           }
         }
 
@@ -167,7 +167,7 @@ export const setFieldsForDocument = async ({
           const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta, false);
 
           if (errors.length > 0) {
-            throw new Error(errors.join(', '));
+            throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
           }
         }
 
@@ -180,10 +180,12 @@ export const setFieldsForDocument = async ({
             );
 
             if (errors.length > 0) {
-              throw new Error(errors.join(', '));
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
             }
           } else {
-            throw new Error('To proceed further, please set at least one value for the Checkbox field');
+            throw new AppError(AppErrorCode.INVALID_REQUEST, {
+              message: 'To proceed further, please set at least one value for the Checkbox field',
+            });
           }
         }
 
@@ -195,10 +197,12 @@ export const setFieldsForDocument = async ({
             const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
 
             if (errors.length > 0) {
-              throw new Error(errors.join('. '));
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join('. ') });
             }
           } else {
-            throw new Error('To proceed further, please set at least one value for the Radio field');
+            throw new AppError(AppErrorCode.INVALID_REQUEST, {
+              message: 'To proceed further, please set at least one value for the Radio field',
+            });
           }
         }
 
@@ -208,10 +212,12 @@ export const setFieldsForDocument = async ({
             const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
 
             if (errors.length > 0) {
-              throw new Error(errors.join('. '));
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join('. ') });
             }
           } else {
-            throw new Error('To proceed further, please set at least one value for the Dropdown field');
+            throw new AppError(AppErrorCode.INVALID_REQUEST, {
+              message: 'To proceed further, please set at least one value for the Dropdown field',
+            });
           }
         }
 

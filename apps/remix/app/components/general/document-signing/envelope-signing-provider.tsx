@@ -269,12 +269,15 @@ export const EnvelopeSigningProvider = ({
    * - From recipients that have not signed
    * - After the assistant signing order
    * - Are not signature fields
+   * - Currently visible (an assistant must never see, or be able to fill in on
+   *   behalf of someone else, a field that recipient's own view would hide)
    */
   const assistantFields =
     recipient.role === RecipientRole.ASSISTANT
       ? assistantRecipients
           .filter((r) => r.signingStatus !== SigningStatus.SIGNED)
           .flatMap((r) => r.fields.filter((field) => field.type !== FieldType.SIGNATURE))
+          .filter((field) => isFieldVisible(field, allEnvelopeFields))
       : [];
 
   /**

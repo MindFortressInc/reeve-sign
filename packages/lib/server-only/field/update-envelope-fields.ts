@@ -183,10 +183,20 @@ export const updateEnvelopeFields = async ({
     // the dependent belongs to an already-signed recipient, in which case silently
     // clearing it would alter their frozen obligations/consent, so the whole
     // update must be rejected instead.
+    //
+    // Only exclude fields whose OWN condition was actually re-validated above
+    // (i.e. their `fieldMeta` was part of this batch) — a batch entry that only
+    // moves a field's position (no `fieldMeta`) never ran through
+    // `validateFieldConditionRef`, so its stored condition must still be
+    // checked here even though the field's id is technically present in `fields`.
+    const revalidatedFieldIds = new Set(
+      fields.filter((field) => field.fieldMeta !== undefined).map((field) => field.id),
+    );
+
     const danglingDependents = findFieldsWithDanglingConditions(
       envelopeFieldsAfterUpdate,
       envelopeFieldsAfterUpdate,
-    ).filter((field) => !fields.some((updated) => updated.id === field.id));
+    ).filter((field) => !revalidatedFieldIds.has(field.id));
 
     const signedRecipientIds = new Set(
       freshEnvelope.recipients.filter((r) => r.signingStatus === SigningStatus.SIGNED).map((r) => r.id),

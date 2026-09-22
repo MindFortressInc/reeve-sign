@@ -174,7 +174,7 @@ export const signEnvelopeFieldRoute = procedure
 
         const freshRecipient = await tx.recipient.findUniqueOrThrow({
           where: { id: recipient.id },
-          select: { signingStatus: true },
+          select: { signingStatus: true, authOptions: true },
         });
 
         const freshEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
@@ -232,14 +232,15 @@ export const signEnvelopeFieldRoute = procedure
           });
         }
 
-        // Authoritative auth check, against fresh field AND fresh document-level
-        // auth options — both are mutable by a concurrent authoring edit
-        // (`update-envelope.ts` can change document auth options while the
-        // envelope is PENDING) and must be re-read under the lock, not taken
-        // from the pre-lock snapshot's `envelope`.
+        // Authoritative auth check, against fresh field, fresh document-level
+        // auth options, AND fresh recipient-level auth options — all three are
+        // mutable by a concurrent authoring edit (`update-envelope.ts` can change
+        // document auth options, and a recipient's own action auth can be
+        // tightened independently, while the envelope is PENDING) and must be
+        // re-read under the lock, not taken from the pre-lock snapshot.
         const derivedRecipientActionAuth = await validateFieldAuth({
           documentAuthOptions: freshEnvelope.authOptions,
-          recipient,
+          recipient: { ...recipient, authOptions: freshRecipient.authOptions },
           field: freshField,
           userId: user?.id,
           authOptions,

@@ -176,15 +176,12 @@ export const completeDocumentWithToken = async ({
     });
   }
 
-  let fields = await prisma.field.findMany({
+  const fields = await prisma.field.findMany({
     where: {
       envelopeId: envelope.id,
       recipientId: recipient.id,
     },
   });
-
-  // This should be scoped to the current recipient.
-  const uninsertedDateFields = fields.filter((field) => field.type === FieldType.DATE && !field.inserted);
 
   let recipientName = recipient.name;
   let recipientEmail = recipient.email;
@@ -212,67 +209,6 @@ export const completeDocumentWithToken = async ({
   if (!recipientEmail) {
     throw new AppError(AppErrorCode.INVALID_BODY, {
       message: 'Recipient email is required',
-    });
-  }
-
-  // Auto-insert all un-inserted date fields for V2 envelopes at completion time.
-  if (envelope.internalVersion === 2 && uninsertedDateFields.length > 0) {
-    const formattedDate = DateTime.now()
-      .setZone(envelope.documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
-      .toFormat(envelope.documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
-
-    const newDateFieldValues = {
-      customText: formattedDate,
-      inserted: true,
-    };
-
-    await prisma.field.updateMany({
-      where: {
-        id: {
-          in: uninsertedDateFields.map((field) => field.id),
-        },
-      },
-      data: {
-        ...newDateFieldValues,
-      },
-    });
-
-    // Create audit log entries for each auto-inserted date field.
-    await prisma.documentAuditLog.createMany({
-      data: uninsertedDateFields.map((field) =>
-        createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
-          envelopeId: envelope.id,
-          user: {
-            email: recipientEmail,
-            name: recipientName,
-          },
-          requestMetadata,
-          data: {
-            recipientEmail: recipientEmail,
-            recipientId: recipient.id,
-            recipientName: recipientName,
-            recipientRole: recipient.role,
-            fieldId: field.secondaryId,
-            field: {
-              type: FieldType.DATE,
-              data: formattedDate,
-            },
-          },
-        }),
-      ),
-    });
-
-    // Update the local fields array so the subsequent validation check passes.
-    fields = fields.map((field) => {
-      if (field.type === FieldType.DATE && !field.inserted) {
-        return {
-          ...field,
-          ...newDateFieldValues,
-        };
-      }
-
-      return field;
     });
   }
 
@@ -315,8 +251,77 @@ export const completeDocumentWithToken = async ({
       });
     }
 
-    const allEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
-    const freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
+    let allEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
+    let freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
+
+    // Auto-insert all un-inserted date fields for V2 envelopes at completion
+    // time — inside the lock, after the re-checks above, so a rollback
+    // (duplicate/racing completion, a concurrent controller change making a
+    // field newly required, a status change) can never leave a date field
+    // marked `inserted: true` with an audit-log entry for a completion that
+    // didn't actually happen. `fields` (the pre-transaction snapshot, used
+    // above only to derive `recipientName`/`recipientEmail`) is deliberately
+    // not reused here — `freshRecipientFields` is the lock-protected read.
+    const uninsertedDateFields = freshRecipientFields.filter(
+      (field) => field.type === FieldType.DATE && !field.inserted,
+    );
+
+    if (freshEnvelope.internalVersion === 2 && uninsertedDateFields.length > 0) {
+      const formattedDate = DateTime.now()
+        .setZone(envelope.documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
+        .toFormat(envelope.documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
+
+      const newDateFieldValues = {
+        customText: formattedDate,
+        inserted: true,
+      };
+
+      await tx.field.updateMany({
+        where: {
+          id: {
+            in: uninsertedDateFields.map((field) => field.id),
+          },
+        },
+        data: {
+          ...newDateFieldValues,
+        },
+      });
+
+      // Create audit log entries for each auto-inserted date field.
+      await tx.documentAuditLog.createMany({
+        data: uninsertedDateFields.map((field) =>
+          createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
+            envelopeId: envelope.id,
+            user: {
+              email: recipientEmail,
+              name: recipientName,
+            },
+            requestMetadata,
+            data: {
+              recipientEmail: recipientEmail,
+              recipientId: recipient.id,
+              recipientName: recipientName,
+              recipientRole: recipient.role,
+              fieldId: field.secondaryId,
+              field: {
+                type: FieldType.DATE,
+                data: formattedDate,
+              },
+            },
+          }),
+        ),
+      });
+
+      // Reflect the just-inserted dates in-memory so the visibility checks
+      // below see them.
+      allEnvelopeFields = allEnvelopeFields.map((field) =>
+        field.type === FieldType.DATE && !field.inserted && uninsertedDateFields.some((d) => d.id === field.id)
+          ? { ...field, ...newDateFieldValues }
+          : field,
+      );
+      freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
+    }
 
     // Conditional visibility is a V2-only feature (V1 rendering/signing never
     // evaluates it), so only apply the visibility-aware exemption for V2 —

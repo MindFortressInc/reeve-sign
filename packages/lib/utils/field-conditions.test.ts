@@ -174,6 +174,24 @@ describe('resolveFieldConditionState', () => {
     expect(resolveFieldConditionState(dependent, [controller, dependent]).status).toBe('invalid');
   });
 
+  it('is invalid, not a crash, when the controlling checkbox has malformed customText (bad JSON)', () => {
+    const controller = checkboxField(1, 'not valid json{{', [10]);
+    const dependent = dependentField(2, 1, [10]);
+
+    const state = resolveFieldConditionState(dependent, [controller, dependent]);
+
+    expect(state.status).toBe('invalid');
+  });
+
+  it('is invalid, not a crash, when the controlling checkbox customText is valid JSON but not an array', () => {
+    const controller = checkboxField(1, '5', [10]);
+    const dependent = dependentField(2, 1, [10]);
+
+    const state = resolveFieldConditionState(dependent, [controller, dependent]);
+
+    expect(state.status).toBe('invalid');
+  });
+
   it('is invalid when the condition graph contains a cycle', () => {
     const fieldA = makeField({
       id: 1,
