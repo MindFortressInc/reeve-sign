@@ -46,6 +46,7 @@ import {
 } from '../../utils/document-auth';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { mapSecondaryIdToTemplateId } from '../../utils/envelope';
+import { remapFieldConditionReferences } from '../../utils/field-conditions';
 import { buildTeamWhereQuery } from '../../utils/teams';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { incrementDocumentId } from '../envelope/increment-id';
@@ -588,7 +589,7 @@ export const createDocumentFromTemplate = async ({
       },
     });
 
-    let fieldsToCreate: Omit<Field, 'id' | 'secondaryId'>[] = [];
+    let fieldsToCreate: { oldFieldId: number; payload: Omit<Field, 'id' | 'secondaryId'> }[] = [];
 
     // Get all template field IDs first so we can validate later
     const allTemplateFieldIds = finalRecipients.flatMap((recipient) => recipient.fields.map((field) => field.id));
@@ -683,17 +684,34 @@ export const createDocumentFromTemplate = async ({
               });
           }
 
-          return payload;
+          return { oldFieldId: field.id, payload };
         }),
       );
     });
 
-    await tx.field.createMany({
-      data: fieldsToCreate.map((field) => ({
-        ...field,
-        fieldMeta: field.fieldMeta ? ZFieldMetaSchema.parse(field.fieldMeta) : undefined,
-      })),
-    });
+    // Individual creates (rather than createMany) so we can recover each new
+    // field's id and build an old->new map, needed to remap any
+    // `fieldMeta.condition.fieldId` references below — createMany does not
+    // return created rows, and field-to-field condition references would
+    // otherwise silently point at the SOURCE template's (foreign) field ids.
+    const oldFieldIdToNewFieldId: Record<number, number> = {};
+
+    const newFields = await Promise.all(
+      fieldsToCreate.map(async ({ oldFieldId, payload }) => {
+        const newField = await tx.field.create({
+          data: {
+            ...payload,
+            fieldMeta: payload.fieldMeta ? ZFieldMetaSchema.parse(payload.fieldMeta) : undefined,
+          },
+        });
+
+        oldFieldIdToNewFieldId[oldFieldId] = newField.id;
+
+        return newField;
+      }),
+    );
+
+    await remapFieldConditionReferences({ tx, newFields, oldFieldIdToNewFieldId });
 
     await tx.documentAuditLog.create({
       data: createDocumentAuditLogData({

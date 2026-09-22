@@ -18,6 +18,7 @@ import {
   type TTextFieldMeta,
 } from '@documenso/lib/types/field-meta';
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
+import { getFieldCondition } from '@documenso/lib/utils/field-conditions';
 import { canRecipientFieldsBeModified } from '@documenso/lib/utils/recipients';
 import { AnimateGenericFadeInOut } from '@documenso/ui/components/animate/animate-generic-fade-in-out';
 import { cn } from '@documenso/ui/lib/utils';
@@ -49,6 +50,7 @@ import { EditorFieldNumberForm } from '~/components/forms/editor/editor-field-nu
 import { EditorFieldRadioForm } from '~/components/forms/editor/editor-field-radio-form';
 import { EditorFieldSignatureForm } from '~/components/forms/editor/editor-field-signature-form';
 import { EditorFieldTextForm } from '~/components/forms/editor/editor-field-text-form';
+import { EditorConditionalVisibilityField } from '~/components/general/envelope-editor/envelope-editor-conditional-visibility-field';
 import { EnvelopePdfViewer } from '~/components/general/pdf-viewer/envelope-pdf-viewer';
 import { useCurrentTeam } from '~/providers/team';
 
@@ -112,6 +114,28 @@ export const EnvelopeEditorFieldsPage = () => {
       });
     }
   };
+
+  /**
+   * Persisted checkbox fields eligible as a conditional-visibility controller
+   * for the selected field. Only fields with a real database id are offered —
+   * see `EditorConditionalVisibilityField`'s doc comment for why.
+   */
+  const availableConditionCheckboxFields = useMemo(() => {
+    return envelope.fields
+      .filter(
+        (field): field is typeof field & { id: number } =>
+          field.type === FieldType.CHECKBOX && field.id !== undefined && field.id !== selectedField?.id,
+      )
+      .map((field) => {
+        const meta = field.fieldMeta as TCheckboxFieldMeta | undefined;
+
+        return {
+          id: field.id,
+          label: meta?.label || `Checkbox #${field.id}`,
+          values: (meta?.values ?? []).map((value) => ({ id: value.id, value: value.value })),
+        };
+      });
+  }, [envelope.fields, selectedField?.id]);
 
   const onFieldDetectionComplete = (fields: NormalizedFieldWithContext[]) => {
     for (const field of fields) {
@@ -424,6 +448,24 @@ export const EnvelopeEditorFieldsPage = () => {
                   />
                 ))
                 .otherwise(() => null)}
+
+              {selectedField.type !== FieldType.FREE_SIGNATURE && (
+                <>
+                  <Separator className="my-4" />
+
+                  <EditorConditionalVisibilityField
+                    condition={getFieldCondition(selectedField.fieldMeta)}
+                    availableCheckboxFields={availableConditionCheckboxFields}
+                    onChange={(condition) =>
+                      updateSelectedFieldMeta({
+                        ...selectedField.fieldMeta,
+                        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+                        condition,
+                      } as TFieldMetaSchema)
+                    }
+                  />
+                </>
+              )}
             </div>
           </section>
         )}

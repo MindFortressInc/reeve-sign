@@ -24,7 +24,7 @@ import { DOCUMENT_AUDIT_LOG_TYPE, RECIPIENT_DIFF_TYPE } from '../../types/docume
 import type { TRecipientActionAuthTypes } from '../../types/document-auth';
 import { DocumentAccessAuth, ZRecipientAuthOptionsSchema } from '../../types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
-import { ZFieldMetaSchema } from '../../types/field-meta';
+import { type TFieldCondition, ZCheckboxFieldMeta, ZFieldMetaSchema } from '../../types/field-meta';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import type { ApiRequestMetadata } from '../../universal/extract-request-metadata';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
@@ -39,6 +39,12 @@ import {
   extractDocumentAuthMethods,
 } from '../../utils/document-auth';
 import { mapSecondaryIdToTemplateId } from '../../utils/envelope';
+import {
+  assertValidFieldConditionGraph,
+  extractFieldCondition,
+  getFieldCondition,
+  remapFieldConditionReferences,
+} from '../../utils/field-conditions';
 import { sendDocument } from '../document/send-document';
 import { validateFieldAuth } from '../document/validate-field-auth';
 import { incrementDocumentId } from '../envelope/increment-id';
@@ -67,6 +73,60 @@ export type CreateDocumentFromDirectTemplateOptions = {
 type CreatedDirectRecipientField = {
   field: Field & { signature?: Signature | null };
   derivedRecipientActionAuth?: TRecipientActionAuthTypes;
+};
+
+/**
+ * Direct-template submission is a single unauthenticated request: nothing is
+ * persisted yet, so conditional visibility must be resolved from the raw
+ * request/template shapes rather than the shared `field-conditions.ts` helpers
+ * (which assume persisted `Field` rows). Scoped to same-recipient conditions
+ * (the common "check this box to reveal this field of mine" case) — a condition
+ * whose controller belongs to a DIFFERENT, non-direct recipient can't have been
+ * decided by this same submission, so it fails closed to "not met" rather than
+ * guessing.
+ */
+const isDirectTemplateFieldConditionMet = (
+  condition: TFieldCondition,
+  directRecipientTemplateFields: Field[],
+  signedFieldValues: TSignFieldWithTokenMutationSchema[],
+): boolean => {
+  const controller = directRecipientTemplateFields.find((field) => field.id === condition.fieldId);
+
+  if (!controller || controller.type !== FieldType.CHECKBOX) {
+    return false;
+  }
+
+  const controllerMeta = ZCheckboxFieldMeta.safeParse(controller.fieldMeta);
+  const availableOptions = controllerMeta.success ? (controllerMeta.data.values ?? []) : [];
+
+  if (condition.optionIds.some((optionId) => !availableOptions.some((option) => option.id === optionId))) {
+    return false;
+  }
+
+  const submitted = signedFieldValues.find((value) => value.fieldId === controller.id);
+
+  if (!submitted?.value) {
+    return false;
+  }
+
+  let selectedValues: string[] = [];
+
+  try {
+    // V1-style checkbox encoding: a JSON array of selected option VALUE strings.
+    const parsed: unknown = JSON.parse(submitted.value);
+
+    if (Array.isArray(parsed)) {
+      selectedValues = parsed.filter((value): value is string => typeof value === 'string');
+    }
+  } catch {
+    return false;
+  }
+
+  const selectedOptionIds = availableOptions
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.id);
+
+  return condition.optionIds.some((optionId) => selectedOptionIds.includes(optionId));
 };
 
 export const ZCreateDocumentFromDirectTemplateResponseSchema = z.object({
@@ -216,9 +276,15 @@ export const createDocumentFromDirectTemplate = async ({
       }
 
       if (isRequiredField(templateField) && !signedFieldValue) {
-        throw new AppError(AppErrorCode.INVALID_BODY, {
-          message: 'Invalid, missing or changed fields',
-        });
+        const condition = getFieldCondition(templateField.fieldMeta);
+        const conditionMet =
+          !condition || isDirectTemplateFieldConditionMet(condition, directTemplateRecipient.fields, signedFieldValues);
+
+        if (conditionMet) {
+          throw new AppError(AppErrorCode.INVALID_BODY, {
+            message: 'Invalid, missing or changed fields',
+          });
+        }
       }
 
       if (templateField.type === FieldType.NAME && directRecipientName === undefined) {
@@ -385,7 +451,10 @@ export const createDocumentFromDirectTemplate = async ({
       },
     });
 
-    let nonDirectRecipientFieldsToCreate: Omit<Field, 'id' | 'secondaryId' | 'templateId'>[] = [];
+    let nonDirectRecipientFieldsToCreate: {
+      oldFieldId: number;
+      payload: Omit<Field, 'id' | 'secondaryId' | 'templateId'>;
+    }[] = [];
 
     Object.values(nonDirectTemplateRecipients).forEach((templateRecipient) => {
       const recipient = createdEnvelope.recipients.find((recipient) => recipient.email === templateRecipient.email);
@@ -396,30 +465,49 @@ export const createDocumentFromDirectTemplate = async ({
 
       nonDirectRecipientFieldsToCreate = nonDirectRecipientFieldsToCreate.concat(
         templateRecipient.fields.map((field) => ({
-          envelopeId: createdEnvelope.id,
-          envelopeItemId: oldEnvelopeItemToNewEnvelopeItemIdMap[field.envelopeItemId],
-          recipientId: recipient.id,
-          type: field.type,
-          page: field.page,
-          positionX: field.positionX,
-          positionY: field.positionY,
-          width: field.width,
-          height: field.height,
-          customText: '',
-          inserted: false,
-          fieldMeta: field.fieldMeta,
+          oldFieldId: field.id,
+          payload: {
+            envelopeId: createdEnvelope.id,
+            envelopeItemId: oldEnvelopeItemToNewEnvelopeItemIdMap[field.envelopeItemId],
+            recipientId: recipient.id,
+            type: field.type,
+            page: field.page,
+            positionX: field.positionX,
+            positionY: field.positionY,
+            width: field.width,
+            height: field.height,
+            customText: '',
+            inserted: false,
+            fieldMeta: field.fieldMeta,
+          },
         })),
       );
     });
 
-    await tx.field.createMany({
-      data: nonDirectRecipientFieldsToCreate.map((field) => ({
-        ...field,
-        fieldMeta: field.fieldMeta ? ZFieldMetaSchema.parse(field.fieldMeta) : undefined,
-      })),
-    });
+    // Individual creates (rather than createMany, and rather than nesting fields
+    // under the direct recipient's own `create`) across ALL three sub-groups below
+    // so every new field's real id can be recovered and correlated back to its
+    // source template field id — needed to remap any `fieldMeta.condition.fieldId`
+    // reference, including ones that cross between a non-direct recipient and the
+    // direct recipient.
+    const oldFieldIdToNewFieldId: Record<number, number> = {};
+    const allNewFields: Field[] = [];
 
-    // Create the direct recipient and their non signature fields.
+    await Promise.all(
+      nonDirectRecipientFieldsToCreate.map(async ({ oldFieldId, payload }) => {
+        const newField = await tx.field.create({
+          data: {
+            ...payload,
+            fieldMeta: payload.fieldMeta ? ZFieldMetaSchema.parse(payload.fieldMeta) : undefined,
+          },
+        });
+
+        oldFieldIdToNewFieldId[oldFieldId] = newField.id;
+        allNewFields.push(newField);
+      }),
+    );
+
+    // Create the direct recipient (fields created separately below).
     const createdDirectRecipient = await tx.recipient.create({
       data: {
         envelopeId: createdEnvelope.id,
@@ -435,37 +523,42 @@ export const createDocumentFromDirectTemplate = async ({
         sendStatus: SendStatus.SENT,
         signedAt: initialRequestTime,
         signingOrder: directTemplateRecipient.signingOrder,
-        fields: {
-          createMany: {
-            data: directTemplateNonSignatureFields.map(({ templateField, customText }) => {
-              let inserted = true;
-
-              // Custom logic for V2 to only insert if values exist.
-              if (directTemplateEnvelope.internalVersion === 2) {
-                inserted = customText !== '';
-              }
-
-              return {
-                envelopeId: createdEnvelope.id,
-                envelopeItemId: oldEnvelopeItemToNewEnvelopeItemIdMap[templateField.envelopeItemId],
-                type: templateField.type,
-                page: templateField.page,
-                positionX: templateField.positionX,
-                positionY: templateField.positionY,
-                width: templateField.width,
-                height: templateField.height,
-                customText: customText ?? '',
-                inserted,
-                fieldMeta: templateField.fieldMeta || Prisma.JsonNull,
-              };
-            }),
-          },
-        },
-      },
-      include: {
-        fields: true,
       },
     });
+
+    // Create the direct recipient's non-signature fields.
+    const createdDirectRecipientNonSignatureFields = await Promise.all(
+      directTemplateNonSignatureFields.map(async ({ templateField, customText }) => {
+        let inserted = true;
+
+        // Custom logic for V2 to only insert if values exist.
+        if (directTemplateEnvelope.internalVersion === 2) {
+          inserted = customText !== '';
+        }
+
+        const newField = await tx.field.create({
+          data: {
+            envelopeId: createdEnvelope.id,
+            envelopeItemId: oldEnvelopeItemToNewEnvelopeItemIdMap[templateField.envelopeItemId],
+            recipientId: createdDirectRecipient.id,
+            type: templateField.type,
+            page: templateField.page,
+            positionX: templateField.positionX,
+            positionY: templateField.positionY,
+            width: templateField.width,
+            height: templateField.height,
+            customText: customText ?? '',
+            inserted,
+            fieldMeta: templateField.fieldMeta || Prisma.JsonNull,
+          },
+        });
+
+        oldFieldIdToNewFieldId[templateField.id] = newField.id;
+        allNewFields.push(newField);
+
+        return newField;
+      }),
+    );
 
     // Create any direct recipient signature fields.
     // Note: It's done like this because we can't nest things in createMany.
@@ -502,6 +595,9 @@ export const createDocumentFromDirectTemplate = async ({
           },
         });
 
+        oldFieldIdToNewFieldId[templateField.id] = field.id;
+        allNewFields.push(field);
+
         return {
           field,
           derivedRecipientActionAuth,
@@ -509,8 +605,21 @@ export const createDocumentFromDirectTemplate = async ({
       }),
     );
 
+    await remapFieldConditionReferences({ tx, newFields: allNewFields, oldFieldIdToNewFieldId });
+
+    // The direct recipient is marked SIGNED immediately (this whole request IS
+    // their completion). A malformed/dangling/cyclic condition graph must not let
+    // document creation silently succeed — re-fetch post-remap and assert.
+    const allNewFieldsAfterRemap = await tx.field.findMany({ where: { envelopeId: createdEnvelope.id } });
+
+    const directRecipientConditionedFields = allNewFieldsAfterRemap.filter(
+      (field) => field.recipientId === createdDirectRecipient.id && extractFieldCondition(field.fieldMeta).present,
+    );
+
+    assertValidFieldConditionGraph(directRecipientConditionedFields, allNewFieldsAfterRemap);
+
     const createdDirectRecipientFields: CreatedDirectRecipientField[] = [
-      ...createdDirectRecipient.fields.map((field) => ({
+      ...createdDirectRecipientNonSignatureFields.map((field) => ({
         field,
         derivedRecipientActionAuth: undefined,
       })),

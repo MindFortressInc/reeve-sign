@@ -6,6 +6,10 @@ import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-log
 import { parseFileUploadCustomText } from '@documenso/lib/types/field-file-upload';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
+import {
+  findCompletedDependentsAffectedByControllerChange,
+  isFieldVisible,
+} from '@documenso/lib/utils/field-conditions';
 import { prisma } from '@documenso/prisma';
 import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { match } from 'ts-pattern';
@@ -157,9 +161,146 @@ export const signEnvelopeFieldRoute = procedure
       });
     }
 
-    // Early return for uninserting fields.
-    if (!insertionValues.inserted) {
-      return await prisma.$transaction(async (tx) => {
+    // Uninserting is itself a controller-value change if `field` is a checkbox
+    // (e.g. "clear all my selections"), so it goes through the same lock + guard
+    // as an insert below rather than returning early.
+    const isUninserting = !insertionValues.inserted;
+
+    const derivedRecipientActionAuth = isUninserting
+      ? null
+      : await validateFieldAuth({
+          documentAuthOptions: envelope.authOptions,
+          recipient,
+          field,
+          userId: user?.id,
+          authOptions,
+        });
+
+    const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
+
+    let signatureImageAsBase64 = null;
+    let typedSignature = null;
+
+    if (!isUninserting && field.type === FieldType.SIGNATURE) {
+      if (fieldValue.type !== FieldType.SIGNATURE) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Field ${fieldId} is not a signature field`,
+        });
+      }
+
+      if (fieldValue.value) {
+        const isBase64 = isBase64Image(fieldValue.value);
+
+        signatureImageAsBase64 = isBase64 ? fieldValue.value : null;
+        typedSignature = !isBase64 ? fieldValue.value : null;
+      }
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Take an exclusive lock on the envelope row before reading anything that
+      // this write's condition checks depend on. `complete-document-with-token.ts`
+      // takes the same lock before freezing a recipient's completion, so the two
+      // can never interleave: whichever of "a controller changes" or "a dependent
+      // recipient completes" commits first is fully visible to the other by the
+      // time it re-reads under the lock. Without this, two concurrent
+      // transactions could each read the other's stale pre-commit state and both
+      // pass their own check, landing the envelope in an inconsistent state (e.g.
+      // a checked "has a co-buyer" box with no co-buyer signature).
+      await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
+
+      // Re-verify every status check made above against fresh, lock-protected
+      // state. Those earlier checks used a snapshot read before this transaction
+      // (and before waiting for the lock) — without re-checking, a request that
+      // began before its own recipient (or the document) was completed elsewhere
+      // could sit waiting for the lock and then blindly write a field for an
+      // already-signed recipient once it finally acquires it.
+      const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+        where: { id: envelope.id },
+        select: { status: true, deletedAt: true },
+      });
+
+      if (freshEnvelope.deletedAt) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Document ${envelope.id} has been deleted`,
+        });
+      }
+
+      if (freshEnvelope.status !== DocumentStatus.PENDING) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Document ${envelope.id} must be pending for signing`,
+        });
+      }
+
+      const freshRecipient = await tx.recipient.findUniqueOrThrow({
+        where: { id: recipient.id },
+        select: { signingStatus: true },
+      });
+
+      const freshFieldOwner =
+        field.recipientId === recipient.id
+          ? freshRecipient
+          : await tx.recipient.findUniqueOrThrow({
+              where: { id: field.recipientId },
+              select: { signingStatus: true },
+            });
+
+      if (
+        freshRecipient.signingStatus === SigningStatus.SIGNED ||
+        freshFieldOwner.signingStatus === SigningStatus.SIGNED
+      ) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} has already signed`,
+        });
+      }
+
+      const freshEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
+
+      const freshField = freshEnvelopeFields.find((f) => f.id === field.id);
+
+      if (!freshField) {
+        throw new AppError(AppErrorCode.NOT_FOUND, { message: `Field ${fieldId} not found` });
+      }
+
+      if (freshField.fieldMeta?.readOnly) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Field ${fieldId} is read only`,
+        });
+      }
+
+      const signedRecipientIds = new Set(
+        (
+          await tx.recipient.findMany({
+            where: { envelopeId: envelope.id, signingStatus: SigningStatus.SIGNED },
+            select: { id: true },
+          })
+        ).map((r) => r.id),
+      );
+
+      if (!isUninserting && !isFieldVisible(field, freshEnvelopeFields)) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Field ${fieldId} is not currently visible and cannot be signed`,
+        });
+      }
+
+      if (field.type === FieldType.CHECKBOX) {
+        const proposedCustomText = isUninserting ? '' : insertionValues.customText;
+
+        const affectedCompletedDependents = findCompletedDependentsAffectedByControllerChange({
+          controllerFieldId: field.id,
+          proposedCustomText,
+          allEnvelopeFields: freshEnvelopeFields,
+          signedRecipientIds,
+        });
+
+        if (affectedCompletedDependents.length > 0) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message:
+              'This selection cannot be changed because it would alter a requirement or remove consent for a recipient who has already completed signing',
+          });
+        }
+      }
+
+      if (isUninserting) {
         const updatedField = await tx.field.update({
           where: {
             id: field.id,
@@ -197,38 +338,8 @@ export const signEnvelopeFieldRoute = procedure
         return {
           signedField: updatedField,
         };
-      });
-    }
-
-    const derivedRecipientActionAuth = await validateFieldAuth({
-      documentAuthOptions: envelope.authOptions,
-      recipient,
-      field,
-      userId: user?.id,
-      authOptions,
-    });
-
-    const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
-
-    let signatureImageAsBase64 = null;
-    let typedSignature = null;
-
-    if (field.type === FieldType.SIGNATURE) {
-      if (fieldValue.type !== FieldType.SIGNATURE) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Field ${fieldId} is not a signature field`,
-        });
       }
 
-      if (fieldValue.value) {
-        const isBase64 = isBase64Image(fieldValue.value);
-
-        signatureImageAsBase64 = isBase64 ? fieldValue.value : null;
-        typedSignature = !isBase64 ? fieldValue.value : null;
-      }
-    }
-
-    return await prisma.$transaction(async (tx) => {
       const updatedField = await tx.field.update({
         where: {
           id: field.id,

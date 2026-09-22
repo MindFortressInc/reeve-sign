@@ -65,6 +65,22 @@ const ZFieldMetaLetterSpacing = z.coerce
   .describe('The spacing between each character');
 const ZFieldMetaVerticalAlign = z.enum(['top', 'middle', 'bottom']).describe('The vertical alignment of the text');
 
+/**
+ * A field-level visibility condition.
+ *
+ * The field carrying this condition is only visible (and only required, signable,
+ * and included in the sealed output) while the controlling checkbox field
+ * (`fieldId`, must be a CHECKBOX field in the same envelope) has at least one of
+ * `optionIds` currently checked. `optionIds` references the controlling field's
+ * `fieldMeta.values[].id` (stable across option reordering), not a positional index.
+ */
+export const ZFieldCondition = z.object({
+  fieldId: z.number(),
+  optionIds: z.array(z.number()).min(1),
+});
+
+export type TFieldCondition = z.infer<typeof ZFieldCondition>;
+
 export const ZBaseFieldMeta = z.object({
   label: z.string().optional(),
   placeholder: z.string().optional(),
@@ -72,6 +88,7 @@ export const ZBaseFieldMeta = z.object({
   readOnly: z.boolean().optional(),
   fontSize: z.number().min(8).max(96).default(DEFAULT_FIELD_FONT_SIZE).optional(),
   overflow: ZFieldOverflowMode.optional(),
+  condition: ZFieldCondition.nullish(),
 });
 
 export type TBaseFieldMeta = z.infer<typeof ZBaseFieldMeta>;

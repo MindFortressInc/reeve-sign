@@ -31,6 +31,11 @@ import { fieldsContainUnsignedRequiredField } from '../../../utils/advanced-fiel
 import { isDocumentCompleted } from '../../../utils/document';
 import { createDocumentAuditLogData } from '../../../utils/document-audit-logs';
 import { mapDocumentIdToSecondaryId } from '../../../utils/envelope';
+import {
+  assertValidFieldConditionGraph,
+  fieldsContainUnsignedRequiredVisibleField,
+  filterVisibleFields,
+} from '../../../utils/field-conditions';
 import type { JobRunIO } from '../../client/_internal/job';
 import type { TSealDocumentJobDefinition } from './seal-document';
 
@@ -122,9 +127,24 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
     // Get the rejection reason from the rejected recipient
     const rejectionReason = rejectedRecipient?.rejectionReason ?? '';
 
+    // Conditional visibility is a V2-only feature (V1 rendering/signing never
+    // evaluates it) — V1 must behave exactly as it did before this feature
+    // existed, with no visibility-aware exemption and no graph validation.
+    const envelopeSupportsConditions = envelope.internalVersion === 2;
+
     // Skip the field check if the document is rejected
-    if (!isRejected && fieldsContainUnsignedRequiredField(fields)) {
-      throw new Error(`Document ${envelope.id} has unsigned required fields`);
+    if (!isRejected) {
+      if (envelopeSupportsConditions) {
+        // A corrupted condition graph must never let a document seal by silently
+        // treating an unresolvable field as "hidden, hence exempt".
+        assertValidFieldConditionGraph(fields, fields);
+
+        if (fieldsContainUnsignedRequiredVisibleField(fields, fields)) {
+          throw new Error(`Document ${envelope.id} has unsigned required fields`);
+        }
+      } else if (fieldsContainUnsignedRequiredField(fields)) {
+        throw new Error(`Document ${envelope.id} has unsigned required fields`);
+      }
     }
 
     if (isResealing) {
@@ -181,12 +201,22 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
 
     const newDocumentData: Array<{ oldDocumentDataId: string; newDocumentDataId: string }> = [];
 
-    for (const { envelopeItem, pdfData } of prefetchedItems) {
-      const envelopeItemFields = envelope.envelopeItems.find((item) => item.id === envelopeItem.id)?.field;
+    // Hidden field values must never reach the sealed PDF, the signing
+    // certificate, or the audit-log PDF. `assertValidFieldConditionGraph` above
+    // already guarantees every condition in `fields` resolved cleanly (no
+    // dangling/malformed/cyclic entries), so a plain visibility filter is safe.
+    // V1 has no visibility concept at all — pass every field through unchanged.
+    const visibleFields = envelopeSupportsConditions ? filterVisibleFields(fields, fields) : fields;
 
-      if (!envelopeItemFields) {
+    for (const { envelopeItem, pdfData } of prefetchedItems) {
+      const unfilteredEnvelopeItemFields = envelope.envelopeItems.find((item) => item.id === envelopeItem.id)?.field;
+
+      if (!unfilteredEnvelopeItemFields) {
         throw new Error(`Envelope item fields not found for envelope item ${envelopeItem.id}`);
       }
+
+      const visibleFieldIds = new Set(visibleFields.map((field) => field.id));
+      const envelopeItemFields = unfilteredEnvelopeItemFields.filter((field) => visibleFieldIds.has(field.id));
 
       let certificateDoc: PDF | null = null;
       let auditLogDoc: PDF | null = null;
@@ -211,7 +241,7 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
             status: finalEnvelopeStatus,
           },
           recipients: envelope.recipients,
-          fields,
+          fields: visibleFields,
           language: envelope.documentMeta.language,
           envelopeOwner: {
             email: envelope.user.email,

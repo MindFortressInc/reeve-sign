@@ -4,7 +4,7 @@ import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-log
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { prisma } from '@documenso/prisma';
 import { msg } from '@lingui/core/macro';
-import { EnvelopeType, SendStatus } from '@prisma/client';
+import { EnvelopeType, SendStatus, SigningStatus } from '@prisma/client';
 import { createElement } from 'react';
 
 import { getI18nInstance } from '../../client-only/providers/i18n-server';
@@ -12,6 +12,10 @@ import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
 import { createDocumentAuditLogData } from '../../utils/document-audit-logs';
+import {
+  findFieldsWithDanglingConditions,
+  partitionDanglingDependentsBySignedRecipient,
+} from '../../utils/field-conditions';
 import { canRecipientBeModified, isRecipientEmailValidForSending } from '../../utils/recipients';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 import { buildTeamWhereQuery } from '../../utils/teams';
@@ -44,9 +48,6 @@ export const deleteEnvelopeRecipient = async ({
       documentMeta: true,
       team: true,
       recipients: {
-        where: {
-          id: recipientId,
-        },
         include: {
           fields: true,
         },
@@ -83,9 +84,9 @@ export const deleteEnvelopeRecipient = async ({
     });
   }
 
-  const recipientToDelete = envelope.recipients[0];
+  const recipientToDelete = envelope.recipients.find((recipient) => recipient.id === recipientId);
 
-  if (!recipientToDelete || recipientToDelete.id !== recipientId) {
+  if (!recipientToDelete) {
     throw new AppError(AppErrorCode.NOT_FOUND, {
       message: 'Recipient not found',
     });
@@ -108,6 +109,66 @@ export const deleteEnvelopeRecipient = async ({
   });
 
   const deletedRecipient = await prisma.$transaction(async (tx) => {
+    // Lock the envelope row and re-read fresh state, for the same reasons as
+    // `delete-envelope-field.ts` / `update-envelope-fields.ts`: this delete's
+    // condition-integrity check must never race a concurrent completion or
+    // controller mutation.
+    await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
+
+    const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+      where: { id: envelope.id },
+      select: { completedAt: true },
+    });
+
+    if (freshEnvelope.completedAt) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, { message: 'Document already complete' });
+    }
+
+    const freshRecipients = await tx.recipient.findMany({
+      where: { envelopeId: envelope.id },
+      include: { fields: true },
+    });
+
+    const freshRecipientToDelete = freshRecipients.find((r) => r.id === recipientId);
+
+    if (!freshRecipientToDelete) {
+      throw new AppError(AppErrorCode.NOT_FOUND, { message: 'Recipient not found' });
+    }
+
+    if (!canRecipientBeModified(freshRecipientToDelete, freshRecipientToDelete.fields)) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message: 'Recipient has already interacted with the document.',
+      });
+    }
+
+    // The recipient's fields cascade-delete at the DB level (Field.recipient
+    // onDelete: Cascade). Any OTHER field whose condition depends on one of them
+    // would otherwise be left with a dangling reference — unless that dependent
+    // belongs to an already-signed recipient, in which case silently clearing it
+    // would alter their frozen obligations/consent, so the whole delete must be
+    // rejected instead.
+    const deletedFieldIds = new Set(freshRecipientToDelete.fields.map((field) => field.id));
+    const remainingFields = freshRecipients
+      .flatMap((recipient) => recipient.fields)
+      .filter((field) => !deletedFieldIds.has(field.id));
+    const danglingDependents = findFieldsWithDanglingConditions(remainingFields, remainingFields);
+
+    const signedRecipientIds = new Set(
+      freshRecipients.filter((r) => r.signingStatus === SigningStatus.SIGNED && r.id !== recipientId).map((r) => r.id),
+    );
+
+    const { safeToClear, mustReject } = partitionDanglingDependentsBySignedRecipient(
+      danglingDependents,
+      signedRecipientIds,
+    );
+
+    if (mustReject.length > 0) {
+      throw new AppError(AppErrorCode.INVALID_REQUEST, {
+        message:
+          'This recipient cannot be deleted because it would change a requirement or remove consent for a recipient who has already completed signing',
+      });
+    }
+
     if (envelope.type === EnvelopeType.DOCUMENT) {
       await tx.documentAuditLog.create({
         data: createDocumentAuditLogData({
@@ -124,12 +185,27 @@ export const deleteEnvelopeRecipient = async ({
       });
     }
 
-    return await tx.recipient.delete({
+    const deleted = await tx.recipient.delete({
       where: {
         id: recipientId,
         envelope: envelopeWhereInput,
       },
     });
+
+    for (const dependent of safeToClear) {
+      const currentMeta =
+        typeof dependent.fieldMeta === 'object' && dependent.fieldMeta !== null ? dependent.fieldMeta : {};
+
+      await tx.field.update({
+        where: { id: dependent.id },
+        data: {
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          fieldMeta: { ...currentMeta, condition: null } as PrismaJson.FieldMeta,
+        },
+      });
+    }
+
+    return deleted;
   });
 
   const isRecipientRemovedEmailEnabled = extractDerivedDocumentEmailSettings(envelope.documentMeta).recipientRemoved;

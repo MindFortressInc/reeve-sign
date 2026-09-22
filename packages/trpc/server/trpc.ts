@@ -326,6 +326,10 @@ export const procedureMiddleware = t.middleware(async ({ ctx, next, path }) => {
  * Routers and Procedures
  */
 export const router = t.router;
+// Exposes a server-side caller factory (no HTTP hop) for tests that need to
+// exercise a real route's actual resolver, guards, and transaction — not a
+// hand-rolled re-implementation of them.
+export const createCallerFactory = t.createCallerFactory;
 export const procedure = t.procedure.use(procedureMiddleware);
 export const authenticatedProcedure = t.procedure.use(authenticatedMiddleware);
 // While this is functionally the same as `procedure`, it's useful for indicating purpose

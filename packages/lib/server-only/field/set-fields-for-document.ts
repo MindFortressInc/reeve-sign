@@ -17,11 +17,12 @@ import {
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData, diffFieldChanges } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType, type Field, FieldType } from '@prisma/client';
+import { EnvelopeType, type Field, FieldType, SigningStatus } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { resolveBulkFieldConditions } from '../../utils/field-conditions';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
@@ -50,19 +51,7 @@ export const setFieldsForDocument = async ({
 
   const envelope = await prisma.envelope.findFirst({
     where: envelopeWhereInput,
-    include: {
-      recipients: true,
-      envelopeItems: {
-        select: {
-          id: true,
-        },
-      },
-      fields: {
-        include: {
-          recipient: true,
-        },
-      },
-    },
+    select: { id: true, type: true, secondaryId: true },
   });
 
   if (!envelope) {
@@ -71,62 +60,91 @@ export const setFieldsForDocument = async ({
     });
   }
 
-  if (envelope.completedAt) {
-    throw new AppError(AppErrorCode.INVALID_REQUEST, {
-      message: 'Document already complete',
+  const { persistedFields, removedFields, existingFields } = await prisma.$transaction(async (tx) => {
+    // Lock the envelope row and re-read everything below fresh — this bulk write
+    // (and its condition-integrity check) must never race a concurrent controller
+    // mutation, completion, or another authoring edit.
+    await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
+
+    const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+      where: { id: envelope.id },
+      include: {
+        recipients: true,
+        envelopeItems: { select: { id: true } },
+        fields: { include: { recipient: true } },
+      },
     });
-  }
 
-  const existingFields = envelope.fields;
-
-  const removedFields = existingFields.filter(
-    (existingField) => !fields.find((field) => field.id === existingField.id),
-  );
-
-  const linkedFields = fields.map((field) => {
-    const existing = existingFields.find((existingField) => existingField.id === field.id);
-
-    const recipient = envelope.recipients.find((recipient) => recipient.id === field.recipientId);
-
-    // Check whether the field is being attached to an allowed envelope item.
-    const foundEnvelopeItem = envelope.envelopeItems.find((envelopeItem) => envelopeItem.id === field.envelopeItemId);
-
-    if (!foundEnvelopeItem) {
+    if (freshEnvelope.completedAt) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Envelope item ${field.envelopeItemId} not found`,
+        message: 'Document already complete',
       });
     }
 
-    // Each field MUST have a recipient associated with it.
-    if (!recipient) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Recipient not found for field ${field.id}`,
-      });
-    }
+    const existingFields = freshEnvelope.fields;
 
-    // Check whether the existing field can be modified.
-    if (existing && hasFieldBeenChanged(existing, field) && !canRecipientFieldsBeModified(recipient, existingFields)) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: 'Cannot modify a field where the recipient has already interacted with the document',
-      });
-    }
+    const removedFields = existingFields.filter(
+      (existingField) => !fields.find((field) => field.id === existingField.id),
+    );
 
-    // Prevent creating new fields when recipient has interacted with the document.
-    if (!existing && !canRecipientFieldsBeModified(recipient, existingFields)) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: 'Cannot modify a field where the recipient has already interacted with the document',
-      });
-    }
+    const signedRecipientIds = new Set(
+      freshEnvelope.recipients.filter((r) => r.signingStatus === SigningStatus.SIGNED).map((r) => r.id),
+    );
 
-    return {
-      ...field,
-      _persisted: existing,
-      _recipient: recipient,
-    };
-  });
+    const resolvedFields = resolveBulkFieldConditions(fields, existingFields, {
+      internalVersion: freshEnvelope.internalVersion,
+      signedRecipientIds,
+    });
 
-  const persistedFields = await prisma.$transaction(async (tx) => {
-    return await Promise.all(
+    const linkedFields = resolvedFields.map((field) => {
+      const existing = existingFields.find((existingField) => existingField.id === field.id);
+
+      const recipient = freshEnvelope.recipients.find((recipient) => recipient.id === field.recipientId);
+
+      // Check whether the field is being attached to an allowed envelope item.
+      const foundEnvelopeItem = freshEnvelope.envelopeItems.find(
+        (envelopeItem) => envelopeItem.id === field.envelopeItemId,
+      );
+
+      if (!foundEnvelopeItem) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Envelope item ${field.envelopeItemId} not found`,
+        });
+      }
+
+      // Each field MUST have a recipient associated with it.
+      if (!recipient) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient not found for field ${field.id}`,
+        });
+      }
+
+      // Check whether the existing field can be modified.
+      if (
+        existing &&
+        hasFieldBeenChanged(existing, field) &&
+        !canRecipientFieldsBeModified(recipient, existingFields)
+      ) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Cannot modify a field where the recipient has already interacted with the document',
+        });
+      }
+
+      // Prevent creating new fields when recipient has interacted with the document.
+      if (!existing && !canRecipientFieldsBeModified(recipient, existingFields)) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Cannot modify a field where the recipient has already interacted with the document',
+        });
+      }
+
+      return {
+        ...field,
+        _persisted: existing,
+        _recipient: recipient,
+      };
+    });
+
+    const persistedFields = await Promise.all(
       linkedFields.map(async (field) => {
         const fieldSignerEmail = field._recipient.email.toLowerCase();
 
@@ -289,10 +307,8 @@ export const setFieldsForDocument = async ({
         };
       }),
     );
-  });
 
-  if (removedFields.length > 0) {
-    await prisma.$transaction(async (tx) => {
+    if (removedFields.length > 0) {
       await tx.field.deleteMany({
         where: {
           id: {
@@ -316,8 +332,10 @@ export const setFieldsForDocument = async ({
           }),
         ),
       });
-    });
-  }
+    }
+
+    return { persistedFields, removedFields, existingFields };
+  });
 
   // Filter out fields that have been removed or have been updated.
   const mappedFilteredFields = existingFields

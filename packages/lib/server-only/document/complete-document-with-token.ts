@@ -4,6 +4,10 @@ import { DOCUMENT_AUDIT_LOG_TYPE, RECIPIENT_DIFF_TYPE } from '@documenso/lib/typ
 import type { RequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { fieldsContainUnsignedRequiredField } from '@documenso/lib/utils/advanced-fields-helpers';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
+import {
+  assertValidFieldConditionGraph,
+  fieldsContainUnsignedRequiredVisibleField,
+} from '@documenso/lib/utils/field-conditions';
 import { prisma } from '@documenso/prisma';
 import {
   DocumentSigningOrder,
@@ -272,11 +276,61 @@ export const completeDocumentWithToken = async ({
     });
   }
 
-  if (fieldsContainUnsignedRequiredField(fields)) {
-    throw new Error(`Recipient ${recipient.id} has unsigned fields`);
-  }
-
   await prisma.$transaction(async (tx) => {
+    // Take an exclusive lock on the envelope row before re-reading anything, and
+    // re-derive every check below from that locked, fresh read rather than the
+    // snapshots taken before this transaction. `sign-envelope-field.ts` takes the
+    // same lock before allowing a checkbox controller to change, so the two can
+    // never race: this completion either fully sees a concurrent controller
+    // change (and correctly blocks on a newly-required field) or fully precedes
+    // it (in which case that mutation will see THIS recipient as signed and be
+    // rejected if it would alter their obligations/consent). The re-check also
+    // rejects a duplicate/racing completion of this SAME recipient: a second
+    // concurrent request for the same token would otherwise wait for the lock and
+    // then blindly re-run the whole completion against a stale "not yet signed"
+    // snapshot.
+    await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
+
+    const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+      where: { id: envelope.id },
+      select: { status: true, internalVersion: true },
+    });
+    const freshRecipient = await tx.recipient.findUniqueOrThrow({
+      where: { id: recipient.id },
+      select: { signingStatus: true },
+    });
+
+    if (freshEnvelope.status !== DocumentStatus.PENDING) {
+      throw new Error(`Document ${envelope.id} must be pending`);
+    }
+
+    if (freshRecipient.signingStatus === SigningStatus.SIGNED) {
+      throw new Error(`Recipient ${recipient.id} has already signed`);
+    }
+
+    if (freshRecipient.signingStatus === SigningStatus.REJECTED) {
+      throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+        message: 'Recipient has already rejected the document',
+        statusCode: 400,
+      });
+    }
+
+    const allEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
+    const freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
+
+    // Conditional visibility is a V2-only feature (V1 rendering/signing never
+    // evaluates it), so only apply the visibility-aware exemption for V2 —
+    // anything else must behave EXACTLY as before this feature existed.
+    if (freshEnvelope.internalVersion === 2) {
+      assertValidFieldConditionGraph(freshRecipientFields, allEnvelopeFields);
+
+      if (fieldsContainUnsignedRequiredVisibleField(freshRecipientFields, allEnvelopeFields)) {
+        throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+      }
+    } else if (fieldsContainUnsignedRequiredField(freshRecipientFields)) {
+      throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+    }
+
     await tx.recipient.update({
       where: {
         id: recipient.id,

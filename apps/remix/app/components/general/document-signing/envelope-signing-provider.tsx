@@ -6,6 +6,7 @@ import type { EnvelopeForSigningResponse } from '@documenso/lib/server-only/enve
 import type { TRecipientActionAuth } from '@documenso/lib/types/document-auth';
 import { isFieldUnsignedAndRequired, isRequiredField } from '@documenso/lib/utils/advanced-fields-helpers';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
+import { filterVisibleFields, isFieldVisible } from '@documenso/lib/utils/field-conditions';
 import { trpc } from '@documenso/trpc/react';
 import type { TSignEnvelopeFieldValue } from '@documenso/trpc/server/envelope-router/sign-envelope-field.types';
 import { EnvelopeType, type Field, FieldType, type Recipient, RecipientRole, SigningStatus } from '@prisma/client';
@@ -195,11 +196,23 @@ export const EnvelopeSigningProvider = ({
   );
 
   /**
+   * Every field in the envelope, across all recipients — the reference graph
+   * conditional visibility is resolved against. Recomputed whenever any
+   * recipient's fields change (e.g. right after this recipient — or, for an
+   * already-committed controller, another recipient earlier in signing order —
+   * inserts/clears a checkbox), so a controlling checkbox reveals/hides its
+   * dependents on the same render, with no extra round trip.
+   */
+  const allEnvelopeFields = useMemo(() => envelope.recipients.flatMap((r) => r.fields), [envelope.recipients]);
+
+  /**
    * The fields that are still required to be signed by the actual recipient.
+   * Excludes fields currently hidden by an unmet (or invalid — fail closed,
+   * consistent with the server-side lenient read) conditional visibility.
    */
   const recipientFieldsRemaining = useMemo(() => {
     const requiredFields = envelopeData.recipient.fields
-      .filter((field) => isFieldUnsignedAndRequired(field))
+      .filter((field) => isFieldUnsignedAndRequired(field) && isFieldVisible(field, allEnvelopeFields))
       .map((field) => {
         const envelopeItem = envelope.envelopeItems.find((item) => item.id === field.envelopeItemId);
 
@@ -219,21 +232,29 @@ export const EnvelopeSigningProvider = ({
       [prop('page'), 'asc'],
       [prop('positionY'), 'asc'],
     );
-  }, [envelopeData.recipient.fields]);
+  }, [envelopeData.recipient.fields, allEnvelopeFields]);
 
   /**
-   * All the required fields for the actual recipient.
+   * All the required fields for the actual recipient, excluding any currently
+   * hidden by an unmet condition.
    */
   const requiredRecipientFields = useMemo(() => {
-    return envelopeData.recipient.fields.filter((field) => isRequiredField(field));
-  }, [envelopeData.recipient.fields]);
+    return envelopeData.recipient.fields.filter(
+      (field) => isRequiredField(field) && isFieldVisible(field, allEnvelopeFields),
+    );
+  }, [envelopeData.recipient.fields, allEnvelopeFields]);
 
   /**
-   * All the fields for the actual recipient.
+   * All CURRENTLY VISIBLE fields for the actual recipient. This is the single
+   * choke point that makes conditional visibility "native and immediate" on the
+   * client: `EnvelopeSignerPageRenderer` renders exactly this list, so a field
+   * hidden by an unmet condition is never drawn on the Konva canvas at all (not
+   * merely styled hidden), and reveals the instant its controller's value
+   * changes in local state — no server round trip required to see it appear.
    */
   const recipientFields = useMemo(() => {
-    return envelopeData.recipient.fields;
-  }, [envelopeData.recipient.fields]);
+    return filterVisibleFields(envelopeData.recipient.fields, allEnvelopeFields);
+  }, [envelopeData.recipient.fields, allEnvelopeFields]);
 
   /**
    * Assistant recipients are those that have a signing order after the assistant.
@@ -287,7 +308,7 @@ export const EnvelopeSigningProvider = ({
         },
       })),
     )
-    .filter((field) => field.inserted);
+    .filter((field) => field.inserted && isFieldVisible(field, allEnvelopeFields));
 
   const nextRecipient = useMemo(() => {
     if (!envelope.documentMeta.signingOrder || envelope.documentMeta.signingOrder !== 'SEQUENTIAL') {
