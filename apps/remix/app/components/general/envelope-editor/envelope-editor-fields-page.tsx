@@ -19,7 +19,7 @@ import {
 } from '@documenso/lib/types/field-meta';
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
 import { getFieldCondition } from '@documenso/lib/utils/field-conditions';
-import { canRecipientFieldsBeModified } from '@documenso/lib/utils/recipients';
+import { canRecipientFieldsBeModified, compareRecipientsBySigningOrder } from '@documenso/lib/utils/recipients';
 import { AnimateGenericFadeInOut } from '@documenso/ui/components/animate/animate-generic-fade-in-out';
 import { cn } from '@documenso/ui/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
@@ -127,15 +127,20 @@ export const EnvelopeEditorFieldsPage = () => {
    * is already over, so a dependent gated on it could never be revealed in
    * time for the earlier recipient to sign it — a structural deadlock, not
    * just an unmet condition. Same-recipient and earlier-recipient
-   * controllers remain eligible. Recipients with no signing order set are
-   * left unrestricted (nothing to compare against).
+   * controllers remain eligible. Eligibility is decided by each recipient's
+   * actual sequential position — `compareRecipientsBySigningOrder`, matching
+   * the DB-level ordering the signing provider uses (null signing order
+   * sorts LAST, equal orders tie-broken by recipient id) — not by comparing
+   * raw `signingOrder` values directly.
    */
   const availableConditionCheckboxFields = useMemo(() => {
     const isSequential = envelope.documentMeta.signingOrder === DocumentSigningOrder.SEQUENTIAL;
 
-    const selectedFieldRecipientSigningOrder = envelope.recipients.find(
+    const sortedRecipients = [...envelope.recipients].sort(compareRecipientsBySigningOrder);
+
+    const selectedFieldRecipientPosition = sortedRecipients.findIndex(
       (recipient) => recipient.id === selectedField?.recipientId,
-    )?.signingOrder;
+    );
 
     return envelope.fields
       .filter(
@@ -143,18 +148,15 @@ export const EnvelopeEditorFieldsPage = () => {
           field.type === FieldType.CHECKBOX && field.id !== undefined && field.id !== selectedField?.id,
       )
       .filter((field) => {
-        if (!isSequential || selectedFieldRecipientSigningOrder == null) {
+        if (!isSequential || selectedFieldRecipientPosition === -1) {
           return true;
         }
 
-        const controllerRecipientSigningOrder = envelope.recipients.find(
+        const controllerRecipientPosition = sortedRecipients.findIndex(
           (recipient) => recipient.id === field.recipientId,
-        )?.signingOrder;
-
-        return (
-          controllerRecipientSigningOrder == null ||
-          controllerRecipientSigningOrder <= selectedFieldRecipientSigningOrder
         );
+
+        return controllerRecipientPosition === -1 || controllerRecipientPosition <= selectedFieldRecipientPosition;
       })
       .map((field) => {
         const meta = field.fieldMeta as TCheckboxFieldMeta | undefined;

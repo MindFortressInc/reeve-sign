@@ -238,11 +238,15 @@ export const completeDocumentWithToken = async ({
       });
 
       if (freshEnvelope.status !== DocumentStatus.PENDING) {
-        throw new Error(`Document ${envelope.id} must be pending`);
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Document ${envelope.id} must be pending`,
+        });
       }
 
       if (freshRecipient.signingStatus === SigningStatus.SIGNED) {
-        throw new Error(`Recipient ${recipient.id} has already signed`);
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} has already signed`,
+        });
       }
 
       if (freshRecipient.signingStatus === SigningStatus.REJECTED) {
@@ -331,10 +335,14 @@ export const completeDocumentWithToken = async ({
         assertValidFieldConditionGraph(freshRecipientFields, allEnvelopeFields);
 
         if (fieldsContainUnsignedRequiredVisibleField(freshRecipientFields, allEnvelopeFields)) {
-          throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Recipient ${recipient.id} has unsigned fields`,
+          });
         }
       } else if (fieldsContainUnsignedRequiredField(freshRecipientFields)) {
-        throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} has unsigned fields`,
+        });
       }
 
       await tx.recipient.update({
