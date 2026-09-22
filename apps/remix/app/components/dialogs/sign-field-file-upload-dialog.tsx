@@ -124,7 +124,17 @@ export const SignFieldFileUploadDialog = createCallable<
           <input
             type="file"
             accept={ALLOWED_MIME_TYPES.join(',')}
-            onChange={(event) => void onFileSelected(event.target.files?.[0])}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+
+              // Reset so re-selecting the SAME file after a validation
+              // failure (zero-byte, wrong type, too large) still fires
+              // onChange -- otherwise the browser sees an unchanged value
+              // and the dialog appears frozen on the old error.
+              event.target.value = '';
+
+              void onFileSelected(file);
+            }}
             data-testid="file-upload-field-input"
             className="w-full rounded-md border border-input text-sm file:mr-4 file:border-0 file:bg-muted file:px-4 file:py-2"
           />
