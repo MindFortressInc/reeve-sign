@@ -94,8 +94,22 @@ const toCandidate = (r: Recipient): THandoffCandidate => ({
 // makes no claim about, any prior signer having completed.
 // ---------------------------------------------------------------------------
 
+// A genuine START never has a SIGNED recipient on the envelope yet -- the
+// instant anyone has actually completed, the only server-authorized way to
+// disclose the next link is ADVANCE, which re-verifies completedRecipientId
+// fresh. This is what stops an authenticated host from calling START again
+// mid-sequence (SEQUENTIAL) or for a still-outstanding co-signer (PARALLEL)
+// to sidestep ADVANCE's completion proof -- derived from existing
+// recipient.signingStatus rows, no new state to track.
+const isGenuineStart = (envelope: { recipients: Recipient[] }) =>
+  !envelope.recipients.some((r) => r.signingStatus === SigningStatus.SIGNED);
+
 export const getStartHandoffCandidates = async (options: GetHandoffOptions): Promise<THandoffCandidate[]> => {
-  const { eligible } = await resolveEligibleRecipients(options);
+  const { envelope, eligible } = await resolveEligibleRecipients(options);
+
+  if (!isGenuineStart(envelope)) {
+    return [];
+  }
 
   return eligible.map(toCandidate);
 };
@@ -108,7 +122,11 @@ export const getStartHandoffSigningToken = async ({
   recipientId,
   ...options
 }: GetStartHandoffSigningTokenOptions): Promise<THandoffSigningToken | null> => {
-  const { eligible } = await resolveEligibleRecipients(options);
+  const { envelope, eligible } = await resolveEligibleRecipients(options);
+
+  if (!isGenuineStart(envelope)) {
+    return null;
+  }
 
   const match = eligible.find((r) => r.id === recipientId);
 

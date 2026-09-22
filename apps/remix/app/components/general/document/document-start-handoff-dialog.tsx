@@ -1,3 +1,4 @@
+import { authClient } from '@documenso/auth/client';
 import { trpc } from '@documenso/trpc/react';
 import { Button } from '@documenso/ui/primitives/button';
 import {
@@ -67,9 +68,17 @@ export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStart
 
     const { signingLink } = await startHandoffSigningLink({ documentId, teamId, recipientId: effectiveSelectedId });
 
-    // Hard navigation, same reason as the handoff panel: forces a fresh
-    // loader run and a fresh signing provider mount for this recipient.
-    window.location.href = signingLink;
+    // Sign the host out before handing the device over. A plain
+    // `window.location.href` navigation (the panel's approach for the
+    // ADVANCE hop) would leave the host's own authenticated session cookie
+    // active in this same browser -- the next signer could then navigate to
+    // authenticated host routes. `authClient.signOut` POSTs to the real
+    // server-side /signout route (invalidating the session, see
+    // packages/auth/server/routes/sign-out.ts) before doing the hard
+    // navigation itself -- the same pattern DocumentSigningAuthAccount uses
+    // to force a fresh, unauthenticated context before a different signer's
+    // link is used (CR PR #58).
+    await authClient.signOut({ redirectPath: signingLink });
   };
 
   return (

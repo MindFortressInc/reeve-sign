@@ -60,11 +60,23 @@ const callerAs = (user: { id: number } | null, teamId?: number) =>
     logger,
   });
 
-describe.skipIf(!RUN_INTEGRATION)('DEV-654 handoff procedures -- real Postgres integration', () => {
+describe('DEV-654 handoff procedures -- real Postgres integration', () => {
   let ownerId: number;
   let teamId: number;
 
   beforeAll(async () => {
+    // Fail loudly, not a silent skip: this file is already excluded from the
+    // default `vitest run` glob (vitest.config.ts) and only collected by the
+    // dedicated vitest.db-integration.config.ts, so a plain `describe.skipIf`
+    // gate on the opt-in flag let running that dedicated config without
+    // RUN_DB_INTEGRATION_TESTS=true finish "successfully" without ever
+    // exercising the handoff behavior it exists to prove (CR PR #58 finding).
+    if (!RUN_INTEGRATION) {
+      throw new Error(
+        'RUN_DB_INTEGRATION_TESTS=true environment variable must be set to run database integration tests',
+      );
+    }
+
     const { owner, team } = await seedTeam();
     ownerId = owner.id;
     teamId = team.id;
@@ -140,6 +152,19 @@ describe.skipIf(!RUN_INTEGRATION)('DEV-654 handoff procedures -- real Postgres i
     const { owner: foreignOwner } = await seedTeam();
 
     const documentId = mapSecondaryIdToDocumentId(envelope.secondaryId);
+
+    // Complete signerOne for real first, so this call would otherwise be a
+    // valid, eligible advance. Without this, signerOne is still NOT_SIGNED
+    // and the call rejects for that unrelated reason regardless of who's
+    // calling -- which would let a real authorization regression here pass
+    // undetected (CR PR #58 finding). With signerOne genuinely SIGNED, a
+    // .rejects.toThrow() below can only be explained by the foreign-host
+    // authorization boundary.
+    await completeDocumentWithToken({
+      token: signerOne.token,
+      id: { type: 'envelopeId', id: envelope.id },
+      ...REQUEST_METADATA,
+    });
 
     // A real client always sends the envelope's OWN team (as complete.tsx's
     // loader / documents.$id._index.tsx do) -- never a team the foreign
