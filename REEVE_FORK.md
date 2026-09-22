@@ -61,8 +61,8 @@ something matters, port it on purpose:
 ```bash
 git remote add upstream https://github.com/documenso/documenso.git   # one-time
 git fetch upstream --tags
-git checkout -b matt/dev-NNNN-<slug> main
-git cherry-pick -x <upstream-sha>   # -x records the source sha in the message
+git checkout -b matt/dev-NNNN-SLUG main   # placeholders are CAPS, not <angle brackets>:
+git cherry-pick -x UPSTREAM_SHA           # bash reads < and > as redirection
 # expect conflicts: our tree is far from upstream's. Port by hand when the pick is a mess —
 # the goal is the FIX, not the patch.
 npm install && npm run build && npm test
