@@ -194,6 +194,13 @@ export const EnvelopeEditorPreviewPage = () => {
               customText: '',
             };
           })
+          .with({ type: FieldType.FILE_UPLOAD }, () => {
+            // Preview mode can't fabricate a real uploaded file — leave it
+            // unfilled so the renderer falls back to the field's label.
+            return {
+              customText: '',
+            };
+          })
           .exhaustive(),
       };
     });

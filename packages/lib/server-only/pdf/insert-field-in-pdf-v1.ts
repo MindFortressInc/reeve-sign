@@ -7,6 +7,7 @@ import {
   MIN_HANDWRITING_FONT_SIZE,
   MIN_STANDARD_FONT_SIZE,
 } from '@documenso/lib/constants/pdf';
+import { parseFileUploadCustomText } from '@documenso/lib/types/field-file-upload';
 import { fromCheckboxValue } from '@documenso/lib/universal/field-checkbox';
 import { isSignatureFieldType } from '@documenso/prisma/guards/is-signature-field';
 import type { FieldWithSignature } from '@documenso/prisma/types/field-with-signature';
@@ -347,6 +348,51 @@ export const insertFieldInPDFV1 = async (pdf: PDFDocument, field: FieldWithSigna
           radio.select(item.value);
         }
       }
+    })
+    .with({ type: FieldType.FILE_UPLOAD }, (field) => {
+      // Never draw the raw customText JSON blob — the file itself stays a
+      // separate downloadable artifact, not embedded PDF content. Only the
+      // filename is noted on the page. This path is not reachable in
+      // practice (FILE_UPLOAD fields are only placeable via the v2 editor,
+      // which never calls this v1 insertion function), but is handled
+      // explicitly rather than left to the generic-text `.otherwise()`
+      // fallback below, which would draw the JSON verbatim.
+      const uploadedFile = field.inserted ? parseFileUploadCustomText(field.customText) : null;
+
+      if (!uploadedFile) {
+        return;
+      }
+
+      const label = `Attached: ${uploadedFile.fileName}`;
+      let fontSize = Math.min(maxFontSize, MIN_STANDARD_FONT_SIZE + 2);
+      const availableWidth = Math.max(fieldWidth - 8, 0);
+      const labelWidthAtFontSize = font.widthOfTextAtSize(label, fontSize);
+
+      if (availableWidth > 0 && labelWidthAtFontSize > availableWidth) {
+        const scalingFactor = availableWidth / labelWidthAtFontSize;
+
+        fontSize = Math.max(fontSize * scalingFactor, minFontSize);
+      }
+
+      const textHeight = font.heightAtSize(fontSize);
+
+      let textX = fieldX + 4;
+      let textY = pageHeight - fieldY - textHeight;
+
+      if (pageRotationInDegrees !== 0) {
+        const adjustedPosition = adjustPositionForRotation(pageWidth, pageHeight, textX, textY, pageRotationInDegrees);
+
+        textX = adjustedPosition.xPos;
+        textY = adjustedPosition.yPos;
+      }
+
+      page.drawText(label, {
+        x: textX,
+        y: textY,
+        size: fontSize,
+        font,
+        rotate: degrees(pageRotationInDegrees),
+      });
     })
     .otherwise((field) => {
       const fieldMetaParsers = {

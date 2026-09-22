@@ -8,6 +8,7 @@ import {
   ZDateFieldMeta,
   ZDropdownFieldMeta,
   ZEmailFieldMeta,
+  ZFileUploadFieldMeta,
   ZInitialsFieldMeta,
   ZNameFieldMeta,
   ZNumberFieldMeta,
@@ -176,6 +177,13 @@ export const ZFieldDropdownSchema = BaseFieldSchemaUsingNumbers.extend({
 
 export type TFieldDropdown = z.infer<typeof ZFieldDropdownSchema>;
 
+export const ZFieldFileUploadSchema = BaseFieldSchemaUsingNumbers.extend({
+  type: z.literal(FieldType.FILE_UPLOAD),
+  fieldMeta: ZFileUploadFieldMeta,
+});
+
+export type TFieldFileUpload = z.infer<typeof ZFieldFileUploadSchema>;
+
 /**
  * The full field schema which will enforce all types and meta fields.
  */
@@ -190,6 +198,7 @@ export const ZFullFieldSchema = z.discriminatedUnion('type', [
   ZFieldRadioSchema,
   ZFieldCheckboxSchema,
   ZFieldDropdownSchema,
+  ZFieldFileUploadSchema,
 ]);
 
 export type TFullFieldSchema = z.infer<typeof ZFullFieldSchema>;

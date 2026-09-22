@@ -22,7 +22,7 @@ const SMALL_MOBILE_VIEWPORT = { width: 320, height: 700 };
 const MINIMUM_USABLE_PANE_WIDTH = 340;
 
 /**
- * The 10 field types rendered by the field palette, in `fieldButtonList` order.
+ * The 11 field types rendered by the field palette, in `fieldButtonList` order.
  */
 const FIELD_PALETTE_TYPES = [
   'SIGNATURE',
@@ -35,6 +35,7 @@ const FIELD_PALETTE_TYPES = [
   'RADIO',
   'CHECKBOX',
   'DROPDOWN',
+  'FILE_UPLOAD',
 ] as const;
 
 /**
@@ -152,7 +153,7 @@ test.describe('document editor', () => {
     await expectNoHorizontalPageScroll(page, MOBILE_VIEWPORT.width);
   });
 
-  test('mobile field palette keeps all 10 field types reachable at 393x852', async ({ page }) => {
+  test('mobile field palette keeps all 11 field types reachable at 393x852', async ({ page }) => {
     const surface = await openDocumentEnvelopeEditor(page);
 
     // A recipient is required for the field palette to render.

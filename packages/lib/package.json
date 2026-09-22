@@ -12,6 +12,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "clean": "rimraf node_modules"
   },
   "dependencies": {

@@ -1,7 +1,9 @@
 import { isBase64Image } from '@documenso/lib/constants/signatures';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { validateFieldAuth } from '@documenso/lib/server-only/document/validate-field-auth';
+import { finalizeFieldFileUpload } from '@documenso/lib/server-only/field/finalize-field-file-upload';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
+import { parseFileUploadCustomText } from '@documenso/lib/types/field-file-upload';
 import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-logs';
 import { extractFieldInsertionValues } from '@documenso/lib/utils/envelope-signing';
 import { prisma } from '@documenso/prisma';
@@ -178,6 +180,39 @@ export const signEnvelopeFieldRoute = procedure
       authOptions,
     });
 
+    // The client only ever submits a key from the TMP (presign-mintable) key
+    // space. Never trust its claimed size/mimeType, and never persist that
+    // key directly: a presigned PUT stays valid for up to an hour, so
+    // without finalizing to a copy the client (or anyone who captured the
+    // URL) could replay a PUT to the same key after the field is marked
+    // signed and silently swap the accepted bytes with no new
+    // authorization. `finalizeFieldFileUpload` re-verifies the ACTUAL
+    // stored object against policy and copies it to a key no route ever
+    // mints a PUT for before returning what actually gets persisted.
+    //
+    // This must run AFTER validateFieldAuth: finalizing copies the tmp
+    // object to its final key and deletes the tmp object, so running it
+    // before an auth failure would leave an orphaned final object with no
+    // Field row, forcing the recipient to redo the upload.
+    if (field.type === FieldType.FILE_UPLOAD) {
+      const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
+
+      if (!submittedUpload) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: 'Invalid file upload value',
+        });
+      }
+
+      insertionValues.customText = await finalizeFieldFileUpload({
+        tmpKey: submittedUpload.key,
+        fileName: submittedUpload.fileName,
+        envelopeId: field.envelopeId,
+        fieldId: field.id,
+        claimedSize: submittedUpload.size,
+        claimedMimeType: submittedUpload.mimeType,
+      });
+    }
+
     const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
 
     let signatureImageAsBase64 = null;
@@ -262,10 +297,17 @@ export const signEnvelopeFieldRoute = procedure
                 type,
                 data: updatedField.customText,
               }))
-              .with(FieldType.NUMBER, FieldType.RADIO, FieldType.CHECKBOX, FieldType.DROPDOWN, (type) => ({
-                type,
-                data: updatedField.customText,
-              }))
+              .with(
+                FieldType.NUMBER,
+                FieldType.RADIO,
+                FieldType.CHECKBOX,
+                FieldType.DROPDOWN,
+                FieldType.FILE_UPLOAD,
+                (type) => ({
+                  type,
+                  data: updatedField.customText,
+                }),
+              )
               .exhaustive(),
             fieldSecurity: derivedRecipientActionAuth
               ? {

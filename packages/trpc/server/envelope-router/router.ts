@@ -15,7 +15,10 @@ import { duplicateEnvelopeRoute } from './duplicate-envelope';
 import { createEnvelopeFieldsRoute } from './envelope-fields/create-envelope-fields';
 import { deleteEnvelopeFieldRoute } from './envelope-fields/delete-envelope-field';
 import { getEnvelopeFieldRoute } from './envelope-fields/get-envelope-field';
+import { getEnvelopeFieldFileDownloadUrlRoute } from './envelope-fields/get-envelope-field-file-download-url';
+import { getEnvelopeFieldFileDownloadUrlByTokenRoute } from './envelope-fields/get-envelope-field-file-download-url-by-token';
 import { getEnvelopeFieldSignaturesRoute } from './envelope-fields/get-envelope-field-signatures';
+import { presignEnvelopeFieldFileUploadRoute } from './envelope-fields/presign-envelope-field-file-upload';
 import { updateEnvelopeFieldsRoute } from './envelope-fields/update-envelope-fields';
 import { createEnvelopeRecipientsRoute } from './envelope-recipients/create-envelope-recipients';
 import { deleteEnvelopeRecipientRoute } from './envelope-recipients/delete-envelope-recipient';
@@ -75,6 +78,9 @@ export const envelopeRouter = router({
     delete: deleteEnvelopeFieldRoute,
     set: setEnvelopeFieldsRoute,
     sign: signEnvelopeFieldRoute,
+    presignFileUpload: presignEnvelopeFieldFileUploadRoute,
+    getFileDownloadUrl: getEnvelopeFieldFileDownloadUrlRoute,
+    getFileDownloadUrlByToken: getEnvelopeFieldFileDownloadUrlByTokenRoute,
   },
   find: findEnvelopesRoute,
   auditLog: {

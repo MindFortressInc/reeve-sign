@@ -7,6 +7,7 @@ import { match } from 'ts-pattern';
 import type { TFieldMetaSchema } from '../../types/field-meta';
 import { renderCheckboxFieldElement } from './render-checkbox-field';
 import { renderDropdownFieldElement } from './render-dropdown-field';
+import { renderFileUploadFieldElement } from './render-file-upload-field';
 import { renderGenericTextFieldElement } from './render-generic-text-field';
 import { renderRadioFieldElement } from './render-radio-field';
 import { renderSignatureFieldElement } from './render-signature-field';
@@ -85,6 +86,7 @@ export const renderField = ({
     .with(FieldType.RADIO, () => renderRadioFieldElement(field, options))
     .with(FieldType.DROPDOWN, () => renderDropdownFieldElement(field, options))
     .with(FieldType.SIGNATURE, () => renderSignatureFieldElement(field, options))
+    .with(FieldType.FILE_UPLOAD, () => renderFileUploadFieldElement(field, options))
     .with(FieldType.FREE_SIGNATURE, () => {
       throw new Error('Free signature fields are not supported');
     })

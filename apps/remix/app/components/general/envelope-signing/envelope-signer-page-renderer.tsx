@@ -29,6 +29,7 @@ import { useEmbedSigningContext } from '~/components/embed/embed-signing-context
 import { handleCheckboxFieldClick } from '~/utils/field-signing/checkbox-field';
 import { handleDropdownFieldClick } from '~/utils/field-signing/dropdown-field';
 import { handleEmailFieldClick } from '~/utils/field-signing/email-field';
+import { handleFileUploadFieldClick } from '~/utils/field-signing/file-upload-field';
 import { handleInitialsFieldClick } from '~/utils/field-signing/initial-field';
 import { handleNameFieldClick } from '~/utils/field-signing/name-field';
 import { handleNumberFieldClick } from '~/utils/field-signing/number-field';
@@ -353,6 +354,21 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
           }).finally(() => {
             loadingSpinnerGroup.destroy();
           });
+        })
+        /**
+         * FILE_UPLOAD FIELD.
+         */
+        .with({ type: FieldType.FILE_UPLOAD }, (field) => {
+          handleFileUploadFieldClick({ field, token: envelopeData.recipient.token })
+            .then(async (payload) => {
+              if (payload) {
+                fieldGroup.add(loadingSpinnerGroup);
+                await signField(field.id, payload);
+              }
+            })
+            .finally(() => {
+              loadingSpinnerGroup.destroy();
+            });
         })
         /**
          * SIGNATURE FIELD.
