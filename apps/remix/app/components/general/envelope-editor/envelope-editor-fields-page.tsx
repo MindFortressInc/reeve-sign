@@ -30,7 +30,7 @@ import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans, useLingui as useLinguiMacro } from '@lingui/react/macro';
-import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
+import { DocumentSigningOrder, DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
 import { FileTextIcon, PencilIcon, SparklesIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRevalidator, useSearchParams } from 'react-router';
@@ -120,13 +120,42 @@ export const EnvelopeEditorFieldsPage = () => {
    * Persisted checkbox fields eligible as a conditional-visibility controller
    * for the selected field. Only fields with a real database id are offered —
    * see `EditorConditionalVisibilityField`'s doc comment for why.
+   *
+   * For a SEQUENTIAL envelope, a controller assigned to a recipient who signs
+   * AFTER the selected field's own recipient is excluded: that later
+   * recipient cannot act (check the box) until the earlier recipient's turn
+   * is already over, so a dependent gated on it could never be revealed in
+   * time for the earlier recipient to sign it — a structural deadlock, not
+   * just an unmet condition. Same-recipient and earlier-recipient
+   * controllers remain eligible. Recipients with no signing order set are
+   * left unrestricted (nothing to compare against).
    */
   const availableConditionCheckboxFields = useMemo(() => {
+    const isSequential = envelope.documentMeta.signingOrder === DocumentSigningOrder.SEQUENTIAL;
+
+    const selectedFieldRecipientSigningOrder = envelope.recipients.find(
+      (recipient) => recipient.id === selectedField?.recipientId,
+    )?.signingOrder;
+
     return envelope.fields
       .filter(
         (field): field is typeof field & { id: number } =>
           field.type === FieldType.CHECKBOX && field.id !== undefined && field.id !== selectedField?.id,
       )
+      .filter((field) => {
+        if (!isSequential || selectedFieldRecipientSigningOrder == null) {
+          return true;
+        }
+
+        const controllerRecipientSigningOrder = envelope.recipients.find(
+          (recipient) => recipient.id === field.recipientId,
+        )?.signingOrder;
+
+        return (
+          controllerRecipientSigningOrder == null ||
+          controllerRecipientSigningOrder <= selectedFieldRecipientSigningOrder
+        );
+      })
       .map((field) => {
         const meta = field.fieldMeta as TCheckboxFieldMeta | undefined;
 
@@ -136,7 +165,13 @@ export const EnvelopeEditorFieldsPage = () => {
           values: (meta?.values ?? []).map((value) => ({ id: value.id, value: value.value })),
         };
       });
-  }, [envelope.fields, selectedField?.id]);
+  }, [
+    envelope.fields,
+    envelope.recipients,
+    envelope.documentMeta.signingOrder,
+    selectedField?.id,
+    selectedField?.recipientId,
+  ]);
 
   const onFieldDetectionComplete = (fields: NormalizedFieldWithContext[]) => {
     for (const field of fields) {

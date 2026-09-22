@@ -212,146 +212,183 @@ export const completeDocumentWithToken = async ({
     });
   }
 
-  await prisma.$transaction(async (tx) => {
-    // Take an exclusive lock on the envelope row before re-reading anything, and
-    // re-derive every check below from that locked, fresh read rather than the
-    // snapshots taken before this transaction. `sign-envelope-field.ts` takes the
-    // same lock before allowing a checkbox controller to change, so the two can
-    // never race: this completion either fully sees a concurrent controller
-    // change (and correctly blocks on a newly-required field) or fully precedes
-    // it (in which case that mutation will see THIS recipient as signed and be
-    // rejected if it would alter their obligations/consent). The re-check also
-    // rejects a duplicate/racing completion of this SAME recipient: a second
-    // concurrent request for the same token would otherwise wait for the lock and
-    // then blindly re-run the whole completion against a stale "not yet signed"
-    // snapshot.
-    await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
+  await prisma.$transaction(
+    async (tx) => {
+      // Take an exclusive lock on the envelope row before re-reading anything, and
+      // re-derive every check below from that locked, fresh read rather than the
+      // snapshots taken before this transaction. `sign-envelope-field.ts` takes the
+      // same lock before allowing a checkbox controller to change, so the two can
+      // never race: this completion either fully sees a concurrent controller
+      // change (and correctly blocks on a newly-required field) or fully precedes
+      // it (in which case that mutation will see THIS recipient as signed and be
+      // rejected if it would alter their obligations/consent). The re-check also
+      // rejects a duplicate/racing completion of this SAME recipient: a second
+      // concurrent request for the same token would otherwise wait for the lock and
+      // then blindly re-run the whole completion against a stale "not yet signed"
+      // snapshot.
+      await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
 
-    const freshEnvelope = await tx.envelope.findUniqueOrThrow({
-      where: { id: envelope.id },
-      select: { status: true, internalVersion: true },
-    });
-    const freshRecipient = await tx.recipient.findUniqueOrThrow({
-      where: { id: recipient.id },
-      select: { signingStatus: true },
-    });
-
-    if (freshEnvelope.status !== DocumentStatus.PENDING) {
-      throw new Error(`Document ${envelope.id} must be pending`);
-    }
-
-    if (freshRecipient.signingStatus === SigningStatus.SIGNED) {
-      throw new Error(`Recipient ${recipient.id} has already signed`);
-    }
-
-    if (freshRecipient.signingStatus === SigningStatus.REJECTED) {
-      throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
-        message: 'Recipient has already rejected the document',
-        statusCode: 400,
+      const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+        where: { id: envelope.id },
+        select: { status: true, internalVersion: true },
       });
-    }
+      const freshRecipient = await tx.recipient.findUniqueOrThrow({
+        where: { id: recipient.id },
+        select: { signingStatus: true },
+      });
 
-    let allEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
-    let freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
+      if (freshEnvelope.status !== DocumentStatus.PENDING) {
+        throw new Error(`Document ${envelope.id} must be pending`);
+      }
 
-    // Auto-insert all un-inserted date fields for V2 envelopes at completion
-    // time — inside the lock, after the re-checks above, so a rollback
-    // (duplicate/racing completion, a concurrent controller change making a
-    // field newly required, a status change) can never leave a date field
-    // marked `inserted: true` with an audit-log entry for a completion that
-    // didn't actually happen. `fields` (the pre-transaction snapshot, used
-    // above only to derive `recipientName`/`recipientEmail`) is deliberately
-    // not reused here — `freshRecipientFields` is the lock-protected read.
-    const uninsertedDateFields = freshRecipientFields.filter(
-      (field) => field.type === FieldType.DATE && !field.inserted,
-    );
+      if (freshRecipient.signingStatus === SigningStatus.SIGNED) {
+        throw new Error(`Recipient ${recipient.id} has already signed`);
+      }
 
-    if (freshEnvelope.internalVersion === 2 && uninsertedDateFields.length > 0) {
-      const formattedDate = DateTime.now()
-        .setZone(envelope.documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
-        .toFormat(envelope.documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
+      if (freshRecipient.signingStatus === SigningStatus.REJECTED) {
+        throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+          message: 'Recipient has already rejected the document',
+          statusCode: 400,
+        });
+      }
 
-      const newDateFieldValues = {
-        customText: formattedDate,
-        inserted: true,
-      };
+      let allEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
+      let freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
 
-      await tx.field.updateMany({
-        where: {
-          id: {
-            in: uninsertedDateFields.map((field) => field.id),
+      // Auto-insert all un-inserted date fields for V2 envelopes at completion
+      // time — inside the lock, after the re-checks above, so a rollback
+      // (duplicate/racing completion, a concurrent controller change making a
+      // field newly required, a status change) can never leave a date field
+      // marked `inserted: true` with an audit-log entry for a completion that
+      // didn't actually happen. `fields` (the pre-transaction snapshot, used
+      // above only to derive `recipientName`/`recipientEmail`) is deliberately
+      // not reused here — `freshRecipientFields` is the lock-protected read.
+      const uninsertedDateFields = freshRecipientFields.filter(
+        (field) => field.type === FieldType.DATE && !field.inserted,
+      );
+
+      if (freshEnvelope.internalVersion === 2 && uninsertedDateFields.length > 0) {
+        const formattedDate = DateTime.now()
+          .setZone(envelope.documentMeta?.timezone ?? DEFAULT_DOCUMENT_TIME_ZONE)
+          .toFormat(envelope.documentMeta?.dateFormat ?? DEFAULT_DOCUMENT_DATE_FORMAT);
+
+        const newDateFieldValues = {
+          customText: formattedDate,
+          inserted: true,
+        };
+
+        await tx.field.updateMany({
+          where: {
+            id: {
+              in: uninsertedDateFields.map((field) => field.id),
+            },
           },
+          data: {
+            ...newDateFieldValues,
+          },
+        });
+
+        // Create audit log entries for each auto-inserted date field.
+        await tx.documentAuditLog.createMany({
+          data: uninsertedDateFields.map((field) =>
+            createDocumentAuditLogData({
+              type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
+              envelopeId: envelope.id,
+              user: {
+                email: recipientEmail,
+                name: recipientName,
+              },
+              requestMetadata,
+              data: {
+                recipientEmail: recipientEmail,
+                recipientId: recipient.id,
+                recipientName: recipientName,
+                recipientRole: recipient.role,
+                fieldId: field.secondaryId,
+                field: {
+                  type: FieldType.DATE,
+                  data: formattedDate,
+                },
+              },
+            }),
+          ),
+        });
+
+        // Reflect the just-inserted dates in-memory so the visibility checks
+        // below see them.
+        allEnvelopeFields = allEnvelopeFields.map((field) =>
+          field.type === FieldType.DATE && !field.inserted && uninsertedDateFields.some((d) => d.id === field.id)
+            ? { ...field, ...newDateFieldValues }
+            : field,
+        );
+        freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
+      }
+
+      // Conditional visibility is a V2-only feature (V1 rendering/signing never
+      // evaluates it), so only apply the visibility-aware exemption for V2 —
+      // anything else must behave EXACTLY as before this feature existed.
+      if (freshEnvelope.internalVersion === 2) {
+        assertValidFieldConditionGraph(freshRecipientFields, allEnvelopeFields);
+
+        if (fieldsContainUnsignedRequiredVisibleField(freshRecipientFields, allEnvelopeFields)) {
+          throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+        }
+      } else if (fieldsContainUnsignedRequiredField(freshRecipientFields)) {
+        throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+      }
+
+      await tx.recipient.update({
+        where: {
+          id: recipient.id,
         },
         data: {
-          ...newDateFieldValues,
+          signingStatus: SigningStatus.SIGNED,
+          signedAt: new Date(),
+          name: recipientName,
+          email: recipientEmail,
         },
       });
 
-      // Create audit log entries for each auto-inserted date field.
-      await tx.documentAuditLog.createMany({
-        data: uninsertedDateFields.map((field) =>
-          createDocumentAuditLogData({
-            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
+      if (recipientEmail !== recipient.email || recipientName !== recipient.name) {
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.RECIPIENT_UPDATED,
             envelopeId: envelope.id,
             user: {
-              email: recipientEmail,
               name: recipientName,
+              email: recipientEmail,
             },
             requestMetadata,
             data: {
-              recipientEmail: recipientEmail,
+              recipientEmail: recipient.email,
+              recipientName: recipient.name,
               recipientId: recipient.id,
-              recipientName: recipientName,
               recipientRole: recipient.role,
-              fieldId: field.secondaryId,
-              field: {
-                type: FieldType.DATE,
-                data: formattedDate,
-              },
+              changes: [
+                {
+                  type: RECIPIENT_DIFF_TYPE.NAME,
+                  from: recipient.name,
+                  to: recipientName,
+                },
+                {
+                  type: RECIPIENT_DIFF_TYPE.EMAIL,
+                  from: recipient.email,
+                  to: recipientEmail,
+                },
+              ],
             },
           }),
-        ),
+        });
+      }
+
+      const authOptions = extractDocumentAuthMethods({
+        documentAuth: envelope.authOptions,
+        recipientAuth: recipient.authOptions,
       });
 
-      // Reflect the just-inserted dates in-memory so the visibility checks
-      // below see them.
-      allEnvelopeFields = allEnvelopeFields.map((field) =>
-        field.type === FieldType.DATE && !field.inserted && uninsertedDateFields.some((d) => d.id === field.id)
-          ? { ...field, ...newDateFieldValues }
-          : field,
-      );
-      freshRecipientFields = allEnvelopeFields.filter((f) => f.recipientId === recipient.id);
-    }
-
-    // Conditional visibility is a V2-only feature (V1 rendering/signing never
-    // evaluates it), so only apply the visibility-aware exemption for V2 —
-    // anything else must behave EXACTLY as before this feature existed.
-    if (freshEnvelope.internalVersion === 2) {
-      assertValidFieldConditionGraph(freshRecipientFields, allEnvelopeFields);
-
-      if (fieldsContainUnsignedRequiredVisibleField(freshRecipientFields, allEnvelopeFields)) {
-        throw new Error(`Recipient ${recipient.id} has unsigned fields`);
-      }
-    } else if (fieldsContainUnsignedRequiredField(freshRecipientFields)) {
-      throw new Error(`Recipient ${recipient.id} has unsigned fields`);
-    }
-
-    await tx.recipient.update({
-      where: {
-        id: recipient.id,
-      },
-      data: {
-        signingStatus: SigningStatus.SIGNED,
-        signedAt: new Date(),
-        name: recipientName,
-        email: recipientEmail,
-      },
-    });
-
-    if (recipientEmail !== recipient.email || recipientName !== recipient.name) {
       await tx.documentAuditLog.create({
         data: createDocumentAuditLogData({
-          type: DOCUMENT_AUDIT_LOG_TYPE.RECIPIENT_UPDATED,
+          type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_COMPLETED,
           envelopeId: envelope.id,
           user: {
             name: recipientName,
@@ -359,51 +396,24 @@ export const completeDocumentWithToken = async ({
           },
           requestMetadata,
           data: {
-            recipientEmail: recipient.email,
-            recipientName: recipient.name,
+            recipientEmail: recipientEmail,
+            recipientName: recipientName,
             recipientId: recipient.id,
             recipientRole: recipient.role,
-            changes: [
-              {
-                type: RECIPIENT_DIFF_TYPE.NAME,
-                from: recipient.name,
-                to: recipientName,
-              },
-              {
-                type: RECIPIENT_DIFF_TYPE.EMAIL,
-                from: recipient.email,
-                to: recipientEmail,
-              },
-            ],
+            actionAuth: authOptions.derivedRecipientActionAuth,
           },
         }),
       });
-    }
-
-    const authOptions = extractDocumentAuthMethods({
-      documentAuth: envelope.authOptions,
-      recipientAuth: recipient.authOptions,
-    });
-
-    await tx.documentAuditLog.create({
-      data: createDocumentAuditLogData({
-        type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_RECIPIENT_COMPLETED,
-        envelopeId: envelope.id,
-        user: {
-          name: recipientName,
-          email: recipientEmail,
-        },
-        requestMetadata,
-        data: {
-          recipientEmail: recipientEmail,
-          recipientName: recipientName,
-          recipientId: recipient.id,
-          recipientRole: recipient.role,
-          actionAuth: authOptions.derivedRecipientActionAuth,
-        },
-      }),
-    });
-  });
+    },
+    // The shared client's default (`maxWait: 5000, timeout: 10000`) was sized
+    // for a single write; this transaction now holds the envelope-row lock
+    // across several fresh reads, the DATE auto-insert (field update + a
+    // createMany audit log), the recipient update, and its own audit log —
+    // real work, not just a lock wait. Two concurrent signers hitting this at
+    // once must get a real guard rejection, not an opaque transaction-timeout
+    // error from queuing behind the lock.
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 
   const envelopeWithRelations = await prisma.envelope.findUniqueOrThrow({
     where: { id: envelope.id },

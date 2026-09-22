@@ -71,7 +71,6 @@ export const signEnvelopeFieldRoute = procedure
         envelope: {
           include: {
             recipients: true,
-            documentMeta: true,
           },
         },
         recipient: true,
@@ -85,7 +84,6 @@ export const signEnvelopeFieldRoute = procedure
     }
 
     const { envelope } = field;
-    const { documentMeta } = envelope;
 
     if (envelope.internalVersion !== 2) {
       throw new AppError(AppErrorCode.NOT_FOUND, {
@@ -151,7 +149,13 @@ export const signEnvelopeFieldRoute = procedure
         // acquires it.
         const freshEnvelope = await tx.envelope.findUniqueOrThrow({
           where: { id: envelope.id },
-          select: { status: true, deletedAt: true, internalVersion: true, authOptions: true },
+          select: {
+            status: true,
+            deletedAt: true,
+            internalVersion: true,
+            authOptions: true,
+            documentMeta: { select: { timezone: true, dateFormat: true, typedSignatureEnabled: true } },
+          },
         });
 
         if (freshEnvelope.deletedAt) {
@@ -186,7 +190,9 @@ export const signEnvelopeFieldRoute = procedure
         }
 
         if (freshField.recipientId === null) {
-          throw new Error(`Field ${fieldId} has no recipientId`);
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Field ${fieldId} has no recipientId`,
+          });
         }
 
         const freshFieldOwner =
@@ -250,9 +256,59 @@ export const signEnvelopeFieldRoute = procedure
         // INDICES against `freshField.fieldMeta.values`, applies validation
         // rules (text length, number format, ...) against fresh metadata. Pure
         // and fast (no I/O) — safe to run inside the lock.
-        const insertionValues = extractFieldInsertionValues({ fieldValue, field: freshField, documentMeta });
+        // `documentMeta` (timezone/dateFormat/typedSignatureEnabled) read fresh
+        // under the lock: `updateDocumentMeta` does not take this same
+        // envelope-row lock, so a concurrent settings change committed between
+        // the pre-lock snapshot and here must still be observed — otherwise a
+        // DATE field could be formatted with a just-replaced timezone/format.
+        const insertionValues = extractFieldInsertionValues({
+          fieldValue,
+          field: freshField,
+          documentMeta: freshEnvelope.documentMeta,
+        });
 
         const isUninserting = !insertionValues.inserted;
+
+        // Visibility and checkbox-consent checks are pure and read-only (no
+        // I/O) — deliberately run BEFORE the FILE_UPLOAD block below, which
+        // does real S3 side effects. `finalizeFieldFileUpload` cannot be
+        // undone by a later failure in this transaction (its own cleanup only
+        // covers failures inside itself), so anything that can reject this
+        // request must be checked first, or a rejection after it would leave
+        // a finalized S3 object with no Field reference once the DB
+        // transaction rolls back.
+        const signedRecipientIds = new Set(
+          (
+            await tx.recipient.findMany({
+              where: { envelopeId: envelope.id, signingStatus: SigningStatus.SIGNED },
+              select: { id: true },
+            })
+          ).map((r) => r.id),
+        );
+
+        if (!isUninserting && !isFieldVisible(freshField, freshEnvelopeFields)) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Field ${fieldId} is not currently visible and cannot be signed`,
+          });
+        }
+
+        if (freshField.type === FieldType.CHECKBOX) {
+          const proposedCustomText = isUninserting ? '' : insertionValues.customText;
+
+          const affectedCompletedDependents = findCompletedDependentsAffectedByControllerChange({
+            controllerFieldId: freshField.id,
+            proposedCustomText,
+            allEnvelopeFields: freshEnvelopeFields,
+            signedRecipientIds,
+          });
+
+          if (affectedCompletedDependents.length > 0) {
+            throw new AppError(AppErrorCode.INVALID_REQUEST, {
+              message:
+                'This selection cannot be changed because it would alter a requirement or remove consent for a recipient who has already completed signing',
+            });
+          }
+        }
 
         // The client only ever submits a key from the TMP (presign-mintable)
         // key space. Never trust its claimed size/mimeType, and never persist
@@ -300,39 +356,6 @@ export const signEnvelopeFieldRoute = procedure
 
             signatureImageAsBase64 = isBase64 ? fieldValue.value : null;
             typedSignature = !isBase64 ? fieldValue.value : null;
-          }
-        }
-
-        const signedRecipientIds = new Set(
-          (
-            await tx.recipient.findMany({
-              where: { envelopeId: envelope.id, signingStatus: SigningStatus.SIGNED },
-              select: { id: true },
-            })
-          ).map((r) => r.id),
-        );
-
-        if (!isUninserting && !isFieldVisible(freshField, freshEnvelopeFields)) {
-          throw new AppError(AppErrorCode.INVALID_REQUEST, {
-            message: `Field ${fieldId} is not currently visible and cannot be signed`,
-          });
-        }
-
-        if (freshField.type === FieldType.CHECKBOX) {
-          const proposedCustomText = isUninserting ? '' : insertionValues.customText;
-
-          const affectedCompletedDependents = findCompletedDependentsAffectedByControllerChange({
-            controllerFieldId: freshField.id,
-            proposedCustomText,
-            allEnvelopeFields: freshEnvelopeFields,
-            signedRecipientIds,
-          });
-
-          if (affectedCompletedDependents.length > 0) {
-            throw new AppError(AppErrorCode.INVALID_REQUEST, {
-              message:
-                'This selection cannot be changed because it would alter a requirement or remove consent for a recipient who has already completed signing',
-            });
           }
         }
 

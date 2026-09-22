@@ -503,17 +503,26 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
   };
 
   /**
-   * Render fields when they are changed or inserted.
+   * Render fields when they are changed or inserted. Destroys and rebuilds
+   * the whole layer rather than just re-running `renderFields()`: a field
+   * that drops out of `localPageFields`/`localPageOtherRecipientFields`
+   * (e.g. a conditionally-visible field whose controller was just unchecked)
+   * has no code path that removes its already-rendered Konva node —
+   * `renderFields()` only ever adds nodes for the CURRENT list, it never
+   * diffs against what's already on the layer. Without the rebuild, a field
+   * that becomes hidden would keep rendering on the canvas.
    */
   useEffect(() => {
     if (!pageLayer.current || !stage.current) {
       return;
     }
 
+    pageLayer.current.destroyChildren();
+
     renderFields();
 
     pageLayer.current.batchDraw();
-  }, [localPageFields, showPendingFieldTooltip, fullName, signature, email]);
+  }, [localPageFields, localPageOtherRecipientFields, showPendingFieldTooltip, fullName, signature, email]);
 
   /**
    * Rerender the whole page if the selected assistant recipient changes.

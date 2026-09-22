@@ -187,35 +187,42 @@ export const duplicateEnvelope = async ({ id, userId, teamId, overrides }: Dupli
     );
 
     if (includeFields) {
-      const oldFieldIdToNewFieldId: Record<number, number> = {};
+      // Field creation and the condition-reference remap must commit as one
+      // unit: if either step failed partway through with each `field.create`
+      // running as its own implicit transaction, previously-created fields
+      // could be left with `fieldMeta.condition.fieldId` still pointing at
+      // the SOURCE envelope's (foreign) field ids.
+      await prisma.$transaction(async (tx) => {
+        const oldFieldIdToNewFieldId: Record<number, number> = {};
 
-      const newFields: Field[] = [];
+        const newFields: Field[] = [];
 
-      for (const { original, created } of duplicatedRecipients) {
-        for (const field of original.fields) {
-          const newField = await prisma.field.create({
-            data: {
-              envelopeId: duplicatedEnvelope.id,
-              envelopeItemId: oldEnvelopeItemToNewEnvelopeItemIdMap[field.envelopeItemId],
-              recipientId: created.id,
-              type: field.type,
-              page: field.page,
-              positionX: field.positionX,
-              positionY: field.positionY,
-              width: field.width,
-              height: field.height,
-              customText: '',
-              inserted: false,
-              fieldMeta: field.fieldMeta as PrismaJson.FieldMeta,
-            },
-          });
+        for (const { original, created } of duplicatedRecipients) {
+          for (const field of original.fields) {
+            const newField = await tx.field.create({
+              data: {
+                envelopeId: duplicatedEnvelope.id,
+                envelopeItemId: oldEnvelopeItemToNewEnvelopeItemIdMap[field.envelopeItemId],
+                recipientId: created.id,
+                type: field.type,
+                page: field.page,
+                positionX: field.positionX,
+                positionY: field.positionY,
+                width: field.width,
+                height: field.height,
+                customText: '',
+                inserted: false,
+                fieldMeta: field.fieldMeta as PrismaJson.FieldMeta,
+              },
+            });
 
-          oldFieldIdToNewFieldId[field.id] = newField.id;
-          newFields.push(newField);
+            oldFieldIdToNewFieldId[field.id] = newField.id;
+            newFields.push(newField);
+          }
         }
-      }
 
-      await remapFieldConditionReferences({ tx: prisma, newFields, oldFieldIdToNewFieldId });
+        await remapFieldConditionReferences({ tx, newFields, oldFieldIdToNewFieldId });
+      });
     }
   }
 
