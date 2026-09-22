@@ -97,6 +97,14 @@ export const signFieldWithToken = async ({
     throw new Error(`Document not found for field ${field.id}`);
   }
 
+  // A V2 envelope's fields must only be mutated through the V2-aware
+  // `envelope.signField` route (signEnvelopeFieldRoute), which enforces
+  // condition visibility, completed-dependent invalidation, and locking that
+  // this legacy V1 token mutation does not know about.
+  if (envelope.internalVersion === 2) {
+    throw new Error(`Document ${envelope.id} is a version 2 envelope and must use the version 2 signing flow`);
+  }
+
   if (!recipient) {
     throw new Error(`Recipient not found for field ${field.id}`);
   }

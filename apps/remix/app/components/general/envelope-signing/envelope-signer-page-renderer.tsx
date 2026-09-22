@@ -12,6 +12,7 @@ import { ZFullFieldSchema } from '@documenso/lib/types/field';
 import { createSpinner } from '@documenso/lib/universal/field-renderer/field-generic-items';
 import { renderField } from '@documenso/lib/universal/field-renderer/render-field';
 import { isFieldUnsignedAndRequired } from '@documenso/lib/utils/advanced-fields-helpers';
+import { isFieldVisible } from '@documenso/lib/utils/field-conditions';
 import { getClientSideFieldTranslations } from '@documenso/lib/utils/fields';
 import { extractInitials } from '@documenso/lib/utils/recipient-formatter';
 import type { TSignEnvelopeFieldValue } from '@documenso/trpc/server/envelope-router/sign-envelope-field.types';
@@ -97,6 +98,8 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
    * page.
    */
   const localPageOtherRecipientFields = useMemo((): GenericLocalField[] => {
+    const allEnvelopeFields = envelope.recipients.flatMap((r) => r.fields);
+
     const signedRecipients = envelope.recipients.filter(
       (recipient) => recipient.signingStatus === SigningStatus.SIGNED,
     );
@@ -107,7 +110,8 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
           (field) =>
             field.page === pageNumber &&
             field.envelopeItemId === currentEnvelopeItem?.id &&
-            (field.inserted || field.fieldMeta?.readOnly),
+            (field.inserted || field.fieldMeta?.readOnly) &&
+            isFieldVisible(field, allEnvelopeFields),
         )
         .map((field) => ({
           ...field,
@@ -499,17 +503,26 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
   };
 
   /**
-   * Render fields when they are changed or inserted.
+   * Render fields when they are changed or inserted. Destroys and rebuilds
+   * the whole layer rather than just re-running `renderFields()`: a field
+   * that drops out of `localPageFields`/`localPageOtherRecipientFields`
+   * (e.g. a conditionally-visible field whose controller was just unchecked)
+   * has no code path that removes its already-rendered Konva node —
+   * `renderFields()` only ever adds nodes for the CURRENT list, it never
+   * diffs against what's already on the layer. Without the rebuild, a field
+   * that becomes hidden would keep rendering on the canvas.
    */
   useEffect(() => {
     if (!pageLayer.current || !stage.current) {
       return;
     }
 
+    pageLayer.current.destroyChildren();
+
     renderFields();
 
     pageLayer.current.batchDraw();
-  }, [localPageFields, showPendingFieldTooltip, fullName, signature, email]);
+  }, [localPageFields, localPageOtherRecipientFields, showPendingFieldTooltip, fullName, signature, email]);
 
   /**
    * Rerender the whole page if the selected assistant recipient changes.

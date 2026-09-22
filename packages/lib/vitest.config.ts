@@ -12,14 +12,22 @@ export default defineConfig({
   plugins: [macrosPlugin(), lingui()],
   test: {
     include: ['**/*.test.ts'],
-    // This specific suite hits a real external S3-compatible store (MinIO)
-    // over the network and must never run as part of the default unit
-    // suite -- see `npm run test:integration` / vitest.integration.config.ts.
-    // Scoped to this exact file (not a blanket `*.integration.test.ts`
-    // exclude) so self-contained "integration" suites that spin up their
-    // own in-process server (e.g. server-only/credits/client.integration.test.ts)
-    // keep running as part of the default suite -- they need no live
-    // external infra and were never the problem.
-    exclude: [...configDefaults.exclude, '**/server-only/field/finalize-field-file-upload.integration.test.ts'],
+    // These two specific suites hit real external infra (MinIO; Postgres) and
+    // must never run as part of the default unit suite -- see
+    // `npm run test:integration` / vitest.integration.config.ts for the MinIO
+    // one, `npm run test:db-integration` / vitest.db-integration.config.ts for
+    // the Postgres one. Scoped to these exact files (not a blanket
+    // `*.integration.test.ts` exclude) so self-contained "integration" suites
+    // that spin up their own in-process server (e.g.
+    // server-only/credits/client.integration.test.ts) keep running as part of
+    // the default suite -- they need no live external infra and were never
+    // the problem.
+    exclude: [
+      ...configDefaults.exclude,
+      '**/server-only/field/finalize-field-file-upload.integration.test.ts',
+      '**/server-only/document/conditional-visibility-consent.integration.test.ts',
+      '**/server-only/template/create-document-from-direct-template.integration.test.ts',
+      '**/server-only/envelope/duplicate-envelope.integration.test.ts',
+    ],
   },
 });

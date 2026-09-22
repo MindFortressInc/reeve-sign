@@ -17,11 +17,12 @@ import {
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
 import { createDocumentAuditLogData, diffFieldChanges } from '@documenso/lib/utils/document-audit-logs';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType, type Field, FieldType } from '@prisma/client';
+import { EnvelopeType, type Field, FieldType, SigningStatus } from '@prisma/client';
 import { isDeepEqual } from 'remeda';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { resolveBulkFieldConditions } from '../../utils/field-conditions';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
@@ -50,19 +51,7 @@ export const setFieldsForDocument = async ({
 
   const envelope = await prisma.envelope.findFirst({
     where: envelopeWhereInput,
-    include: {
-      recipients: true,
-      envelopeItems: {
-        select: {
-          id: true,
-        },
-      },
-      fields: {
-        include: {
-          recipient: true,
-        },
-      },
-    },
+    select: { id: true, type: true, secondaryId: true },
   });
 
   if (!envelope) {
@@ -71,253 +60,299 @@ export const setFieldsForDocument = async ({
     });
   }
 
-  if (envelope.completedAt) {
-    throw new AppError(AppErrorCode.INVALID_REQUEST, {
-      message: 'Document already complete',
-    });
-  }
+  const { persistedFields, removedFields, existingFields } = await prisma.$transaction(
+    async (tx) => {
+      // Lock the envelope row and re-read everything below fresh — this bulk write
+      // (and its condition-integrity check) must never race a concurrent controller
+      // mutation, completion, or another authoring edit.
+      await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
 
-  const existingFields = envelope.fields;
-
-  const removedFields = existingFields.filter(
-    (existingField) => !fields.find((field) => field.id === existingField.id),
-  );
-
-  const linkedFields = fields.map((field) => {
-    const existing = existingFields.find((existingField) => existingField.id === field.id);
-
-    const recipient = envelope.recipients.find((recipient) => recipient.id === field.recipientId);
-
-    // Check whether the field is being attached to an allowed envelope item.
-    const foundEnvelopeItem = envelope.envelopeItems.find((envelopeItem) => envelopeItem.id === field.envelopeItemId);
-
-    if (!foundEnvelopeItem) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Envelope item ${field.envelopeItemId} not found`,
+      const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+        where: { id: envelope.id },
+        include: {
+          recipients: true,
+          envelopeItems: { select: { id: true } },
+          fields: { include: { recipient: true } },
+        },
       });
-    }
 
-    // Each field MUST have a recipient associated with it.
-    if (!recipient) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Recipient not found for field ${field.id}`,
-      });
-    }
-
-    // Check whether the existing field can be modified.
-    if (existing && hasFieldBeenChanged(existing, field) && !canRecipientFieldsBeModified(recipient, existingFields)) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: 'Cannot modify a field where the recipient has already interacted with the document',
-      });
-    }
-
-    // Prevent creating new fields when recipient has interacted with the document.
-    if (!existing && !canRecipientFieldsBeModified(recipient, existingFields)) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: 'Cannot modify a field where the recipient has already interacted with the document',
-      });
-    }
-
-    return {
-      ...field,
-      _persisted: existing,
-      _recipient: recipient,
-    };
-  });
-
-  const persistedFields = await prisma.$transaction(async (tx) => {
-    return await Promise.all(
-      linkedFields.map(async (field) => {
-        const fieldSignerEmail = field._recipient.email.toLowerCase();
-
-        const parsedFieldMeta = field.fieldMeta
-          ? ZFieldMetaSchema.parse(field.fieldMeta)
-          : FIELD_META_DEFAULT_VALUES[field.type];
-
-        if (field.type === FieldType.TEXT && field.fieldMeta) {
-          const textFieldParsedMeta = ZTextFieldMeta.parse(field.fieldMeta);
-          const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
-
-          if (errors.length > 0) {
-            throw new Error(errors.join(', '));
-          }
-        }
-
-        if (field.type === FieldType.NUMBER && field.fieldMeta) {
-          const numberFieldParsedMeta = ZNumberFieldMeta.parse(field.fieldMeta);
-
-          const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta, false);
-
-          if (errors.length > 0) {
-            throw new Error(errors.join(', '));
-          }
-        }
-
-        if (field.type === FieldType.CHECKBOX) {
-          if (field.fieldMeta) {
-            const checkboxFieldParsedMeta = ZCheckboxFieldMeta.parse(field.fieldMeta);
-            const errors = validateCheckboxField(
-              checkboxFieldParsedMeta?.values?.map((item) => item.value) ?? [],
-              checkboxFieldParsedMeta,
-            );
-
-            if (errors.length > 0) {
-              throw new Error(errors.join(', '));
-            }
-          } else {
-            throw new Error('To proceed further, please set at least one value for the Checkbox field');
-          }
-        }
-
-        if (field.type === FieldType.RADIO) {
-          if (field.fieldMeta) {
-            const radioFieldParsedMeta = ZRadioFieldMeta.parse(field.fieldMeta);
-            const checkedRadioFieldValue = radioFieldParsedMeta.values?.find((option) => option.checked)?.value;
-
-            const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
-
-            if (errors.length > 0) {
-              throw new Error(errors.join('. '));
-            }
-          } else {
-            throw new Error('To proceed further, please set at least one value for the Radio field');
-          }
-        }
-
-        if (field.type === FieldType.DROPDOWN) {
-          if (field.fieldMeta) {
-            const dropdownFieldParsedMeta = ZDropdownFieldMeta.parse(field.fieldMeta);
-            const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
-
-            if (errors.length > 0) {
-              throw new Error(errors.join('. '));
-            }
-          } else {
-            throw new Error('To proceed further, please set at least one value for the Dropdown field');
-          }
-        }
-
-        const upsertedField = await tx.field.upsert({
-          where: {
-            id: field._persisted?.id ?? -1,
-            envelopeId: envelope.id,
-            envelopeItemId: field.envelopeItemId,
-          },
-          update: {
-            page: field.pageNumber,
-            positionX: field.pageX,
-            positionY: field.pageY,
-            width: field.pageWidth,
-            height: field.pageHeight,
-            fieldMeta: parsedFieldMeta,
-          },
-          create: {
-            type: field.type,
-            page: field.pageNumber,
-            positionX: field.pageX,
-            positionY: field.pageY,
-            width: field.pageWidth,
-            height: field.pageHeight,
-            customText: '',
-            inserted: false,
-            fieldMeta: parsedFieldMeta,
-            envelope: {
-              connect: {
-                id: envelope.id,
-              },
-            },
-            envelopeItem: {
-              connect: {
-                id: field.envelopeItemId,
-                envelopeId: envelope.id,
-              },
-            },
-            recipient: {
-              connect: {
-                id: field._recipient.id,
-                envelopeId: envelope.id,
-              },
-            },
-          },
+      if (freshEnvelope.completedAt) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Document already complete',
         });
+      }
 
-        if (upsertedField.recipientId === null) {
-          throw new Error('Not possible');
-        }
+      const existingFields = freshEnvelope.fields;
 
-        const baseAuditLog = {
-          fieldId: upsertedField.secondaryId,
-          fieldRecipientEmail: fieldSignerEmail,
-          fieldRecipientId: upsertedField.recipientId,
-          fieldType: upsertedField.type,
-        };
+      const removedFields = existingFields.filter(
+        (existingField) => !fields.find((field) => field.id === existingField.id),
+      );
 
-        const changes = field._persisted ? diffFieldChanges(field._persisted, upsertedField) : [];
+      const signedRecipientIds = new Set(
+        freshEnvelope.recipients.filter((r) => r.signingStatus === SigningStatus.SIGNED).map((r) => r.id),
+      );
 
-        // Handle field updated audit log.
-        if (field._persisted && changes.length > 0) {
-          await tx.documentAuditLog.create({
-            data: createDocumentAuditLogData({
-              type: DOCUMENT_AUDIT_LOG_TYPE.FIELD_UPDATED,
-              envelopeId: envelope.id,
-              metadata: requestMetadata,
-              data: {
-                changes,
-                ...baseAuditLog,
-              },
-            }),
+      const resolvedFields = resolveBulkFieldConditions(fields, existingFields, {
+        internalVersion: freshEnvelope.internalVersion,
+        signedRecipientIds,
+      });
+
+      const linkedFields = resolvedFields.map((field) => {
+        const existing = existingFields.find((existingField) => existingField.id === field.id);
+
+        const recipient = freshEnvelope.recipients.find((recipient) => recipient.id === field.recipientId);
+
+        // Check whether the field is being attached to an allowed envelope item.
+        const foundEnvelopeItem = freshEnvelope.envelopeItems.find(
+          (envelopeItem) => envelopeItem.id === field.envelopeItemId,
+        );
+
+        if (!foundEnvelopeItem) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Envelope item ${field.envelopeItemId} not found`,
           });
         }
 
-        // Handle field created audit log.
-        if (!field._persisted) {
-          await tx.documentAuditLog.create({
-            data: createDocumentAuditLogData({
-              type: DOCUMENT_AUDIT_LOG_TYPE.FIELD_CREATED,
-              envelopeId: envelope.id,
-              metadata: requestMetadata,
-              data: {
-                ...baseAuditLog,
-              },
-            }),
+        // Each field MUST have a recipient associated with it.
+        if (!recipient) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Recipient not found for field ${field.id}`,
+          });
+        }
+
+        // Check whether the existing field can be modified.
+        if (
+          existing &&
+          hasFieldBeenChanged(existing, field) &&
+          !canRecipientFieldsBeModified(recipient, existingFields)
+        ) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: 'Cannot modify a field where the recipient has already interacted with the document',
+          });
+        }
+
+        // Prevent creating new fields when recipient has interacted with the document.
+        if (!existing && !canRecipientFieldsBeModified(recipient, existingFields)) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: 'Cannot modify a field where the recipient has already interacted with the document',
           });
         }
 
         return {
-          ...upsertedField,
-          formId: field.formId,
+          ...field,
+          _persisted: existing,
+          _recipient: recipient,
         };
-      }),
-    );
-  });
-
-  if (removedFields.length > 0) {
-    await prisma.$transaction(async (tx) => {
-      await tx.field.deleteMany({
-        where: {
-          id: {
-            in: removedFields.map((field) => field.id),
-          },
-        },
       });
 
-      await tx.documentAuditLog.createMany({
-        data: removedFields.map((field) =>
-          createDocumentAuditLogData({
-            type: DOCUMENT_AUDIT_LOG_TYPE.FIELD_DELETED,
-            envelopeId: envelope.id,
-            metadata: requestMetadata,
-            data: {
-              fieldId: field.secondaryId,
-              fieldRecipientEmail: field.recipient?.email ?? '',
-              fieldRecipientId: field.recipientId ?? -1,
-              fieldType: field.type,
+      const persistedFields = await Promise.all(
+        linkedFields.map(async (field) => {
+          const fieldSignerEmail = field._recipient.email.toLowerCase();
+
+          const parsedFieldMeta = field.fieldMeta
+            ? ZFieldMetaSchema.parse(field.fieldMeta)
+            : FIELD_META_DEFAULT_VALUES[field.type];
+
+          if (field.type === FieldType.TEXT && field.fieldMeta) {
+            const textFieldParsedMeta = ZTextFieldMeta.parse(field.fieldMeta);
+            const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
+
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
+            }
+          }
+
+          if (field.type === FieldType.NUMBER && field.fieldMeta) {
+            const numberFieldParsedMeta = ZNumberFieldMeta.parse(field.fieldMeta);
+
+            const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta, false);
+
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
+            }
+          }
+
+          if (field.type === FieldType.CHECKBOX) {
+            if (field.fieldMeta) {
+              const checkboxFieldParsedMeta = ZCheckboxFieldMeta.parse(field.fieldMeta);
+              const errors = validateCheckboxField(
+                checkboxFieldParsedMeta?.values?.map((item) => item.value) ?? [],
+                checkboxFieldParsedMeta,
+              );
+
+              if (errors.length > 0) {
+                throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
+              }
+            } else {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, {
+                message: 'To proceed further, please set at least one value for the Checkbox field',
+              });
+            }
+          }
+
+          if (field.type === FieldType.RADIO) {
+            if (field.fieldMeta) {
+              const radioFieldParsedMeta = ZRadioFieldMeta.parse(field.fieldMeta);
+              const checkedRadioFieldValue = radioFieldParsedMeta.values?.find((option) => option.checked)?.value;
+
+              const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
+
+              if (errors.length > 0) {
+                throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join('. ') });
+              }
+            } else {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, {
+                message: 'To proceed further, please set at least one value for the Radio field',
+              });
+            }
+          }
+
+          if (field.type === FieldType.DROPDOWN) {
+            if (field.fieldMeta) {
+              const dropdownFieldParsedMeta = ZDropdownFieldMeta.parse(field.fieldMeta);
+              const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
+
+              if (errors.length > 0) {
+                throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join('. ') });
+              }
+            } else {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, {
+                message: 'To proceed further, please set at least one value for the Dropdown field',
+              });
+            }
+          }
+
+          const upsertedField = await tx.field.upsert({
+            where: {
+              id: field._persisted?.id ?? -1,
+              envelopeId: envelope.id,
+              envelopeItemId: field.envelopeItemId,
             },
-          }),
-        ),
-      });
-    });
-  }
+            update: {
+              page: field.pageNumber,
+              positionX: field.pageX,
+              positionY: field.pageY,
+              width: field.pageWidth,
+              height: field.pageHeight,
+              fieldMeta: parsedFieldMeta,
+            },
+            create: {
+              type: field.type,
+              page: field.pageNumber,
+              positionX: field.pageX,
+              positionY: field.pageY,
+              width: field.pageWidth,
+              height: field.pageHeight,
+              customText: '',
+              inserted: false,
+              fieldMeta: parsedFieldMeta,
+              envelope: {
+                connect: {
+                  id: envelope.id,
+                },
+              },
+              envelopeItem: {
+                connect: {
+                  id: field.envelopeItemId,
+                  envelopeId: envelope.id,
+                },
+              },
+              recipient: {
+                connect: {
+                  id: field._recipient.id,
+                  envelopeId: envelope.id,
+                },
+              },
+            },
+          });
+
+          if (upsertedField.recipientId === null) {
+            throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+              message: `Field ${upsertedField.id} has no recipient`,
+            });
+          }
+
+          const baseAuditLog = {
+            fieldId: upsertedField.secondaryId,
+            fieldRecipientEmail: fieldSignerEmail,
+            fieldRecipientId: upsertedField.recipientId,
+            fieldType: upsertedField.type,
+          };
+
+          const changes = field._persisted ? diffFieldChanges(field._persisted, upsertedField) : [];
+
+          // Handle field updated audit log.
+          if (field._persisted && changes.length > 0) {
+            await tx.documentAuditLog.create({
+              data: createDocumentAuditLogData({
+                type: DOCUMENT_AUDIT_LOG_TYPE.FIELD_UPDATED,
+                envelopeId: envelope.id,
+                metadata: requestMetadata,
+                data: {
+                  changes,
+                  ...baseAuditLog,
+                },
+              }),
+            });
+          }
+
+          // Handle field created audit log.
+          if (!field._persisted) {
+            await tx.documentAuditLog.create({
+              data: createDocumentAuditLogData({
+                type: DOCUMENT_AUDIT_LOG_TYPE.FIELD_CREATED,
+                envelopeId: envelope.id,
+                metadata: requestMetadata,
+                data: {
+                  ...baseAuditLog,
+                },
+              }),
+            });
+          }
+
+          return {
+            ...upsertedField,
+            formId: field.formId,
+          };
+        }),
+      );
+
+      if (removedFields.length > 0) {
+        await tx.field.deleteMany({
+          where: {
+            id: {
+              in: removedFields.map((field) => field.id),
+            },
+          },
+        });
+
+        await tx.documentAuditLog.createMany({
+          data: removedFields.map((field) =>
+            createDocumentAuditLogData({
+              type: DOCUMENT_AUDIT_LOG_TYPE.FIELD_DELETED,
+              envelopeId: envelope.id,
+              metadata: requestMetadata,
+              data: {
+                fieldId: field.secondaryId,
+                fieldRecipientEmail: field.recipient?.email ?? '',
+                fieldRecipientId: field.recipientId ?? -1,
+                fieldType: field.type,
+              },
+            }),
+          ),
+        });
+      }
+
+      return { persistedFields, removedFields, existingFields };
+    },
+    // The shared client's default (`maxWait: 5000, timeout: 10000`, see
+    // packages/prisma/index.ts) held for a single upsert; this transaction now
+    // holds the envelope-row lock across an upsert PLUS an audit-log write per
+    // field in the whole batch, with no field-count limit on the request. A
+    // large document's bulk save can exceed 10s while legitimately holding the
+    // lock — raise the ceiling rather than let a large-but-valid save fail.
+    { maxWait: 10_000, timeout: 30_000 },
+  );
 
   // Filter out fields that have been removed or have been updated.
   const mappedFilteredFields = existingFields
