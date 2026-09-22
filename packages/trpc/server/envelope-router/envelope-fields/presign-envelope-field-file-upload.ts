@@ -130,7 +130,9 @@ export const presignEnvelopeFieldFileUploadRoute = procedure
     // immutable copy happens server-side in sign-envelope-field.ts.
     const key = buildFieldFileUploadTmpKey({ envelopeId: field.envelopeId, fieldId: field.id, fileName });
 
-    const { url } = await getPresignPostUrlForKey(key, contentType);
+    // Bind ContentLength to the already-validated fileSize so the signed PUT
+    // can't be used to upload past the size limit checked above.
+    const { url } = await getPresignPostUrlForKey(key, contentType, fileSize);
 
     return { key, url };
   });
