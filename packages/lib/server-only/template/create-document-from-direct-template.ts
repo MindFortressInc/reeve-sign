@@ -24,7 +24,7 @@ import { DOCUMENT_AUDIT_LOG_TYPE, RECIPIENT_DIFF_TYPE } from '../../types/docume
 import type { TRecipientActionAuthTypes } from '../../types/document-auth';
 import { DocumentAccessAuth, ZRecipientAuthOptionsSchema } from '../../types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
-import { type TFieldCondition, ZCheckboxFieldMeta, ZFieldMetaSchema } from '../../types/field-meta';
+import { ZFieldMetaSchema } from '../../types/field-meta';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import type { ApiRequestMetadata } from '../../universal/extract-request-metadata';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
@@ -42,7 +42,9 @@ import { mapSecondaryIdToTemplateId } from '../../utils/envelope';
 import {
   assertValidFieldConditionGraph,
   extractFieldCondition,
-  getFieldCondition,
+  type FieldForConditionEvaluation,
+  fieldsContainUnsignedRequiredVisibleField,
+  isFieldVisible,
   remapFieldConditionReferences,
 } from '../../utils/field-conditions';
 import { sendDocument } from '../document/send-document';
@@ -77,57 +79,31 @@ type CreatedDirectRecipientField = {
 
 /**
  * Direct-template submission is a single unauthenticated request: nothing is
- * persisted yet, so conditional visibility must be resolved from the raw
- * request/template shapes rather than the shared `field-conditions.ts` helpers
- * (which assume persisted `Field` rows). Scoped to same-recipient conditions
- * (the common "check this box to reveal this field of mine" case) — a condition
- * whose controller belongs to a DIFFERENT, non-direct recipient can't have been
- * decided by this same submission, so it fails closed to "not met" rather than
- * guessing.
+ * persisted yet. Rather than re-deriving visibility with a hand-rolled
+ * predicate, this projects what each of the direct recipient's OWN fields'
+ * `customText` will be once this submission is written, and hands that to the
+ * SAME shared graph resolution (`isFieldVisible`/`resolveFieldConditionState`)
+ * every other write path uses — so it can never drift out of sync with how a
+ * checkbox's value is actually encoded (a JSON array of selected option
+ * INDICES for V2 — the native app editor's completion dialog sends
+ * `field.customText` unchanged, which is already exactly that encoding, not a
+ * V1-style array of option value strings). Scoped to same-recipient
+ * conditions (the common "check this box to reveal this field of mine"
+ * case): a condition whose controller belongs to a DIFFERENT, non-direct
+ * recipient can't have been decided by this same submission, so the
+ * projection simply won't find that controller among these fields and shared
+ * resolution correctly (and safely) treats it as invalid/not-visible.
  */
-const isDirectTemplateFieldConditionMet = (
-  condition: TFieldCondition,
+const projectDirectRecipientFields = (
   directRecipientTemplateFields: Field[],
   signedFieldValues: TSignFieldWithTokenMutationSchema[],
-): boolean => {
-  const controller = directRecipientTemplateFields.find((field) => field.id === condition.fieldId);
-
-  if (!controller || controller.type !== FieldType.CHECKBOX) {
-    return false;
-  }
-
-  const controllerMeta = ZCheckboxFieldMeta.safeParse(controller.fieldMeta);
-  const availableOptions = controllerMeta.success ? (controllerMeta.data.values ?? []) : [];
-
-  if (condition.optionIds.some((optionId) => !availableOptions.some((option) => option.id === optionId))) {
-    return false;
-  }
-
-  const submitted = signedFieldValues.find((value) => value.fieldId === controller.id);
-
-  if (!submitted?.value) {
-    return false;
-  }
-
-  let selectedValues: string[] = [];
-
-  try {
-    // V1-style checkbox encoding: a JSON array of selected option VALUE strings.
-    const parsed: unknown = JSON.parse(submitted.value);
-
-    if (Array.isArray(parsed)) {
-      selectedValues = parsed.filter((value): value is string => typeof value === 'string');
-    }
-  } catch {
-    return false;
-  }
-
-  const selectedOptionIds = availableOptions
-    .filter((option) => selectedValues.includes(option.value))
-    .map((option) => option.id);
-
-  return condition.optionIds.some((optionId) => selectedOptionIds.includes(optionId));
-};
+): FieldForConditionEvaluation[] =>
+  directRecipientTemplateFields.map((field) => ({
+    id: field.id,
+    type: field.type,
+    fieldMeta: field.fieldMeta,
+    customText: signedFieldValues.find((value) => value.fieldId === field.id)?.value ?? '',
+  }));
 
 export const ZCreateDocumentFromDirectTemplateResponseSchema = z.object({
   token: z.string(),
@@ -243,6 +219,12 @@ export const createDocumentFromDirectTemplate = async ({
   );
   const derivedDocumentMeta = extractDerivedDocumentMeta(settings, directTemplateEnvelope.documentMeta);
 
+  // What each of the direct recipient's own fields' `customText` will be once
+  // this submission is persisted — the reference graph both checks below
+  // resolve visibility against, via the SAME shared logic every other write
+  // path uses (see `projectDirectRecipientFields`'s doc comment).
+  const projectedRecipientFields = projectDirectRecipientFields(directTemplateRecipient.fields, signedFieldValues);
+
   // Associate, validate and map to a query every direct template recipient field with the provided fields.
   // Only process fields that are either required or have been signed by the user
   const fieldsToProcess = directTemplateRecipient.fields.filter((templateField) => {
@@ -275,16 +257,14 @@ export const createDocumentFromDirectTemplate = async ({
         });
       }
 
-      if (isRequiredField(templateField) && !signedFieldValue) {
-        const condition = getFieldCondition(templateField.fieldMeta);
-        const conditionMet =
-          !condition || isDirectTemplateFieldConditionMet(condition, directTemplateRecipient.fields, signedFieldValues);
-
-        if (conditionMet) {
-          throw new AppError(AppErrorCode.INVALID_BODY, {
-            message: 'Invalid, missing or changed fields',
-          });
-        }
+      if (
+        isRequiredField(templateField) &&
+        !signedFieldValue &&
+        isFieldVisible(templateField, projectedRecipientFields)
+      ) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: 'Invalid, missing or changed fields',
+        });
       }
 
       if (templateField.type === FieldType.NAME && directRecipientName === undefined) {
@@ -327,6 +307,21 @@ export const createDocumentFromDirectTemplate = async ({
       }
 
       if (isSignatureField && !signatureImageAsBase64 && !typedSignature) {
+        // The native V2 completion dialog submits an entry for EVERY one of
+        // the recipient's fields, including ones currently hidden by an
+        // unmet condition, with nothing meaningful to sign — that is not a
+        // missing-signature error, it's the expected shape for a field that
+        // was never supposed to be filled in. A visible signature field
+        // still legitimately requires content.
+        if (!isFieldVisible(templateField, projectedRecipientFields)) {
+          return {
+            templateField,
+            customText: '',
+            derivedRecipientActionAuth,
+            signature: null,
+          };
+        }
+
         throw new Error('Signature field must have a signature');
       }
 
@@ -612,11 +607,27 @@ export const createDocumentFromDirectTemplate = async ({
     // document creation silently succeed — re-fetch post-remap and assert.
     const allNewFieldsAfterRemap = await tx.field.findMany({ where: { envelopeId: createdEnvelope.id } });
 
-    const directRecipientConditionedFields = allNewFieldsAfterRemap.filter(
-      (field) => field.recipientId === createdDirectRecipient.id && extractFieldCondition(field.fieldMeta).present,
+    const directRecipientFieldsAfterRemap = allNewFieldsAfterRemap.filter(
+      (field) => field.recipientId === createdDirectRecipient.id,
+    );
+
+    const directRecipientConditionedFields = directRecipientFieldsAfterRemap.filter(
+      (field) => extractFieldCondition(field.fieldMeta).present,
     );
 
     assertValidFieldConditionGraph(directRecipientConditionedFields, allNewFieldsAfterRemap);
+
+    // Final, authoritative check against what was ACTUALLY persisted (not just
+    // the pre-submission projection above) before this recipient is treated as
+    // complete — the same defense-in-depth `complete-document-with-token.ts`
+    // does under its own lock. A required field that's visible per the real
+    // stored data and still wasn't inserted must block, even if some earlier
+    // check had a gap.
+    if (fieldsContainUnsignedRequiredVisibleField(directRecipientFieldsAfterRemap, allNewFieldsAfterRemap)) {
+      throw new AppError(AppErrorCode.INVALID_BODY, {
+        message: 'Invalid, missing or changed fields',
+      });
+    }
 
     const createdDirectRecipientFields: CreatedDirectRecipientField[] = [
       ...createdDirectRecipientNonSignatureFields.map((field) => ({

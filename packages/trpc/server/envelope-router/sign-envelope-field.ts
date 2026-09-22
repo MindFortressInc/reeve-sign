@@ -41,6 +41,13 @@ export const signEnvelopeFieldRoute = procedure
       throw new AppError(AppErrorCode.NOT_FOUND);
     }
 
+    // This initial lookup is for ROUTING only (which envelope to lock, whether
+    // this recipient is even allowed to touch this field at all). Every
+    // security-relevant property of `field` (type, fieldMeta, readOnly,
+    // condition, recipientId) is re-read fresh under the lock below and
+    // re-validated there — concurrent authoring could otherwise change any of
+    // those between this read and the lock being acquired, and a decision
+    // based on the stale value here would be wrong.
     const field = await prisma.field.findFirst({
       where: {
         id: fieldId,
@@ -86,22 +93,6 @@ export const signEnvelopeFieldRoute = procedure
       });
     }
 
-    if (
-      field.type === FieldType.SIGNATURE &&
-      recipient.id !== field.recipientId &&
-      recipient.role === RecipientRole.ASSISTANT
-    ) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Assistant recipients cannot sign signature fields`,
-      });
-    }
-
-    if (fieldValue.type !== field.type) {
-      throw new AppError(AppErrorCode.NOT_FOUND, {
-        message: 'Selected values do not match the field values',
-      });
-    }
-
     if (envelope.deletedAt) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
         message: `Document ${envelope.id} has been deleted`,
@@ -120,312 +111,358 @@ export const signEnvelopeFieldRoute = procedure
       });
     }
 
-    if (field.fieldMeta?.readOnly) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Field ${fieldId} is read only`,
+    // Cheap fast-fail on the stale snapshot (good error UX for the common,
+    // non-racing case) — NOT authoritative. The transaction below re-validates
+    // this exact check against `freshField` before anything is trusted or
+    // written.
+    if (fieldValue.type !== field.type) {
+      throw new AppError(AppErrorCode.NOT_FOUND, {
+        message: 'Selected values do not match the field values',
       });
     }
 
-    // Unreachable code based on the above query but we need to satisfy TypeScript
-    if (field.recipientId === null) {
-      throw new Error(`Field ${fieldId} has no recipientId`);
-    }
+    const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
 
-    const insertionValues = extractFieldInsertionValues({ fieldValue, field, documentMeta });
+    // Extended transaction timeout: FILE_UPLOAD finalization does real S3 I/O
+    // (see below) and must run inside the SAME lock as the rest of this
+    // route's validation for that field-type check to actually close the race
+    // — Prisma's default interactive-transaction timeout (5s) could otherwise
+    // abort a legitimate slow upload finalization.
+    return await prisma.$transaction(
+      async (tx) => {
+        // Take an exclusive lock on the envelope row before reading anything
+        // that this write's condition checks depend on. `complete-document-with-token.ts`
+        // takes the same lock before freezing a recipient's completion, so the
+        // two can never interleave: whichever of "a controller changes" or "a
+        // dependent recipient completes" commits first is fully visible to the
+        // other by the time it re-reads under the lock. Without this, two
+        // concurrent transactions could each read the other's stale pre-commit
+        // state and both pass their own check, landing the envelope in an
+        // inconsistent state (e.g. a checked "has a co-buyer" box with no
+        // co-buyer signature).
+        await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
 
-    // The client only ever submits a key from the TMP (presign-mintable) key
-    // space. Never trust its claimed size/mimeType, and never persist that
-    // key directly: a presigned PUT stays valid for up to an hour, so
-    // without finalizing to a copy the client (or anyone who captured the
-    // URL) could replay a PUT to the same key after the field is marked
-    // signed and silently swap the accepted bytes with no new
-    // authorization. `finalizeFieldFileUpload` re-verifies the ACTUAL
-    // stored object against policy and copies it to a key no route ever
-    // mints a PUT for before returning what actually gets persisted.
-    if (field.type === FieldType.FILE_UPLOAD && insertionValues.inserted) {
-      const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
-
-      if (!submittedUpload) {
-        throw new AppError(AppErrorCode.INVALID_BODY, {
-          message: 'Invalid file upload value',
+        // Re-verify every status check made above against fresh, lock-protected
+        // state. Those earlier checks used a snapshot read before this
+        // transaction (and before waiting for the lock) — without re-checking,
+        // a request that began before its own recipient (or the document) was
+        // completed elsewhere could sit waiting for the lock and then blindly
+        // write a field for an already-signed recipient once it finally
+        // acquires it.
+        const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+          where: { id: envelope.id },
+          select: { status: true, deletedAt: true, internalVersion: true, authOptions: true },
         });
-      }
 
-      insertionValues.customText = await finalizeFieldFileUpload({
-        tmpKey: submittedUpload.key,
-        fileName: submittedUpload.fileName,
-        envelopeId: field.envelopeId,
-        fieldId: field.id,
-        claimedSize: submittedUpload.size,
-        claimedMimeType: submittedUpload.mimeType,
-      });
-    }
+        if (freshEnvelope.deletedAt) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Document ${envelope.id} has been deleted`,
+          });
+        }
 
-    // Uninserting is itself a controller-value change if `field` is a checkbox
-    // (e.g. "clear all my selections"), so it goes through the same lock + guard
-    // as an insert below rather than returning early.
-    const isUninserting = !insertionValues.inserted;
+        if (freshEnvelope.status !== DocumentStatus.PENDING) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Document ${envelope.id} must be pending for signing`,
+          });
+        }
 
-    const derivedRecipientActionAuth = isUninserting
-      ? null
-      : await validateFieldAuth({
-          documentAuthOptions: envelope.authOptions,
+        if (freshEnvelope.internalVersion !== 2) {
+          throw new AppError(AppErrorCode.NOT_FOUND, {
+            message: `Envelope ${envelope.id} is not a version 2 envelope`,
+          });
+        }
+
+        const freshRecipient = await tx.recipient.findUniqueOrThrow({
+          where: { id: recipient.id },
+          select: { signingStatus: true },
+        });
+
+        const freshEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
+
+        const freshField = freshEnvelopeFields.find((f) => f.id === fieldId);
+
+        if (!freshField) {
+          throw new AppError(AppErrorCode.NOT_FOUND, { message: `Field ${fieldId} not found` });
+        }
+
+        if (freshField.recipientId === null) {
+          throw new Error(`Field ${fieldId} has no recipientId`);
+        }
+
+        const freshFieldOwner =
+          freshField.recipientId === recipient.id
+            ? freshRecipient
+            : await tx.recipient.findUniqueOrThrow({
+                where: { id: freshField.recipientId },
+                select: { signingStatus: true },
+              });
+
+        if (
+          freshRecipient.signingStatus === SigningStatus.SIGNED ||
+          freshFieldOwner.signingStatus === SigningStatus.SIGNED
+        ) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Recipient ${recipient.id} has already signed`,
+          });
+        }
+
+        // Authoritative re-check of everything the pre-lock snapshot decided:
+        // the field's TYPE (a concurrent authoring edit could have retyped it),
+        // read-only, and the assistant/signature restriction — all against
+        // `freshField`, never the stale `field`.
+        if (fieldValue.type !== freshField.type) {
+          throw new AppError(AppErrorCode.NOT_FOUND, {
+            message: 'Selected values do not match the field values',
+          });
+        }
+
+        if (
+          freshField.type === FieldType.SIGNATURE &&
+          recipient.id !== freshField.recipientId &&
+          recipient.role === RecipientRole.ASSISTANT
+        ) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Assistant recipients cannot sign signature fields`,
+          });
+        }
+
+        if (freshField.fieldMeta?.readOnly) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Field ${fieldId} is read only`,
+          });
+        }
+
+        // Authoritative auth check, against fresh field AND fresh document-level
+        // auth options — both are mutable by a concurrent authoring edit
+        // (`update-envelope.ts` can change document auth options while the
+        // envelope is PENDING) and must be re-read under the lock, not taken
+        // from the pre-lock snapshot's `envelope`.
+        const derivedRecipientActionAuth = await validateFieldAuth({
+          documentAuthOptions: freshEnvelope.authOptions,
           recipient,
-          field,
+          field: freshField,
           userId: user?.id,
           authOptions,
         });
 
-    const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
+        // Authoritative insertion-value derivation: resolves checkbox option
+        // INDICES against `freshField.fieldMeta.values`, applies validation
+        // rules (text length, number format, ...) against fresh metadata. Pure
+        // and fast (no I/O) — safe to run inside the lock.
+        const insertionValues = extractFieldInsertionValues({ fieldValue, field: freshField, documentMeta });
 
-    let signatureImageAsBase64 = null;
-    let typedSignature = null;
+        const isUninserting = !insertionValues.inserted;
 
-    if (!isUninserting && field.type === FieldType.SIGNATURE) {
-      if (fieldValue.type !== FieldType.SIGNATURE) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Field ${fieldId} is not a signature field`,
-        });
-      }
+        // The client only ever submits a key from the TMP (presign-mintable)
+        // key space. Never trust its claimed size/mimeType, and never persist
+        // that key directly: a presigned PUT stays valid for up to an hour, so
+        // without finalizing to a copy the client (or anyone who captured the
+        // URL) could replay a PUT to the same key after the field is marked
+        // signed and silently swap the accepted bytes with no new
+        // authorization. `finalizeFieldFileUpload` re-verifies the ACTUAL
+        // stored object against policy and copies it to a key no route ever
+        // mints a PUT for before returning what actually gets persisted. Runs
+        // inside the lock (not before it) so a concurrent authoring edit can't
+        // retype this field out from under an in-flight upload finalization —
+        // see the extended transaction timeout above.
+        if (freshField.type === FieldType.FILE_UPLOAD && insertionValues.inserted) {
+          const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
 
-      if (fieldValue.value) {
-        const isBase64 = isBase64Image(fieldValue.value);
-
-        signatureImageAsBase64 = isBase64 ? fieldValue.value : null;
-        typedSignature = !isBase64 ? fieldValue.value : null;
-      }
-    }
-
-    return await prisma.$transaction(async (tx) => {
-      // Take an exclusive lock on the envelope row before reading anything that
-      // this write's condition checks depend on. `complete-document-with-token.ts`
-      // takes the same lock before freezing a recipient's completion, so the two
-      // can never interleave: whichever of "a controller changes" or "a dependent
-      // recipient completes" commits first is fully visible to the other by the
-      // time it re-reads under the lock. Without this, two concurrent
-      // transactions could each read the other's stale pre-commit state and both
-      // pass their own check, landing the envelope in an inconsistent state (e.g.
-      // a checked "has a co-buyer" box with no co-buyer signature).
-      await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
-
-      // Re-verify every status check made above against fresh, lock-protected
-      // state. Those earlier checks used a snapshot read before this transaction
-      // (and before waiting for the lock) — without re-checking, a request that
-      // began before its own recipient (or the document) was completed elsewhere
-      // could sit waiting for the lock and then blindly write a field for an
-      // already-signed recipient once it finally acquires it.
-      const freshEnvelope = await tx.envelope.findUniqueOrThrow({
-        where: { id: envelope.id },
-        select: { status: true, deletedAt: true },
-      });
-
-      if (freshEnvelope.deletedAt) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Document ${envelope.id} has been deleted`,
-        });
-      }
-
-      if (freshEnvelope.status !== DocumentStatus.PENDING) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Document ${envelope.id} must be pending for signing`,
-        });
-      }
-
-      const freshRecipient = await tx.recipient.findUniqueOrThrow({
-        where: { id: recipient.id },
-        select: { signingStatus: true },
-      });
-
-      const freshFieldOwner =
-        field.recipientId === recipient.id
-          ? freshRecipient
-          : await tx.recipient.findUniqueOrThrow({
-              where: { id: field.recipientId },
-              select: { signingStatus: true },
+          if (!submittedUpload) {
+            throw new AppError(AppErrorCode.INVALID_BODY, {
+              message: 'Invalid file upload value',
             });
+          }
 
-      if (
-        freshRecipient.signingStatus === SigningStatus.SIGNED ||
-        freshFieldOwner.signingStatus === SigningStatus.SIGNED
-      ) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Recipient ${recipient.id} has already signed`,
-        });
-      }
-
-      const freshEnvelopeFields = await tx.field.findMany({ where: { envelopeId: envelope.id } });
-
-      const freshField = freshEnvelopeFields.find((f) => f.id === field.id);
-
-      if (!freshField) {
-        throw new AppError(AppErrorCode.NOT_FOUND, { message: `Field ${fieldId} not found` });
-      }
-
-      if (freshField.fieldMeta?.readOnly) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Field ${fieldId} is read only`,
-        });
-      }
-
-      const signedRecipientIds = new Set(
-        (
-          await tx.recipient.findMany({
-            where: { envelopeId: envelope.id, signingStatus: SigningStatus.SIGNED },
-            select: { id: true },
-          })
-        ).map((r) => r.id),
-      );
-
-      if (!isUninserting && !isFieldVisible(field, freshEnvelopeFields)) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: `Field ${fieldId} is not currently visible and cannot be signed`,
-        });
-      }
-
-      if (field.type === FieldType.CHECKBOX) {
-        const proposedCustomText = isUninserting ? '' : insertionValues.customText;
-
-        const affectedCompletedDependents = findCompletedDependentsAffectedByControllerChange({
-          controllerFieldId: field.id,
-          proposedCustomText,
-          allEnvelopeFields: freshEnvelopeFields,
-          signedRecipientIds,
-        });
-
-        if (affectedCompletedDependents.length > 0) {
-          throw new AppError(AppErrorCode.INVALID_REQUEST, {
-            message:
-              'This selection cannot be changed because it would alter a requirement or remove consent for a recipient who has already completed signing',
+          insertionValues.customText = await finalizeFieldFileUpload({
+            tmpKey: submittedUpload.key,
+            fileName: submittedUpload.fileName,
+            envelopeId: freshField.envelopeId,
+            fieldId: freshField.id,
+            claimedSize: submittedUpload.size,
+            claimedMimeType: submittedUpload.mimeType,
           });
         }
-      }
 
-      if (isUninserting) {
+        let signatureImageAsBase64 = null;
+        let typedSignature = null;
+
+        if (!isUninserting && freshField.type === FieldType.SIGNATURE) {
+          if (fieldValue.type !== FieldType.SIGNATURE) {
+            throw new AppError(AppErrorCode.INVALID_REQUEST, {
+              message: `Field ${fieldId} is not a signature field`,
+            });
+          }
+
+          if (fieldValue.value) {
+            const isBase64 = isBase64Image(fieldValue.value);
+
+            signatureImageAsBase64 = isBase64 ? fieldValue.value : null;
+            typedSignature = !isBase64 ? fieldValue.value : null;
+          }
+        }
+
+        const signedRecipientIds = new Set(
+          (
+            await tx.recipient.findMany({
+              where: { envelopeId: envelope.id, signingStatus: SigningStatus.SIGNED },
+              select: { id: true },
+            })
+          ).map((r) => r.id),
+        );
+
+        if (!isUninserting && !isFieldVisible(freshField, freshEnvelopeFields)) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Field ${fieldId} is not currently visible and cannot be signed`,
+          });
+        }
+
+        if (freshField.type === FieldType.CHECKBOX) {
+          const proposedCustomText = isUninserting ? '' : insertionValues.customText;
+
+          const affectedCompletedDependents = findCompletedDependentsAffectedByControllerChange({
+            controllerFieldId: freshField.id,
+            proposedCustomText,
+            allEnvelopeFields: freshEnvelopeFields,
+            signedRecipientIds,
+          });
+
+          if (affectedCompletedDependents.length > 0) {
+            throw new AppError(AppErrorCode.INVALID_REQUEST, {
+              message:
+                'This selection cannot be changed because it would alter a requirement or remove consent for a recipient who has already completed signing',
+            });
+          }
+        }
+
+        if (isUninserting) {
+          const updatedField = await tx.field.update({
+            where: {
+              id: freshField.id,
+            },
+            data: {
+              customText: '',
+              inserted: false,
+            },
+          });
+
+          await tx.signature.deleteMany({
+            where: {
+              fieldId: freshField.id,
+            },
+          });
+
+          if (recipient.role !== RecipientRole.ASSISTANT) {
+            await tx.documentAuditLog.create({
+              data: createDocumentAuditLogData({
+                type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_UNINSERTED,
+                envelopeId: envelope.id,
+                user: {
+                  name: recipient.name,
+                  email: recipient.email,
+                },
+                requestMetadata: metadata.requestMetadata,
+                data: {
+                  field: freshField.type,
+                  fieldId: freshField.secondaryId,
+                },
+              }),
+            });
+          }
+
+          return {
+            signedField: updatedField,
+          };
+        }
+
         const updatedField = await tx.field.update({
           where: {
-            id: field.id,
+            id: freshField.id,
           },
           data: {
-            customText: '',
-            inserted: false,
+            customText: insertionValues.customText,
+            inserted: insertionValues.inserted,
+          },
+          include: {
+            signature: true,
           },
         });
 
-        await tx.signature.deleteMany({
-          where: {
-            fieldId: field.id,
-          },
-        });
+        if (freshField.type === FieldType.SIGNATURE) {
+          const signature = await tx.signature.upsert({
+            where: {
+              fieldId: freshField.id,
+            },
+            create: {
+              fieldId: freshField.id,
+              recipientId: freshField.recipientId,
+              signatureImageAsBase64: signatureImageAsBase64,
+              typedSignature: typedSignature,
+            },
+            update: {
+              signatureImageAsBase64: signatureImageAsBase64,
+              typedSignature: typedSignature,
+            },
+          });
 
-        if (recipient.role !== RecipientRole.ASSISTANT) {
-          await tx.documentAuditLog.create({
-            data: createDocumentAuditLogData({
-              type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_UNINSERTED,
-              envelopeId: envelope.id,
-              user: {
-                name: recipient.name,
-                email: recipient.email,
-              },
-              requestMetadata: metadata.requestMetadata,
-              data: {
-                field: field.type,
-                fieldId: field.secondaryId,
-              },
-            }),
+          // Dirty but I don't want to deal with type information
+          Object.assign(updatedField, {
+            signature,
           });
         }
+
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type:
+              assistant && freshField.recipientId !== assistant.id
+                ? DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_PREFILLED
+                : DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
+            envelopeId: envelope.id,
+            user: {
+              email: assistant?.email ?? recipient.email,
+              name: assistant?.name ?? recipient.name,
+            },
+            requestMetadata: metadata.requestMetadata,
+            data: {
+              recipientEmail: recipient.email,
+              recipientId: recipient.id,
+              recipientName: recipient.name,
+              recipientRole: recipient.role,
+              fieldId: updatedField.secondaryId,
+              field: match(updatedField.type)
+                .with(FieldType.SIGNATURE, FieldType.FREE_SIGNATURE, (type) => ({
+                  type,
+                  data: signatureImageAsBase64 || typedSignature || '',
+                }))
+                .with(FieldType.DATE, FieldType.EMAIL, FieldType.NAME, FieldType.TEXT, FieldType.INITIALS, (type) => ({
+                  type,
+                  data: updatedField.customText,
+                }))
+                .with(
+                  FieldType.NUMBER,
+                  FieldType.RADIO,
+                  FieldType.CHECKBOX,
+                  FieldType.DROPDOWN,
+                  FieldType.FILE_UPLOAD,
+                  (type) => ({
+                    type,
+                    data: updatedField.customText,
+                  }),
+                )
+                .exhaustive(),
+              fieldSecurity: derivedRecipientActionAuth
+                ? {
+                    type: derivedRecipientActionAuth,
+                  }
+                : undefined,
+            },
+          }),
+        });
 
         return {
           signedField: updatedField,
         };
-      }
-
-      const updatedField = await tx.field.update({
-        where: {
-          id: field.id,
-        },
-        data: {
-          customText: insertionValues.customText,
-          inserted: insertionValues.inserted,
-        },
-        include: {
-          signature: true,
-        },
-      });
-
-      if (field.type === FieldType.SIGNATURE) {
-        const signature = await tx.signature.upsert({
-          where: {
-            fieldId: field.id,
-          },
-          create: {
-            fieldId: field.id,
-            recipientId: field.recipientId,
-            signatureImageAsBase64: signatureImageAsBase64,
-            typedSignature: typedSignature,
-          },
-          update: {
-            signatureImageAsBase64: signatureImageAsBase64,
-            typedSignature: typedSignature,
-          },
-        });
-
-        // Dirty but I don't want to deal with type information
-        Object.assign(updatedField, {
-          signature,
-        });
-      }
-
-      await tx.documentAuditLog.create({
-        data: createDocumentAuditLogData({
-          type:
-            assistant && field.recipientId !== assistant.id
-              ? DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_PREFILLED
-              : DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_FIELD_INSERTED,
-          envelopeId: envelope.id,
-          user: {
-            email: assistant?.email ?? recipient.email,
-            name: assistant?.name ?? recipient.name,
-          },
-          requestMetadata: metadata.requestMetadata,
-          data: {
-            recipientEmail: recipient.email,
-            recipientId: recipient.id,
-            recipientName: recipient.name,
-            recipientRole: recipient.role,
-            fieldId: updatedField.secondaryId,
-            field: match(updatedField.type)
-              .with(FieldType.SIGNATURE, FieldType.FREE_SIGNATURE, (type) => ({
-                type,
-                data: signatureImageAsBase64 || typedSignature || '',
-              }))
-              .with(FieldType.DATE, FieldType.EMAIL, FieldType.NAME, FieldType.TEXT, FieldType.INITIALS, (type) => ({
-                type,
-                data: updatedField.customText,
-              }))
-              .with(
-                FieldType.NUMBER,
-                FieldType.RADIO,
-                FieldType.CHECKBOX,
-                FieldType.DROPDOWN,
-                FieldType.FILE_UPLOAD,
-                (type) => ({
-                  type,
-                  data: updatedField.customText,
-                }),
-              )
-              .exhaustive(),
-            fieldSecurity: derivedRecipientActionAuth
-              ? {
-                  type: derivedRecipientActionAuth,
-                }
-              : undefined,
-          },
-        }),
-      });
-
-      return {
-        signedField: updatedField,
-      };
-    });
+      },
+      { timeout: 20000 },
+    );
   });

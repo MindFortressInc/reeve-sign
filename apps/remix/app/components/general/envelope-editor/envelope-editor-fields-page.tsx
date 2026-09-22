@@ -454,6 +454,10 @@ export const EnvelopeEditorFieldsPage = () => {
                   <Separator className="my-4" />
 
                   <EditorConditionalVisibilityField
+                    // Force a fresh instance (and fresh local draft state) per
+                    // field so the controller/option selection can never leak
+                    // from one field to another when switching the selection.
+                    key={selectedField.formId}
                     condition={getFieldCondition(selectedField.fieldMeta)}
                     availableCheckboxFields={availableConditionCheckboxFields}
                     onChange={(condition) =>
