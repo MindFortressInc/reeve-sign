@@ -67,7 +67,7 @@ export const buildFinalizedFieldFileUploadKey = ({
   return `${buildFieldFileUploadKeyPrefix({ envelopeId, fieldId })}${alphaid(12)}/${slugifyFileNameSegment(fileName)}`;
 };
 
-const signPutObjectCommand = async (key: string, contentType: string) => {
+const signPutObjectCommand = async (key: string, contentType: string, contentLength?: number) => {
   const client = getS3Client();
 
   const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
@@ -76,6 +76,11 @@ const signPutObjectCommand = async (key: string, contentType: string) => {
     Bucket: env('NEXT_PRIVATE_UPLOAD_BUCKET'),
     Key: key,
     ContentType: contentType,
+    // Binding ContentLength into the signed request means S3 rejects a PUT
+    // whose body doesn't match the size the caller validated up front — a
+    // presigned URL with no length bound otherwise lets the holder upload
+    // an arbitrarily larger object than what was checked against the limit.
+    ContentLength: contentLength,
   });
 
   const url = await getSignedUrl(client, putObjectCommand, {
@@ -115,9 +120,13 @@ export const getPresignPostUrl = async (fileName: string, contentType: string, u
  * Mints a presigned PUT for a caller-supplied key rather than generating one.
  * Used where the key must be scoped to a specific owning resource (e.g. a
  * recipient file-upload field) rather than just a user.
+ *
+ * `contentLength`, when supplied, is bound into the signed request so the
+ * upload can't exceed the size the caller already validated (e.g. against
+ * `FIELD_FILE_UPLOAD_SIZE_LIMIT_MB`).
  */
-export const getPresignPostUrlForKey = async (key: string, contentType: string) => {
-  return signPutObjectCommand(key, contentType);
+export const getPresignPostUrlForKey = async (key: string, contentType: string, contentLength?: number) => {
+  return signPutObjectCommand(key, contentType, contentLength);
 };
 
 /**

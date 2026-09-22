@@ -7,6 +7,7 @@ import { createDocumentAuditLogData } from '@documenso/lib/utils/document-audit-
 import {
   assertValidFieldConditionGraph,
   fieldsContainUnsignedRequiredVisibleField,
+  isFieldVisible,
 } from '@documenso/lib/utils/field-conditions';
 import { prisma } from '@documenso/prisma';
 import {
@@ -238,11 +239,15 @@ export const completeDocumentWithToken = async ({
       });
 
       if (freshEnvelope.status !== DocumentStatus.PENDING) {
-        throw new Error(`Document ${envelope.id} must be pending`);
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Document ${envelope.id} must be pending`,
+        });
       }
 
       if (freshRecipient.signingStatus === SigningStatus.SIGNED) {
-        throw new Error(`Recipient ${recipient.id} has already signed`);
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} has already signed`,
+        });
       }
 
       if (freshRecipient.signingStatus === SigningStatus.REJECTED) {
@@ -264,7 +269,15 @@ export const completeDocumentWithToken = async ({
       // above only to derive `recipientName`/`recipientEmail`) is deliberately
       // not reused here — `freshRecipientFields` is the lock-protected read.
       const uninsertedDateFields = freshRecipientFields.filter(
-        (field) => field.type === FieldType.DATE && !field.inserted,
+        (field) =>
+          field.type === FieldType.DATE &&
+          !field.inserted &&
+          // A condition-hidden DATE field must not be silently auto-filled and
+          // marked inserted at completion — that would both show a value the
+          // recipient never provided and count as "signed" for a field they
+          // never actually saw. V1 has no visibility concept, so it always
+          // auto-inserts exactly as before this feature existed.
+          (freshEnvelope.internalVersion !== 2 || isFieldVisible(field, allEnvelopeFields)),
       );
 
       if (freshEnvelope.internalVersion === 2 && uninsertedDateFields.length > 0) {
@@ -331,10 +344,14 @@ export const completeDocumentWithToken = async ({
         assertValidFieldConditionGraph(freshRecipientFields, allEnvelopeFields);
 
         if (fieldsContainUnsignedRequiredVisibleField(freshRecipientFields, allEnvelopeFields)) {
-          throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Recipient ${recipient.id} has unsigned fields`,
+          });
         }
       } else if (fieldsContainUnsignedRequiredField(freshRecipientFields)) {
-        throw new Error(`Recipient ${recipient.id} has unsigned fields`);
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: `Recipient ${recipient.id} has unsigned fields`,
+        });
       }
 
       await tx.recipient.update({

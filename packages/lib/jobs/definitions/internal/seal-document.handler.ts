@@ -132,11 +132,14 @@ export const run = async ({ payload, io }: { payload: TSealDocumentJobDefinition
     // existed, with no visibility-aware exemption and no graph validation.
     const envelopeSupportsConditions = envelope.internalVersion === 2;
 
-    // Skip the field check if the document is rejected
+    // Skip the unsigned required-field check if the document is rejected
     if (!isRejected) {
       if (envelopeSupportsConditions) {
-        // A corrupted condition graph must never let a document seal by silently
-        // treating an unresolvable field as "hidden, hence exempt".
+        // A corrupted condition graph must never let a document COMPLETE by
+        // treating an unresolvable field as "hidden, hence exempt". A rejected
+        // document only omits values (via `visibleFields` below, which already
+        // excludes non-visible/invalid fields regardless of this assertion), so
+        // it must still be allowed to seal and reach `REJECTED`.
         assertValidFieldConditionGraph(fields, fields);
 
         if (fieldsContainUnsignedRequiredVisibleField(fields, fields)) {

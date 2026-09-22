@@ -193,10 +193,20 @@ export const updateEnvelopeFields = async ({
       fields.filter((field) => field.fieldMeta !== undefined).map((field) => field.id),
     );
 
+    // Scan for conditions that were ALREADY dangling before this update (a
+    // pre-existing malformed/dangling condition unrelated to this batch) so
+    // they can be excluded below — otherwise an edit that only touches an
+    // unrelated field could get wrongly rejected because that pre-existing
+    // problem happens to belong to a different already-signed recipient.
+    // Same reasoning as `delete-envelope-recipient.ts`'s identical guard.
+    const preExistingDanglingFieldIds = new Set(
+      findFieldsWithDanglingConditions(freshEnvelope.fields, freshEnvelope.fields).map((field) => field.id),
+    );
+
     const danglingDependents = findFieldsWithDanglingConditions(
       envelopeFieldsAfterUpdate,
       envelopeFieldsAfterUpdate,
-    ).filter((field) => !revalidatedFieldIds.has(field.id));
+    ).filter((field) => !revalidatedFieldIds.has(field.id) && !preExistingDanglingFieldIds.has(field.id));
 
     const signedRecipientIds = new Set(
       freshEnvelope.recipients.filter((r) => r.signingStatus === SigningStatus.SIGNED).map((r) => r.id),

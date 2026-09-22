@@ -375,26 +375,74 @@ export const validateFieldConditionRef = ({
 };
 
 /**
- * Finds fields among `candidateFields` whose condition is malformed or
- * structurally invalid given `allEnvelopeFieldsAfterChange` (the field set as it
- * will exist AFTER a pending deletion/replacement/option-removal is applied).
- * Used to cascade-clear dependents so a write never *leaves behind* a
- * dangling/broken condition, whether the change is a single field delete, a bulk
- * replace, a recipient delete (which cascades to all of their fields), or a
- * controlling checkbox losing an option — and opportunistically self-heals any
- * pre-existing malformed condition it encounters along the way.
+ * Checks ONLY `field`'s own condition reference for structural validity — NOT
+ * whether the resolved chain above it happens to be visible/hidden/invalid.
+ * A field's own reference is fine as long as: its condition parses; the
+ * referenced controller exists and is a CHECKBOX; every referenced option id
+ * still exists on that checkbox; and the field isn't itself part of a cycle.
+ *
+ * Deliberately does NOT propagate an ancestor's 'invalid' status down: a
+ * controller that is itself transitively hidden/invalid does not make THIS
+ * field's own reference to it dangling — that controller still exists as a
+ * field, and once its own condition is (separately) cleared/fixed, this
+ * field's reference to it is exactly as valid as it always was. Conflating
+ * "my controller currently resolves invalid" with "my own reference is
+ * broken" is what caused a distant, unrelated ancestor's cascade-clear to
+ * wrongly clear/reject a field several hops away whose own reference was
+ * never broken.
+ */
+const hasStructurallyInvalidOwnReference = (
+  field: FieldForConditionEvaluation,
+  allEnvelopeFields: FieldForConditionEvaluation[],
+): boolean => {
+  const extraction = extractFieldCondition(field.fieldMeta);
+
+  if (!extraction.present) {
+    return false;
+  }
+
+  if (!extraction.valid) {
+    return true;
+  }
+
+  const controller = allEnvelopeFields.find((candidate) => candidate.id === extraction.condition.fieldId);
+
+  if (!controller || controller.type !== FieldType.CHECKBOX) {
+    return true;
+  }
+
+  const meta = ZCheckboxFieldMeta.safeParse(controller.fieldMeta);
+  const availableOptionIds = meta.success ? (meta.data.values ?? []).map((value) => value.id) : [];
+
+  if (extraction.condition.optionIds.some((optionId) => !availableOptionIds.includes(optionId))) {
+    return true;
+  }
+
+  const state = resolveFieldConditionState(field, allEnvelopeFields);
+
+  return state.status === 'invalid' && state.reason === 'Conditional visibility graph contains a cycle';
+};
+
+/**
+ * Finds fields among `candidateFields` whose OWN condition reference is
+ * malformed or structurally invalid given `allEnvelopeFieldsAfterChange` (the
+ * field set as it will exist AFTER a pending deletion/replacement/option-removal
+ * is applied). Used to cascade-clear dependents so a write never *leaves
+ * behind* a dangling/broken condition, whether the change is a single field
+ * delete, a bulk replace, a recipient delete (which cascades to all of their
+ * fields), or a controlling checkbox losing an option — and opportunistically
+ * self-heals any pre-existing malformed condition it encounters along the way.
+ *
+ * Only a field's OWN reference counts (see `hasStructurallyInvalidOwnReference`)
+ * — a field several hops downstream of the actual change, whose own controller
+ * still exists unchanged, is never swept up just because that controller's
+ * OWN condition also happens to be dangling right now; that controller is
+ * handled (cleared/rejected) on its own.
  */
 export const findFieldsWithDanglingConditions = <T extends FieldForConditionEvaluation>(
   candidateFields: T[],
   allEnvelopeFieldsAfterChange: FieldForConditionEvaluation[],
-): T[] =>
-  candidateFields.filter((field) => {
-    if (!extractFieldCondition(field.fieldMeta).present) {
-      return false;
-    }
-
-    return resolveFieldConditionState(field, allEnvelopeFieldsAfterChange).status === 'invalid';
-  });
+): T[] => candidateFields.filter((field) => hasStructurallyInvalidOwnReference(field, allEnvelopeFieldsAfterChange));
 
 /**
  * Splits a set of fields that WOULD have their condition cascade-cleared (per
@@ -527,7 +575,7 @@ export const resolveBulkFieldConditions = <
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     } as FieldForConditionEvaluation;
 
-    const stillValid = resolveFieldConditionState(evaluationField, existingFieldsAfterUpdate).status !== 'invalid';
+    const stillValid = !hasStructurallyInvalidOwnReference(evaluationField, existingFieldsAfterUpdate);
 
     if (stillValid) {
       return field;

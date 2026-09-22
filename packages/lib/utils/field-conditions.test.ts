@@ -507,6 +507,28 @@ describe('findFieldsWithDanglingConditions', () => {
 
     expect(findFieldsWithDanglingConditions([plain], [plain])).toEqual([]);
   });
+
+  it('does not cascade a broken ancestor condition onto a field whose OWN reference is still valid', () => {
+    // Chain: A is conditioned on checkbox B, B is conditioned on checkbox C.
+    // C is being removed (absent from the post-change field set) — only B's
+    // OWN reference is actually broken by that. A's own reference to B is
+    // untouched: B still exists as a checkbox with option 20.
+    const bConditionedOnC = makeField({
+      id: 2,
+      type: FieldType.CHECKBOX,
+      fieldMeta: {
+        type: 'checkbox',
+        direction: 'vertical',
+        values: [{ id: 20, checked: false, value: 'Option 20' }],
+        condition: { fieldId: 1, optionIds: [10] },
+      },
+    });
+    const aConditionedOnB = dependentField(3, 2, [20]);
+
+    const remainingFields = [bConditionedOnC, aConditionedOnB]; // C (id 1) excluded — deleted.
+
+    expect(findFieldsWithDanglingConditions(remainingFields, remainingFields)).toEqual([bConditionedOnC]);
+  });
 });
 
 describe('validateFieldConditionRef', () => {
@@ -630,6 +652,40 @@ describe('resolveBulkFieldConditions', () => {
     );
 
     expect(getFieldCondition(resolved[0].fieldMeta)).toBeNull();
+  });
+
+  it('clears only the directly-broken link in a chain, not a descendant whose own reference is still valid', () => {
+    // B -> C: B is conditioned on checkbox C. A -> B: A is conditioned on
+    // checkbox B. The autosave batch excludes C (it will be deleted); B and A
+    // are resent unchanged.
+    const controllerC = checkboxField(1, '', [10]);
+    const bConditionedOnC = makeField({
+      id: 2,
+      type: FieldType.CHECKBOX,
+      fieldMeta: {
+        type: 'checkbox',
+        direction: 'vertical',
+        values: [{ id: 20, checked: false, value: 'Option 20' }],
+        condition: { fieldId: 1, optionIds: [10] },
+      },
+    });
+    const aConditionedOnB = dependentField(3, 2, [20]);
+
+    const resolved = resolveBulkFieldConditions(
+      [
+        { id: 2, type: FieldType.CHECKBOX, fieldMeta: bConditionedOnC.fieldMeta, recipientId: 1 },
+        { id: 3, type: FieldType.SIGNATURE, fieldMeta: aConditionedOnB.fieldMeta, recipientId: 1 },
+      ],
+      [controllerC, bConditionedOnC, aConditionedOnB],
+      { internalVersion: 2, signedRecipientIds: noSigned },
+    );
+
+    // B's own reference to (deleted) C is broken => cleared.
+    expect(getFieldCondition(resolved[0].fieldMeta)).toBeNull();
+    // A's own reference to B is still valid (B still exists as a checkbox
+    // with option 20) => left untouched, even though B's own condition was
+    // also dangling in this same batch.
+    expect(getFieldCondition(resolved[1].fieldMeta)).toEqual({ fieldId: 2, optionIds: [20] });
   });
 
   it('silently clears a pre-existing malformed condition left untouched by this batch', () => {

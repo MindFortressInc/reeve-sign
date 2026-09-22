@@ -267,7 +267,9 @@ export const setFieldsForDocument = async ({
           });
 
           if (upsertedField.recipientId === null) {
-            throw new Error('Not possible');
+            throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
+              message: `Field ${upsertedField.id} has no recipient`,
+            });
           }
 
           const baseAuditLog = {
