@@ -1,17 +1,25 @@
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { completeDocumentWithToken } from '@documenso/lib/server-only/document/complete-document-with-token';
 import { rejectDocumentWithToken } from '@documenso/lib/server-only/document/reject-document-with-token';
 import { createEnvelopeRecipients } from '@documenso/lib/server-only/recipient/create-envelope-recipients';
 import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/delete-envelope-recipient';
+import {
+  getAdvanceHandoffSigningToken,
+  getStartHandoffCandidates,
+  getStartHandoffSigningToken,
+} from '@documenso/lib/server-only/recipient/get-handoff-eligibility';
 import { getRecipientById } from '@documenso/lib/server-only/recipient/get-recipient-by-id';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { setTemplateRecipients } from '@documenso/lib/server-only/recipient/set-template-recipients';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
+import { formatSigningLink } from '@documenso/lib/utils/recipients';
 import { EnvelopeType } from '@prisma/client';
 
 import { ZGenericSuccessResponse, ZSuccessResponseSchema } from '../schema';
 import { authenticatedProcedure, procedure, router } from '../trpc';
 import { findRecipientSuggestionsRoute } from './find-recipient-suggestions';
 import {
+  ZAdvanceHandoffSigningLinkRequestSchema,
   ZCompleteDocumentWithTokenMutationSchema,
   ZCreateDocumentRecipientRequestSchema,
   ZCreateDocumentRecipientResponseSchema,
@@ -25,11 +33,15 @@ import {
   ZDeleteTemplateRecipientRequestSchema,
   ZGetRecipientRequestSchema,
   ZGetRecipientResponseSchema,
+  ZHandoffSigningLinkResponseSchema,
   ZRejectDocumentWithTokenMutationSchema,
   ZSetDocumentRecipientsRequestSchema,
   ZSetDocumentRecipientsResponseSchema,
   ZSetTemplateRecipientsRequestSchema,
   ZSetTemplateRecipientsResponseSchema,
+  ZStartHandoffCandidatesRequestSchema,
+  ZStartHandoffCandidatesResponseSchema,
+  ZStartHandoffSigningLinkRequestSchema,
   ZUpdateDocumentRecipientRequestSchema,
   ZUpdateDocumentRecipientResponseSchema,
   ZUpdateDocumentRecipientsRequestSchema,
@@ -604,4 +616,111 @@ export const recipientRouter = router({
       requestMetadata: ctx.metadata.requestMetadata,
     });
   }),
+
+  /**
+   * @private
+   *
+   * DEV-654 in-person handoff -- START. The host explicitly kicking off a
+   * session from the authenticated document management page, before anyone
+   * has signed anything yet. Deliberately `authenticatedProcedure`, not
+   * token-based: a recipient's own signing token must never be sufficient to
+   * obtain another recipient's token. `ctx.user` plus the envelope's own
+   * `input.teamId` (unvalidated, re-verified fresh by getEnvelopeById on
+   * every call -- see the schema doc comment) are the server-verified
+   * owner/team identity; never cached, never accepted as a bare claim.
+   */
+  startHandoffCandidates: authenticatedProcedure
+    .input(ZStartHandoffCandidatesRequestSchema)
+    .output(ZStartHandoffCandidatesResponseSchema)
+    .query(async ({ input, ctx }) => {
+      const { documentId, teamId } = input;
+
+      return await getStartHandoffCandidates({
+        documentId,
+        userId: ctx.user.id,
+        teamId,
+      });
+    }),
+
+  /**
+   * @private
+   */
+  startHandoffSigningLink: authenticatedProcedure
+    .input(ZStartHandoffSigningLinkRequestSchema)
+    .output(ZHandoffSigningLinkResponseSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { documentId, teamId, recipientId } = input;
+
+      ctx.logger.info({
+        input: {
+          documentId,
+          recipientId,
+        },
+      });
+
+      const handoff = await getStartHandoffSigningToken({
+        documentId,
+        recipientId,
+        userId: ctx.user.id,
+        teamId,
+      });
+
+      if (!handoff) {
+        throw new AppError(AppErrorCode.NOT_FOUND, {
+          message: 'Recipient is not currently eligible to start an in-person session',
+        });
+      }
+
+      return {
+        signingLink: formatSigningLink(handoff.token),
+        name: handoff.name,
+        email: handoff.email,
+      };
+    }),
+
+  /**
+   * @private
+   *
+   * DEV-654 in-person handoff -- ADVANCE. Handing the device to the next
+   * signer after `completedRecipientId` has genuinely finished. Deliberately
+   * a separate, non-bypassable operation from START:
+   * `completedRecipientId` is required (not optional) and is re-verified
+   * against a fresh DB read (actually SIGNED, belongs to this envelope) by
+   * getAdvanceHandoffSigningToken before any token is disclosed -- host
+   * authorization alone is never sufficient without it.
+   */
+  advanceHandoffSigningLink: authenticatedProcedure
+    .input(ZAdvanceHandoffSigningLinkRequestSchema)
+    .output(ZHandoffSigningLinkResponseSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { documentId, teamId, completedRecipientId, nextRecipientId } = input;
+
+      ctx.logger.info({
+        input: {
+          documentId,
+          completedRecipientId,
+          nextRecipientId,
+        },
+      });
+
+      const handoff = await getAdvanceHandoffSigningToken({
+        documentId,
+        completedRecipientId,
+        nextRecipientId,
+        userId: ctx.user.id,
+        teamId,
+      });
+
+      if (!handoff) {
+        throw new AppError(AppErrorCode.NOT_FOUND, {
+          message: 'Outgoing recipient has not completed, or the next recipient is no longer eligible for handoff',
+        });
+      }
+
+      return {
+        signingLink: formatSigningLink(handoff.token),
+        name: handoff.name,
+        email: handoff.email,
+      };
+    }),
 });
