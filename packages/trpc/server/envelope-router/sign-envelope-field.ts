@@ -322,6 +322,11 @@ export const signEnvelopeFieldRoute = procedure
         // inside the lock (not before it) so a concurrent authoring edit can't
         // retype this field out from under an in-flight upload finalization —
         // see the extended transaction timeout above.
+        //
+        // This must also run AFTER validateFieldAuth: finalizing copies the tmp
+        // object to its final key and deletes the tmp object, so running it
+        // before an auth failure would leave an orphaned final object with no
+        // Field row, forcing the recipient to redo the upload.
         if (freshField.type === FieldType.FILE_UPLOAD && insertionValues.inserted) {
           const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
 

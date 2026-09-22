@@ -155,8 +155,10 @@ describe('FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES', () => {
   });
 
   it('does not allow executable or script content types', () => {
-    expect(FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES).not.toEqual(
-      expect.arrayContaining(['text/html', 'application/javascript', 'application/x-msdownload']),
-    );
+    const disallowed = ['text/html', 'application/javascript', 'application/x-msdownload'];
+
+    for (const mimeType of disallowed) {
+      expect(FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES).not.toContain(mimeType);
+    }
   });
 });
