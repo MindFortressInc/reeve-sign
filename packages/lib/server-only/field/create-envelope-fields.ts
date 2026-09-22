@@ -10,6 +10,7 @@ import { EnvelopeType } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { extractFieldCondition, validateFieldConditionRef } from '../../utils/field-conditions';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { canRecipientFieldsBeModified } from '../../utils/recipients';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
@@ -157,6 +158,36 @@ export const createEnvelopeFields = async ({
     if (!canRecipientFieldsBeModified(recipient, envelope.fields)) {
       throw new AppError(AppErrorCode.INVALID_REQUEST, {
         message: 'Recipient type cannot have fields, or they have already interacted with the document.',
+      });
+    }
+
+    // A freshly-created field has no id yet, so it can only ever reference an
+    // ALREADY-PERSISTED checkbox (the editor only offers fields with a real
+    // database id as controllers — see `EditorConditionalVisibilityField`) —
+    // there is no self-reference/cycle risk to check (`targetFieldId: null`).
+    const proposedConditionExtraction = extractFieldCondition(field.fieldMeta);
+
+    if (proposedConditionExtraction.present) {
+      // Conditional visibility is V2-only: V1 rendering/signing never
+      // evaluates it, so persisting one would be silently inert at best and
+      // misleading at worst (the field would look unconditionally required
+      // in the V1 UI a signer actually sees).
+      if (envelope.internalVersion !== 2) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Conditional visibility is only supported for V2 envelopes',
+        });
+      }
+
+      if (!proposedConditionExtraction.valid) {
+        throw new AppError(AppErrorCode.INVALID_REQUEST, {
+          message: 'Conditional visibility is malformed',
+        });
+      }
+
+      validateFieldConditionRef({
+        targetFieldId: null,
+        condition: proposedConditionExtraction.condition,
+        envelopeFields: envelope.fields,
       });
     }
 

@@ -107,11 +107,22 @@ export const EnvelopeEditorFieldsPage = () => {
       return;
     }
 
-    const isMetaSame = isDeepEqual(selectedField.fieldMeta, fieldMeta);
+    // Per-type forms (text, number, radio, ...) rebuild fieldMeta from their
+    // own form state, which does not track `condition`. Without this merge,
+    // editing a field's type-specific settings after setting a conditional
+    // visibility rule would silently drop that condition.
+    const nextFieldMeta = {
+      ...fieldMeta,
+      condition:
+        fieldMeta && 'condition' in fieldMeta ? fieldMeta.condition : getFieldCondition(selectedField.fieldMeta),
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    } as TFieldMetaSchema;
+
+    const isMetaSame = isDeepEqual(selectedField.fieldMeta, nextFieldMeta);
 
     if (!isMetaSame) {
       editorFields.updateFieldByFormId(selectedField.formId, {
-        fieldMeta,
+        fieldMeta: nextFieldMeta,
       });
     }
   };
