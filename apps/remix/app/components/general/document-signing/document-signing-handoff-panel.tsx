@@ -2,9 +2,7 @@ import { trpc } from '@documenso/trpc/react';
 import { Button } from '@documenso/ui/primitives/button';
 import { Label } from '@documenso/ui/primitives/label';
 import { RadioGroup, RadioGroupItem } from '@documenso/ui/primitives/radio-group';
-import { msg } from '@lingui/core/macro';
-import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangleIcon, ArrowRightIcon, Loader2Icon } from 'lucide-react';
 import { useState } from 'react';
 
@@ -35,7 +33,7 @@ export const DocumentSigningHandoffPanel = ({
   completedRecipientId,
   candidates,
 }: DocumentSigningHandoffPanelProps) => {
-  const { _ } = useLingui();
+  const { t } = useLingui();
 
   const [selectedRecipientId, setSelectedRecipientId] = useState<number | null>(candidates[0]?.recipientId ?? null);
 
@@ -116,7 +114,7 @@ export const DocumentSigningHandoffPanel = ({
         className="mt-4 w-full"
         disabled={!selectedRecipientId || isPending}
         onClick={handOffDevice}
-        aria-label={_(msg`Hand off device to next signer`)}
+        aria-label={t`Hand off device to next signer`}
       >
         {isPending ? (
           <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
