@@ -1563,6 +1563,15 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     }
 
+    if (type === 'FILE_UPLOAD') {
+      return {
+        status: 400,
+        body: {
+          message: 'FILE_UPLOAD fields are not supported via the v1 API — use the envelope editor',
+        },
+      };
+    }
+
     const { fields } = await updateEnvelopeFields({
       userId: user.id,
       teamId: team.id,

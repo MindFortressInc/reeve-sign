@@ -1,3 +1,4 @@
+import { AppError } from '@documenso/lib/errors/app-error';
 import {
   FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES,
   FIELD_FILE_UPLOAD_SIZE_LIMIT_MB,
@@ -58,6 +59,11 @@ export const SignFieldFileUploadDialog = createCallable<
       return;
     }
 
+    if (file.size <= 0) {
+      setError(t`This file appears to be empty. Please choose a different file.`);
+      return;
+    }
+
     setIsUploading(true);
 
     try {
@@ -81,15 +87,28 @@ export const SignFieldFileUploadDialog = createCallable<
 
       call.end({ key, fileName: file.name, size: file.size, mimeType: file.type });
     } catch (err) {
-      console.error(err);
-      setError(t`Something went wrong while uploading your file. Please try again.`);
+      const error = AppError.parseError(err);
+
+      console.error(error);
+      setError(error.userMessage || t`Something went wrong while uploading your file. Please try again.`);
     } finally {
       setIsUploading(false);
     }
   };
 
   return (
-    <Dialog open={true} onOpenChange={(value) => (!value ? call.end(null) : null)}>
+    <Dialog
+      open={true}
+      onOpenChange={(value) => {
+        // Radix reports `false` here for Escape, an outside click, and the
+        // dialog's own close control. While a PUT is in flight, closing
+        // would resolve `call` and leave an orphaned tmp object that
+        // finalization never sees — keep the dialog open until it settles.
+        if (!value && !isUploading) {
+          call.end(null);
+        }
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>

@@ -300,7 +300,16 @@ export const legacy_insertFieldInPDF = async (pdf: PDFDocument, field: FieldWith
       }
 
       const label = `Attached: ${uploadedFile.fileName}`;
-      const fontSize = Math.min(maxFontSize, MIN_STANDARD_FONT_SIZE + 2);
+      let fontSize = Math.min(maxFontSize, MIN_STANDARD_FONT_SIZE + 2);
+      const availableWidth = Math.max(fieldWidth - 8, 0);
+      const labelWidthAtFontSize = font.widthOfTextAtSize(label, fontSize);
+
+      if (availableWidth > 0 && labelWidthAtFontSize > availableWidth) {
+        const scalingFactor = availableWidth / labelWidthAtFontSize;
+
+        fontSize = Math.max(fontSize * scalingFactor, minFontSize);
+      }
+
       const textHeight = font.heightAtSize(fontSize);
 
       let textX = fieldX + 4;

@@ -103,6 +103,15 @@ export const finalizeFieldFileUpload = async ({
 
   await copyS3File(tmpKey, finalKey);
 
+  // Once the copy exists, a failed post-copy check must clean up BOTH keys —
+  // the tmp source and the now-orphaned final copy — or the final key space
+  // accumulates objects with no persisted Field reference.
+  const cleanupTmpAndFinalAndRethrow = async (err: unknown): Promise<never> => {
+    await deleteS3File(tmpKey).catch(() => undefined);
+    await deleteS3File(finalKey).catch(() => undefined);
+    throw err;
+  };
+
   // Re-validate the destination itself rather than assuming the copy landed
   // with the metadata we just checked on the source — avoids trusting a
   // HEAD-then-copy sequence that could theoretically race.
@@ -117,7 +126,7 @@ export const finalizeFieldFileUpload = async ({
       });
     }
   } catch (err) {
-    return cleanupTmpAndRethrow(err);
+    return cleanupTmpAndFinalAndRethrow(err);
   }
 
   // Best-effort cleanup — the final copy is already valid and referenced;

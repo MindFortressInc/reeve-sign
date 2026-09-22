@@ -126,24 +126,26 @@ describe('finalizeFieldFileUpload', () => {
     expect(deleteS3File).toHaveBeenCalledWith(baseOptions.tmpKey);
   });
 
-  it('re-validates the FINAL object after copy and rejects if it is missing (avoids trusting the copy blindly), and cleans up the tmp object', async () => {
+  it('re-validates the FINAL object after copy and rejects if it is missing (avoids trusting the copy blindly), and cleans up both the tmp AND the orphaned final object', async () => {
     headS3File.mockResolvedValueOnce({ exists: true, size: 1024, contentType: 'application/pdf' }); // tmp HEAD
     copyS3File.mockResolvedValueOnce(undefined);
     headS3File.mockResolvedValueOnce({ exists: false, size: null, contentType: null }); // final HEAD fails
-    deleteS3File.mockResolvedValueOnce(undefined);
+    deleteS3File.mockResolvedValue(undefined);
 
     await expect(finalizeFieldFileUpload(baseOptions)).rejects.toThrow(AppError);
     expect(deleteS3File).toHaveBeenCalledWith(baseOptions.tmpKey);
+    expect(deleteS3File).toHaveBeenCalledWith('field-uploads/env_abc/42/finalrand12/license.pdf');
   });
 
-  it('rejects if the final object HEAD reports different metadata than the tmp object (race/corruption guard), and cleans up the tmp object', async () => {
+  it('rejects if the final object HEAD reports different metadata than the tmp object (race/corruption guard), and cleans up both the tmp AND the orphaned final object', async () => {
     headS3File.mockResolvedValueOnce({ exists: true, size: 1024, contentType: 'application/pdf' }); // tmp HEAD
     copyS3File.mockResolvedValueOnce(undefined);
     headS3File.mockResolvedValueOnce({ exists: true, size: 999, contentType: 'application/pdf' }); // final HEAD mismatched
-    deleteS3File.mockResolvedValueOnce(undefined);
+    deleteS3File.mockResolvedValue(undefined);
 
     await expect(finalizeFieldFileUpload(baseOptions)).rejects.toThrow(AppError);
     expect(deleteS3File).toHaveBeenCalledWith(baseOptions.tmpKey);
+    expect(deleteS3File).toHaveBeenCalledWith('field-uploads/env_abc/42/finalrand12/license.pdf');
   });
 
   it('does not fail finalize when best-effort tmp cleanup fails', async () => {
@@ -153,5 +155,15 @@ describe('finalizeFieldFileUpload', () => {
     deleteS3File.mockRejectedValueOnce(new Error('boom'));
 
     await expect(finalizeFieldFileUpload(baseOptions)).resolves.toBeTypeOf('string');
+  });
+
+  it('does not fail rethrow when best-effort cleanup of the orphaned final object fails', async () => {
+    headS3File.mockResolvedValueOnce({ exists: true, size: 1024, contentType: 'application/pdf' }); // tmp HEAD
+    copyS3File.mockResolvedValueOnce(undefined);
+    headS3File.mockResolvedValueOnce({ exists: false, size: null, contentType: null }); // final HEAD fails
+    deleteS3File.mockResolvedValueOnce(undefined); // tmp delete succeeds
+    deleteS3File.mockRejectedValueOnce(new Error('boom')); // final delete fails
+
+    await expect(finalizeFieldFileUpload(baseOptions)).rejects.toThrow(AppError);
   });
 });

@@ -36,7 +36,7 @@ export const FIELD_FILE_UPLOAD_SIZE_LIMIT_MB = 15;
 
 export const ZFieldFileUploadValue = z.object({
   key: z.string().min(1),
-  fileName: z.string().min(1),
+  fileName: z.string().min(1).max(255),
   size: z.number().int().positive(),
   mimeType: z.string().min(1),
 });
