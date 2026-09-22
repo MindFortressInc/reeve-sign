@@ -148,10 +148,22 @@ export const deleteEnvelopeRecipient = async ({
     // would alter their frozen obligations/consent, so the whole delete must be
     // rejected instead.
     const deletedFieldIds = new Set(freshRecipientToDelete.fields.map((field) => field.id));
-    const remainingFields = freshRecipients
-      .flatMap((recipient) => recipient.fields)
-      .filter((field) => !deletedFieldIds.has(field.id));
-    const danglingDependents = findFieldsWithDanglingConditions(remainingFields, remainingFields);
+    const allEnvelopeFields = freshRecipients.flatMap((recipient) => recipient.fields);
+    const remainingFields = allEnvelopeFields.filter((field) => !deletedFieldIds.has(field.id));
+
+    // Scan for conditions that were ALREADY dangling before this delete (a
+    // pre-existing malformed/dangling condition unrelated to the recipient
+    // being deleted) so they can be excluded below — otherwise deleting an
+    // unrelated recipient could get wrongly rejected because that pre-existing
+    // problem happens to belong to a different already-signed recipient. Same
+    // reasoning as `delete-envelope-field.ts`'s identical guard.
+    const preExistingDanglingFieldIds = new Set(
+      findFieldsWithDanglingConditions(allEnvelopeFields, allEnvelopeFields).map((field) => field.id),
+    );
+
+    const danglingDependents = findFieldsWithDanglingConditions(remainingFields, remainingFields).filter(
+      (field) => !preExistingDanglingFieldIds.has(field.id),
+    );
 
     const signedRecipientIds = new Set(
       freshRecipients.filter((r) => r.signingStatus === SigningStatus.SIGNED && r.id !== recipientId).map((r) => r.id),

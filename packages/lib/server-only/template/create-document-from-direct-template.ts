@@ -275,6 +275,25 @@ export const createDocumentFromDirectTemplate = async ({
         });
       }
 
+      // A hidden field's submitted value must never be persisted, regardless
+      // of what the client sent — the native V2 completion dialog submits an
+      // entry for EVERY one of the recipient's fields, including ones
+      // currently hidden by an unmet condition, but a raw API caller could
+      // also submit a value for a field it was never supposed to be able to
+      // fill in. Treat it exactly like "nothing was submitted": empty
+      // customText, not inserted, no signature, and no field-level auth
+      // validation (nothing is being authorized for a field that isn't being
+      // inserted). V1 has no visibility concept, so this never short-circuits
+      // there — see `directTemplateSupportsConditions`'s doc comment above.
+      if (directTemplateSupportsConditions && !isFieldVisible(templateField, projectedRecipientFields)) {
+        return {
+          templateField,
+          customText: '',
+          derivedRecipientActionAuth: undefined,
+          signature: null,
+        };
+      }
+
       if (templateField.type === FieldType.NAME && directRecipientName === undefined) {
         directRecipientName = signedFieldValue?.value;
       }
@@ -315,23 +334,9 @@ export const createDocumentFromDirectTemplate = async ({
       }
 
       if (isSignatureField && !signatureImageAsBase64 && !typedSignature) {
-        // The native V2 completion dialog submits an entry for EVERY one of
-        // the recipient's fields, including ones currently hidden by an
-        // unmet condition, with nothing meaningful to sign — that is not a
-        // missing-signature error, it's the expected shape for a field that
-        // was never supposed to be filled in. A visible signature field
-        // still legitimately requires content. V1 has no visibility concept,
-        // so this exemption never applies there — see
-        // `directTemplateSupportsConditions`'s doc comment above.
-        if (directTemplateSupportsConditions && !isFieldVisible(templateField, projectedRecipientFields)) {
-          return {
-            templateField,
-            customText: '',
-            derivedRecipientActionAuth,
-            signature: null,
-          };
-        }
-
+        // Visibility was already handled above — reaching here means this
+        // signature field IS visible (or V1), so a missing signature is a
+        // genuine error.
         throw new Error('Signature field must have a signature');
       }
 
