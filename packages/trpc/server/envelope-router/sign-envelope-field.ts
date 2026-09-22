@@ -129,34 +129,6 @@ export const signEnvelopeFieldRoute = procedure
 
     const insertionValues = extractFieldInsertionValues({ fieldValue, field, documentMeta });
 
-    // The client only ever submits a key from the TMP (presign-mintable) key
-    // space. Never trust its claimed size/mimeType, and never persist that
-    // key directly: a presigned PUT stays valid for up to an hour, so
-    // without finalizing to a copy the client (or anyone who captured the
-    // URL) could replay a PUT to the same key after the field is marked
-    // signed and silently swap the accepted bytes with no new
-    // authorization. `finalizeFieldFileUpload` re-verifies the ACTUAL
-    // stored object against policy and copies it to a key no route ever
-    // mints a PUT for before returning what actually gets persisted.
-    if (field.type === FieldType.FILE_UPLOAD && insertionValues.inserted) {
-      const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
-
-      if (!submittedUpload) {
-        throw new AppError(AppErrorCode.INVALID_BODY, {
-          message: 'Invalid file upload value',
-        });
-      }
-
-      insertionValues.customText = await finalizeFieldFileUpload({
-        tmpKey: submittedUpload.key,
-        fileName: submittedUpload.fileName,
-        envelopeId: field.envelopeId,
-        fieldId: field.id,
-        claimedSize: submittedUpload.size,
-        claimedMimeType: submittedUpload.mimeType,
-      });
-    }
-
     // Early return for uninserting fields.
     if (!insertionValues.inserted) {
       return await prisma.$transaction(async (tx) => {
@@ -207,6 +179,39 @@ export const signEnvelopeFieldRoute = procedure
       userId: user?.id,
       authOptions,
     });
+
+    // The client only ever submits a key from the TMP (presign-mintable) key
+    // space. Never trust its claimed size/mimeType, and never persist that
+    // key directly: a presigned PUT stays valid for up to an hour, so
+    // without finalizing to a copy the client (or anyone who captured the
+    // URL) could replay a PUT to the same key after the field is marked
+    // signed and silently swap the accepted bytes with no new
+    // authorization. `finalizeFieldFileUpload` re-verifies the ACTUAL
+    // stored object against policy and copies it to a key no route ever
+    // mints a PUT for before returning what actually gets persisted.
+    //
+    // This must run AFTER validateFieldAuth: finalizing copies the tmp
+    // object to its final key and deletes the tmp object, so running it
+    // before an auth failure would leave an orphaned final object with no
+    // Field row, forcing the recipient to redo the upload.
+    if (field.type === FieldType.FILE_UPLOAD) {
+      const submittedUpload = parseFileUploadCustomText(insertionValues.customText);
+
+      if (!submittedUpload) {
+        throw new AppError(AppErrorCode.INVALID_BODY, {
+          message: 'Invalid file upload value',
+        });
+      }
+
+      insertionValues.customText = await finalizeFieldFileUpload({
+        tmpKey: submittedUpload.key,
+        fileName: submittedUpload.fileName,
+        envelopeId: field.envelopeId,
+        fieldId: field.id,
+        claimedSize: submittedUpload.size,
+        claimedMimeType: submittedUpload.mimeType,
+      });
+    }
 
     const assistant = recipient.role === RecipientRole.ASSISTANT ? recipient : undefined;
 
