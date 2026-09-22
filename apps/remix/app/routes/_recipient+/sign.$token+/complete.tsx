@@ -5,7 +5,6 @@ import { isSignupEnabledForProvider } from '@documenso/lib/constants/auth';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
-import { getEnvelopeById } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
 import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-for-token';
 import { getAdvanceHandoffCandidates } from '@documenso/lib/server-only/recipient/get-handoff-eligibility';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
@@ -20,7 +19,7 @@ import { Badge } from '@documenso/ui/primitives/badge';
 import { Button } from '@documenso/ui/primitives/button';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { DocumentStatus, EnvelopeType, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
+import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { CheckCircle2, Clock8, DownloadIcon, Loader2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { match } from 'ts-pattern';
@@ -93,14 +92,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const returnToHomePath = canRedirectToFolder ? `/t/${document.team.url}/documents/f/${document.folderId}` : '/';
 
   // DEV-654 in-person handoff. Deliberately gated on (a) native owner/team
-  // authorization (the same check waiting.tsx already uses) AND (b) THIS
-  // recipient -- the one whose token this /complete page belongs to --
-  // having actually reached SIGNED status. Neither check alone is enough:
-  // an authenticated host browsing to a /complete URL before anyone has
-  // signed must not see (or be able to fetch) another recipient's link.
-  // getAdvanceHandoffCandidates re-verifies (b) itself against a fresh read,
-  // this loader-level check is an additional, cheap "don't even render the
-  // panel" gate for the common case.
+  // authorization AND (b) THIS recipient -- the one whose token this
+  // /complete page belongs to -- having actually reached SIGNED status.
+  // Neither check alone is enough: an authenticated host browsing to a
+  // /complete URL before anyone has signed must not see (or be able to
+  // fetch) another recipient's link. getAdvanceHandoffCandidates verifies
+  // both itself (owner/team access via getEnvelopeById, and the SIGNED
+  // check) against a single fresh read -- a separate pre-check here would
+  // just be a second, discarded getEnvelopeById call for the same envelope.
   let handoffCandidates: Awaited<ReturnType<typeof getAdvanceHandoffCandidates>> = [];
 
   if (
@@ -110,23 +109,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     !document.deletedAt &&
     recipient.signingStatus === SigningStatus.SIGNED
   ) {
-    const isOwnerOrTeamMember = await getEnvelopeById({
-      id: { type: 'documentId', id: document.id },
-      type: EnvelopeType.DOCUMENT,
+    handoffCandidates = await getAdvanceHandoffCandidates({
+      documentId: document.id,
       userId: user.id,
       teamId: document.teamId,
-    })
-      .then(() => true)
-      .catch(() => false);
-
-    if (isOwnerOrTeamMember) {
-      handoffCandidates = await getAdvanceHandoffCandidates({
-        documentId: document.id,
-        userId: user.id,
-        teamId: document.teamId,
-        completedRecipientId: recipient.id,
-      });
-    }
+      completedRecipientId: recipient.id,
+    }).catch(() => []);
   }
 
   return {

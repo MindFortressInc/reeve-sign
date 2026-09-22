@@ -13,7 +13,7 @@ import { Label } from '@documenso/ui/primitives/label';
 import { RadioGroup, RadioGroupItem } from '@documenso/ui/primitives/radio-group';
 import { Spinner } from '@documenso/ui/primitives/spinner';
 import { Trans } from '@lingui/react/macro';
-import { AlertTriangle, SmartphoneIcon } from 'lucide-react';
+import { AlertTriangleIcon, SmartphoneIcon } from 'lucide-react';
 import { useState } from 'react';
 
 export type DocumentStartHandoffDialogProps = {
@@ -45,7 +45,20 @@ export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStart
     error,
   } = trpc.recipient.startHandoffSigningLink.useMutation();
 
-  const effectiveSelectedId = selectedRecipientId ?? candidates?.[0]?.recipientId ?? null;
+  // Only trust selectedRecipientId while it names a recipient in the CURRENT
+  // candidate list -- a stale selection from a previous open (made before a
+  // refetch dropped that recipient) must never silently submit.
+  const selectionStillValid = candidates?.some((c) => c.recipientId === selectedRecipientId) ?? false;
+  const effectiveSelectedId =
+    (selectionStillValid ? selectedRecipientId : null) ?? candidates?.[0]?.recipientId ?? null;
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+
+    if (!nextOpen) {
+      setSelectedRecipientId(null);
+    }
+  };
 
   const startInPerson = async () => {
     if (!effectiveSelectedId) {
@@ -60,7 +73,7 @@ export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStart
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
         <Button type="button" variant="outline">
           <SmartphoneIcon className="mr-2 h-4 w-4" />
@@ -113,7 +126,7 @@ export const DocumentStartHandoffDialog = ({ documentId, teamId }: DocumentStart
 
         {error && (
           <div className="flex items-start gap-2 text-destructive text-xs">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <AlertTriangleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 
             <span>
               <Trans>That signer is no longer available. Close this dialog and try again.</Trans>

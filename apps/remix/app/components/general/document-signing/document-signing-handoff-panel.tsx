@@ -5,7 +5,7 @@ import { RadioGroup, RadioGroupItem } from '@documenso/ui/primitives/radio-group
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { AlertTriangle, ArrowRightIcon, Loader2 } from 'lucide-react';
+import { AlertTriangleIcon, ArrowRightIcon, Loader2Icon } from 'lucide-react';
 import { useState } from 'react';
 
 export type DocumentSigningHandoffCandidate = {
@@ -100,7 +100,7 @@ export const DocumentSigningHandoffPanel = ({
 
       {error && (
         <div className="mt-3 flex items-start gap-2 text-destructive text-xs">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <AlertTriangleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 
           <span>
             <Trans>
@@ -118,7 +118,11 @@ export const DocumentSigningHandoffPanel = ({
         onClick={handOffDevice}
         aria-label={_(msg`Hand off device to next signer`)}
       >
-        {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRightIcon className="mr-2 h-4 w-4" />}
+        {isPending ? (
+          <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <ArrowRightIcon className="mr-2 h-4 w-4" />
+        )}
 
         <Trans>Hand off device</Trans>
       </Button>
