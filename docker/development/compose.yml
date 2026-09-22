@@ -36,8 +36,9 @@ services:
 
   minio:
     # `minio/minio` was removed from Docker Hub (anonymous pulls are denied), so pull
-    # from MinIO's own registry, pinned to the release `quay.io/minio/minio:latest`
-    # still resolves to (unchanged since 2025-09-07). See DEV-12067.
+    # from MinIO's own registry. Pinned to RELEASE.2025-09-07T16-13-09Z, which is the
+    # release `quay.io/minio/minio:latest` itself resolves to — same digest
+    # (sha256:14cea493…), unchanged since 2025-09-07. See DEV-12067.
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: minio
     ports:
