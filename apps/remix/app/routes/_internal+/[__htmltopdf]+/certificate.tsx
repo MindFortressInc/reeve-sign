@@ -8,6 +8,7 @@ import { getOrganisationClaimByTeamId } from '@documenso/lib/server-only/organis
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import { extractDocumentAuthMethods } from '@documenso/lib/utils/document-auth';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
+import { filterVisibleFields } from '@documenso/lib/utils/field-conditions';
 import { getTranslations } from '@documenso/lib/utils/i18n';
 import { Card, CardContent } from '@documenso/ui/primitives/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@documenso/ui/primitives/table';
@@ -60,6 +61,22 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const organisationClaim = await getOrganisationClaimByTeamId({ teamId: envelope.teamId });
 
+  // A dependent signature/field must never render on the certificate while its
+  // controller leaves it hidden — this route reloads the envelope independently
+  // of `seal-document.handler.ts`'s already-filtered `visibleFields`, so it has
+  // to apply the same visibility filter itself. V1 has no visibility concept,
+  // so its fields pass through unfiltered.
+  const envelopeSupportsConditions = envelope.internalVersion === 2;
+
+  const allEnvelopeFields = envelope.recipients.flatMap((recipient) => recipient.fields);
+
+  const recipientsWithVisibleFields = envelopeSupportsConditions
+    ? envelope.recipients.map((recipient) => ({
+        ...recipient,
+        fields: filterVisibleFields(recipient.fields, allEnvelopeFields),
+      }))
+    : envelope.recipients;
+
   const documentLanguage = ZSupportedLanguageCodeSchema.parse(envelope.documentMeta?.language);
 
   const auditLogs = await getDocumentCertificateAuditLogs({
@@ -79,7 +96,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       qrToken: envelope.qrToken,
       authOptions: envelope.authOptions,
-      recipients: envelope.recipients,
+      recipients: recipientsWithVisibleFields,
       createdAt: envelope.createdAt,
       updatedAt: envelope.updatedAt,
       deletedAt: envelope.deletedAt,

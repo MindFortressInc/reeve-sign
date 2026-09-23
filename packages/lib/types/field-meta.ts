@@ -65,6 +65,22 @@ const ZFieldMetaLetterSpacing = z.coerce
   .describe('The spacing between each character');
 const ZFieldMetaVerticalAlign = z.enum(['top', 'middle', 'bottom']).describe('The vertical alignment of the text');
 
+/**
+ * A field-level visibility condition.
+ *
+ * The field carrying this condition is only visible (and only required, signable,
+ * and included in the sealed output) while the controlling checkbox field
+ * (`fieldId`, must be a CHECKBOX field in the same envelope) has at least one of
+ * `optionIds` currently checked. `optionIds` references the controlling field's
+ * `fieldMeta.values[].id` (stable across option reordering), not a positional index.
+ */
+export const ZFieldCondition = z.object({
+  fieldId: z.number(),
+  optionIds: z.array(z.number()).min(1),
+});
+
+export type TFieldCondition = z.infer<typeof ZFieldCondition>;
+
 export const ZBaseFieldMeta = z.object({
   label: z.string().optional(),
   placeholder: z.string().optional(),
@@ -72,6 +88,7 @@ export const ZBaseFieldMeta = z.object({
   readOnly: z.boolean().optional(),
   fontSize: z.number().min(8).max(96).default(DEFAULT_FIELD_FONT_SIZE).optional(),
   overflow: ZFieldOverflowMode.optional(),
+  condition: ZFieldCondition.nullish(),
 });
 
 export type TBaseFieldMeta = z.infer<typeof ZBaseFieldMeta>;
@@ -185,6 +202,12 @@ export const ZSignatureFieldMeta = ZBaseFieldMeta.extend({
 
 export type TSignatureFieldMeta = z.infer<typeof ZSignatureFieldMeta>;
 
+export const ZFileUploadFieldMeta = ZBaseFieldMeta.extend({
+  type: z.literal('file_upload'),
+});
+
+export type TFileUploadFieldMeta = z.infer<typeof ZFileUploadFieldMeta>;
+
 export const ZFieldMetaNotOptionalSchema = z.discriminatedUnion('type', [
   ZSignatureFieldMeta,
   ZInitialsFieldMeta,
@@ -196,6 +219,7 @@ export const ZFieldMetaNotOptionalSchema = z.discriminatedUnion('type', [
   ZRadioFieldMeta,
   ZCheckboxFieldMeta,
   ZDropdownFieldMeta,
+  ZFileUploadFieldMeta,
 ]);
 
 export type TFieldMetaNotOptionalSchema = z.infer<typeof ZFieldMetaNotOptionalSchema>;
@@ -300,6 +324,10 @@ export const ZFieldAndMetaSchema = z.discriminatedUnion('type', [
     type: z.literal(FieldType.DROPDOWN),
     fieldMeta: ZDropdownFieldMeta.optional(),
   }),
+  z.object({
+    type: z.literal(FieldType.FILE_UPLOAD),
+    fieldMeta: ZFileUploadFieldMeta.optional(),
+  }),
 ]);
 
 export type TFieldAndMeta = z.infer<typeof ZFieldAndMetaSchema>;
@@ -386,6 +414,11 @@ export const FIELD_SIGNATURE_META_DEFAULT_VALUES: TSignatureFieldMeta = {
   overflow: DEFAULT_SIGNATURE_OVERFLOW_MODE,
 };
 
+export const FIELD_FILE_UPLOAD_META_DEFAULT_VALUES: TFileUploadFieldMeta = {
+  type: 'file_upload',
+  fontSize: DEFAULT_FIELD_FONT_SIZE,
+};
+
 export const FIELD_META_DEFAULT_VALUES: Record<FieldType, TFieldMetaSchema> = {
   [FieldType.SIGNATURE]: FIELD_SIGNATURE_META_DEFAULT_VALUES,
   [FieldType.FREE_SIGNATURE]: undefined,
@@ -398,6 +431,7 @@ export const FIELD_META_DEFAULT_VALUES: Record<FieldType, TFieldMetaSchema> = {
   [FieldType.RADIO]: FIELD_RADIO_META_DEFAULT_VALUES,
   [FieldType.CHECKBOX]: FIELD_CHECKBOX_META_DEFAULT_VALUES,
   [FieldType.DROPDOWN]: FIELD_DROPDOWN_META_DEFAULT_VALUES,
+  [FieldType.FILE_UPLOAD]: FIELD_FILE_UPLOAD_META_DEFAULT_VALUES,
 } as const;
 
 export const ZEnvelopeFieldAndMetaSchema = z.discriminatedUnion('type', [
@@ -444,6 +478,10 @@ export const ZEnvelopeFieldAndMetaSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal(FieldType.DROPDOWN),
     fieldMeta: ZDropdownFieldMeta.optional().default(FIELD_DROPDOWN_META_DEFAULT_VALUES),
+  }),
+  z.object({
+    type: z.literal(FieldType.FILE_UPLOAD),
+    fieldMeta: ZFileUploadFieldMeta.optional().default(FIELD_FILE_UPLOAD_META_DEFAULT_VALUES),
   }),
 ]);
 

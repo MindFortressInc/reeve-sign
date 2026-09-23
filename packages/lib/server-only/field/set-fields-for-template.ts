@@ -14,10 +14,11 @@ import {
   ZTextFieldMeta,
 } from '@documenso/lib/types/field-meta';
 import { prisma } from '@documenso/prisma';
-import { EnvelopeType, FieldType } from '@prisma/client';
+import { EnvelopeType, FieldType, SigningStatus } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { resolveBulkFieldConditions } from '../../utils/field-conditions';
 import { mapFieldToLegacyField } from '../../utils/fields';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 
@@ -50,19 +51,7 @@ export const setFieldsForTemplate = async ({ userId, teamId, id, fields }: SetFi
 
   const envelope = await prisma.envelope.findFirst({
     where: envelopeWhereInput,
-    include: {
-      recipients: true,
-      envelopeItems: {
-        select: {
-          id: true,
-        },
-      },
-      fields: {
-        include: {
-          recipient: true,
-        },
-      },
-    },
+    select: { id: true, type: true, secondaryId: true },
   });
 
   if (!envelope) {
@@ -71,162 +60,199 @@ export const setFieldsForTemplate = async ({ userId, teamId, id, fields }: SetFi
     });
   }
 
-  const existingFields = envelope.fields;
+  const { persistedFields, removedFields, existingFields } = await prisma.$transaction(
+    async (tx) => {
+      // Lock the envelope row and re-read everything below fresh — same reasoning
+      // as `set-fields-for-document.ts`.
+      await tx.$queryRaw`SELECT id FROM "Envelope" WHERE id = ${envelope.id} FOR UPDATE`;
 
-  const removedFields = existingFields.filter(
-    (existingField) => !fields.find((field) => field.id === existingField.id),
-  );
-
-  const linkedFields = fields.map((field) => {
-    const existing = existingFields.find((existingField) => existingField.id === field.id);
-
-    const recipient = envelope.recipients.find((recipient) => recipient.id === field.recipientId);
-
-    // Check whether the field is being attached to an allowed envelope item.
-    const foundEnvelopeItem = envelope.envelopeItems.find((envelopeItem) => envelopeItem.id === field.envelopeItemId);
-
-    if (!foundEnvelopeItem) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Envelope item ${field.envelopeItemId} not found`,
+      const freshEnvelope = await tx.envelope.findUniqueOrThrow({
+        where: { id: envelope.id },
+        include: {
+          recipients: true,
+          envelopeItems: { select: { id: true } },
+          fields: { include: { recipient: true } },
+        },
       });
-    }
 
-    // Each field MUST have a recipient associated with it.
-    if (!recipient) {
-      throw new AppError(AppErrorCode.INVALID_REQUEST, {
-        message: `Recipient not found for field ${field.id}`,
+      const existingFields = freshEnvelope.fields;
+
+      const removedFields = existingFields.filter(
+        (existingField) => !fields.find((field) => field.id === existingField.id),
+      );
+
+      const signedRecipientIds = new Set(
+        freshEnvelope.recipients.filter((r) => r.signingStatus === SigningStatus.SIGNED).map((r) => r.id),
+      );
+
+      const resolvedFields = resolveBulkFieldConditions(fields, existingFields, {
+        internalVersion: freshEnvelope.internalVersion,
+        signedRecipientIds,
       });
-    }
 
-    return {
-      ...field,
-      _persisted: existing,
-      _recipient: recipient,
-    };
-  });
+      const linkedFields = resolvedFields.map((field) => {
+        const existing = existingFields.find((existingField) => existingField.id === field.id);
 
-  const persistedFields = await Promise.all(
-    // Disabling as wrapping promises here causes type issues
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    linkedFields.map(async (field) => {
-      const parsedFieldMeta = field.fieldMeta
-        ? ZFieldMetaSchema.parse(field.fieldMeta)
-        : FIELD_META_DEFAULT_VALUES[field.type];
+        const recipient = freshEnvelope.recipients.find((recipient) => recipient.id === field.recipientId);
 
-      if (field.type === FieldType.TEXT && field.fieldMeta) {
-        const textFieldParsedMeta = ZTextFieldMeta.parse(field.fieldMeta);
-        const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join(', '));
-        }
-      }
-
-      if (field.type === FieldType.NUMBER && field.fieldMeta) {
-        const numberFieldParsedMeta = ZNumberFieldMeta.parse(field.fieldMeta);
-        const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join(', '));
-        }
-      }
-
-      if (field.type === FieldType.CHECKBOX) {
-        if (!field.fieldMeta) {
-          throw new Error('Checkbox field is missing required metadata');
-        }
-        const checkboxFieldParsedMeta = ZCheckboxFieldMeta.parse(field.fieldMeta);
-        const errors = validateCheckboxField(
-          checkboxFieldParsedMeta?.values?.map((item) => item.value) ?? [],
-          checkboxFieldParsedMeta,
+        // Check whether the field is being attached to an allowed envelope item.
+        const foundEnvelopeItem = freshEnvelope.envelopeItems.find(
+          (envelopeItem) => envelopeItem.id === field.envelopeItemId,
         );
-        if (errors.length > 0) {
-          throw new Error(errors.join(', '));
-        }
-      }
 
-      if (field.type === FieldType.RADIO) {
-        if (!field.fieldMeta) {
-          throw new Error('Radio field is missing required metadata');
+        if (!foundEnvelopeItem) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Envelope item ${field.envelopeItemId} not found`,
+          });
         }
-        const radioFieldParsedMeta = ZRadioFieldMeta.parse(field.fieldMeta);
-        const checkedRadioFieldValue = radioFieldParsedMeta.values?.find((option) => option.checked)?.value;
-        const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join('. '));
-        }
-      }
 
-      if (field.type === FieldType.DROPDOWN) {
-        if (!field.fieldMeta) {
-          throw new Error('Dropdown field is missing required metadata');
+        // Each field MUST have a recipient associated with it.
+        if (!recipient) {
+          throw new AppError(AppErrorCode.INVALID_REQUEST, {
+            message: `Recipient not found for field ${field.id}`,
+          });
         }
-        const dropdownFieldParsedMeta = ZDropdownFieldMeta.parse(field.fieldMeta);
-        const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
-        if (errors.length > 0) {
-          throw new Error(errors.join('. '));
-        }
-      }
 
-      // Proceed with upsert operation
-      const upsertedField = await prisma.field.upsert({
-        where: {
-          id: field._persisted?.id ?? -1,
-          envelopeId: envelope.id,
-          envelopeItemId: field.envelopeItemId,
-        },
-        update: {
-          page: field.pageNumber,
-          positionX: field.pageX,
-          positionY: field.pageY,
-          width: field.pageWidth,
-          height: field.pageHeight,
-          fieldMeta: parsedFieldMeta,
-        },
-        create: {
-          type: field.type,
-          page: field.pageNumber,
-          positionX: field.pageX,
-          positionY: field.pageY,
-          width: field.pageWidth,
-          height: field.pageHeight,
-          customText: '',
-          inserted: false,
-          fieldMeta: parsedFieldMeta,
-          envelope: {
-            connect: {
-              id: envelope.id,
-            },
-          },
-          envelopeItem: {
-            connect: {
-              id: field.envelopeItemId,
-              envelopeId: envelope.id,
-            },
-          },
-          recipient: {
-            connect: {
-              id: field._recipient.id,
-              envelopeId: envelope.id,
-            },
-          },
-        },
+        return {
+          ...field,
+          _persisted: existing,
+          _recipient: recipient,
+        };
       });
 
-      return {
-        ...upsertedField,
-        formId: field.formId,
-      };
-    }),
-  );
+      const persistedFields = await Promise.all(
+        // Disabling as wrapping promises here causes type issues
+        // eslint-disable-next-line @typescript-eslint/promise-function-async
+        linkedFields.map(async (field) => {
+          const parsedFieldMeta = field.fieldMeta
+            ? ZFieldMetaSchema.parse(field.fieldMeta)
+            : FIELD_META_DEFAULT_VALUES[field.type];
 
-  if (removedFields.length > 0) {
-    await prisma.field.deleteMany({
-      where: {
-        id: {
-          in: removedFields.map((field) => field.id),
-        },
-      },
-    });
-  }
+          if (field.type === FieldType.TEXT && field.fieldMeta) {
+            const textFieldParsedMeta = ZTextFieldMeta.parse(field.fieldMeta);
+            const errors = validateTextField(textFieldParsedMeta.text || '', textFieldParsedMeta);
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
+            }
+          }
+
+          if (field.type === FieldType.NUMBER && field.fieldMeta) {
+            const numberFieldParsedMeta = ZNumberFieldMeta.parse(field.fieldMeta);
+            const errors = validateNumberField(String(numberFieldParsedMeta.value || ''), numberFieldParsedMeta);
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
+            }
+          }
+
+          if (field.type === FieldType.CHECKBOX) {
+            if (!field.fieldMeta) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, {
+                message: 'Checkbox field is missing required metadata',
+              });
+            }
+            const checkboxFieldParsedMeta = ZCheckboxFieldMeta.parse(field.fieldMeta);
+            const errors = validateCheckboxField(
+              checkboxFieldParsedMeta?.values?.map((item) => item.value) ?? [],
+              checkboxFieldParsedMeta,
+            );
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join(', ') });
+            }
+          }
+
+          if (field.type === FieldType.RADIO) {
+            if (!field.fieldMeta) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: 'Radio field is missing required metadata' });
+            }
+            const radioFieldParsedMeta = ZRadioFieldMeta.parse(field.fieldMeta);
+            const checkedRadioFieldValue = radioFieldParsedMeta.values?.find((option) => option.checked)?.value;
+            const errors = validateRadioField(checkedRadioFieldValue, radioFieldParsedMeta);
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join('. ') });
+            }
+          }
+
+          if (field.type === FieldType.DROPDOWN) {
+            if (!field.fieldMeta) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, {
+                message: 'Dropdown field is missing required metadata',
+              });
+            }
+            const dropdownFieldParsedMeta = ZDropdownFieldMeta.parse(field.fieldMeta);
+            const errors = validateDropdownField(undefined, dropdownFieldParsedMeta);
+            if (errors.length > 0) {
+              throw new AppError(AppErrorCode.INVALID_REQUEST, { message: errors.join('. ') });
+            }
+          }
+
+          // Proceed with upsert operation
+          const upsertedField = await tx.field.upsert({
+            where: {
+              id: field._persisted?.id ?? -1,
+              envelopeId: envelope.id,
+              envelopeItemId: field.envelopeItemId,
+            },
+            update: {
+              page: field.pageNumber,
+              positionX: field.pageX,
+              positionY: field.pageY,
+              width: field.pageWidth,
+              height: field.pageHeight,
+              fieldMeta: parsedFieldMeta,
+            },
+            create: {
+              type: field.type,
+              page: field.pageNumber,
+              positionX: field.pageX,
+              positionY: field.pageY,
+              width: field.pageWidth,
+              height: field.pageHeight,
+              customText: '',
+              inserted: false,
+              fieldMeta: parsedFieldMeta,
+              envelope: {
+                connect: {
+                  id: envelope.id,
+                },
+              },
+              envelopeItem: {
+                connect: {
+                  id: field.envelopeItemId,
+                  envelopeId: envelope.id,
+                },
+              },
+              recipient: {
+                connect: {
+                  id: field._recipient.id,
+                  envelopeId: envelope.id,
+                },
+              },
+            },
+          });
+
+          return {
+            ...upsertedField,
+            formId: field.formId,
+          };
+        }),
+      );
+
+      if (removedFields.length > 0) {
+        await tx.field.deleteMany({
+          where: {
+            id: {
+              in: removedFields.map((field) => field.id),
+            },
+          },
+        });
+      }
+
+      return { persistedFields, removedFields, existingFields };
+    },
+    // See set-fields-for-document.ts's identical transaction for why this
+    // needs to be raised above the shared client's default.
+    { maxWait: 10_000, timeout: 30_000 },
+  );
 
   // Filter out fields that have been removed or have been updated.
   const filteredFields = existingFields.filter((field) => {

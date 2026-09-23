@@ -186,3 +186,81 @@ export const ZRejectDocumentWithTokenMutationSchema = z.object({
 });
 
 export type TRejectDocumentWithTokenMutationSchema = z.infer<typeof ZRejectDocumentWithTokenMutationSchema>;
+
+/**
+ * DEV-654 in-person handoff. Authenticated-only (see authenticatedProcedure) --
+ * never accepts or trusts a recipient token as authorization. Returns the raw
+ * signing token for exactly one currently-eligible recipient so it must never
+ * be exposed to anyone other than a verified owner/team member of this
+ * envelope.
+ *
+ * START and ADVANCE are deliberately separate operations (not one procedure
+ * with an optional field): START is the host explicitly kicking off a
+ * session before anyone has signed; ADVANCE requires proof (re-checked
+ * server-side, fresh) that a specific recipient has actually completed
+ * before disclosing the next one's link. Making completedRecipientId
+ * optional on a single procedure would let a caller "start" mid-chain to
+ * skip that proof entirely.
+ */
+export const ZHandoffSigningLinkResponseSchema = z.object({
+  signingLink: z.string(),
+  name: z.string(),
+  email: z.string(),
+});
+
+/**
+ * teamId here is the envelope's OWN owning team (known to the caller from
+ * data it already has -- e.g. complete.tsx's loader already fetched
+ * document.teamId to run the same authorization check server-side once
+ * already), NOT the ambient "currently selected team" the authenticated
+ * tRPC context otherwise derives for team-scoped `/t/:teamUrl/...` routes.
+ * The recipient-facing `/sign/:token` pages this is called from carry no
+ * such ambient team context. This is safe: getEnvelopeById treats teamId as
+ * unvalidated input and re-verifies both that the user belongs to it AND
+ * that it actually owns this envelope on every call -- it is never trusted
+ * bare.
+ */
+export const ZStartHandoffCandidatesRequestSchema = z.object({
+  documentId: z.number(),
+  teamId: z.number(),
+});
+
+export const ZHandoffCandidateSchema = z.object({
+  recipientId: z.number(),
+  name: z.string(),
+  email: z.string(),
+});
+
+export const ZStartHandoffCandidatesResponseSchema = z.array(ZHandoffCandidateSchema);
+
+export const ZStartHandoffSigningLinkRequestSchema = z.object({
+  documentId: z.number(),
+  teamId: z.number(),
+  recipientId: z.number(),
+});
+
+export const ZStartHandoffSigningLinkResponseSchema = ZHandoffSigningLinkResponseSchema.extend({
+  /**
+   * Envelope-bound, expiring capability authorizing ADVANCE on this device
+   * only. START revokes the host's session in the same call, so this -- not
+   * a host session -- is what the handoff device carries between signers.
+   */
+  handoffCapability: z.string(),
+});
+
+/**
+ * ADVANCE is called from the recipient /complete page on the handoff device,
+ * where no host session exists (START revoked it). Authorized by the
+ * host-minted capability plus the just-completed recipient's own token;
+ * neither alone is sufficient, and both are re-verified server-side, fresh.
+ */
+export const ZAdvanceHandoffCandidatesRequestSchema = z.object({
+  handoffCapability: z.string().min(1),
+  completedRecipientToken: z.string().min(1),
+});
+
+export const ZAdvanceHandoffCandidatesResponseSchema = z.array(ZHandoffCandidateSchema);
+
+export const ZAdvanceHandoffSigningLinkRequestSchema = ZAdvanceHandoffCandidatesRequestSchema.extend({
+  nextRecipientId: z.number(),
+});

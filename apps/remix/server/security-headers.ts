@@ -129,7 +129,8 @@ const classifyPath = (path: string): CspPathKind => {
 
 /**
  * Owns response security headers for page responses:
- * `Content-Security-Policy`, plus `Referrer-Policy` and
+ * `Content-Security-Policy`, `Cache-Control: private, no-store` (unless a
+ * route set its own), plus `Referrer-Policy` and
  * `X-Content-Type-Options` on embed routes (preserved from the per-route
  * `headers()` export this middleware replaces).
  *
@@ -165,6 +166,14 @@ export const securityHeadersMiddleware = createMiddleware<HonoEnv>(async (c, nex
   const kind = classifyPath(path);
 
   c.res.headers.set('Content-Security-Policy', buildCspHeader({ nonce, kind }));
+
+  // Every page (and its `.data` loader payload) is rendered per-user, so the
+  // browser must never replay one from its HTTP cache. Without this, Back
+  // on a device where the host started in-person signing (DEV-654, which
+  // revokes the host session) could show a signer the host's cached pages.
+  if (!c.res.headers.has('Cache-Control')) {
+    c.res.headers.set('Cache-Control', 'private, no-store');
+  }
 
   // Preserved from the per-route `headers()` export in
   // apps/remix/app/routes/embed+/_v0+/_layout.tsx, which has been removed.

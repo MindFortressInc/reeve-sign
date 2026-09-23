@@ -28,6 +28,7 @@ import { DocumentPageViewInformation } from '~/components/general/document/docum
 import { DocumentPageViewRecentActivity } from '~/components/general/document/document-page-view-recent-activity';
 import { DocumentPageViewRecipients } from '~/components/general/document/document-page-view-recipients';
 import { DocumentRecipientLinkCopyDialog } from '~/components/general/document/document-recipient-link-copy-dialog';
+import { DocumentStartHandoffDialog } from '~/components/general/document/document-start-handoff-dialog';
 import {
   DocumentStatus as DocumentStatusComponent,
   FRIENDLY_STATUS_MAP,
@@ -253,6 +254,13 @@ export default function DocumentPage({ params }: Route.ComponentProps) {
 
             {/* Recipients section. */}
             <DocumentPageViewRecipients envelope={envelope} documentRootPath={documentRootPath} />
+
+            {envelope.status === DocumentStatus.PENDING && (
+              <DocumentStartHandoffDialog
+                documentId={mapSecondaryIdToDocumentId(envelope.secondaryId)}
+                teamId={envelope.teamId}
+              />
+            )}
 
             {/* Recent activity section. */}
             <DocumentPageViewRecentActivity

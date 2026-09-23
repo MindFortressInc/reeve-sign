@@ -26,6 +26,7 @@ import { match } from 'ts-pattern';
 import { EnvelopeDownloadDialog } from '~/components/dialogs/envelope-download-dialog';
 import { ClaimAccount } from '~/components/general/claim-account';
 import { DocumentSigningAuthPageView } from '~/components/general/document-signing/document-signing-auth-page';
+import { DocumentSigningHandoffPanel } from '~/components/general/document-signing/document-signing-handoff-panel';
 import { RecipientBranding } from '~/components/general/recipient-branding';
 import { useCspNonce } from '~/utils/nonce';
 
@@ -278,6 +279,11 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                 </Button>
               )}
             </div>
+
+            {/* DEV-654: renders only on an in-person handoff device (see the panel). */}
+            {document.status === DocumentStatus.PENDING && (
+              <DocumentSigningHandoffPanel documentId={document.id} completedRecipientToken={recipient.token} />
+            )}
           </div>
 
           <div className="flex flex-col items-center">

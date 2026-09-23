@@ -7,6 +7,7 @@ import {
   FIELD_DATE_META_DEFAULT_VALUES,
   FIELD_DROPDOWN_META_DEFAULT_VALUES,
   FIELD_EMAIL_META_DEFAULT_VALUES,
+  FIELD_FILE_UPLOAD_META_DEFAULT_VALUES,
   FIELD_INITIALS_META_DEFAULT_VALUES,
   FIELD_NAME_META_DEFAULT_VALUES,
   FIELD_NUMBER_META_DEFAULT_VALUES,
@@ -592,6 +593,7 @@ export const seedPendingDocumentWithFullFields = async ({
                 .with(FieldType.RADIO, () => FIELD_RADIO_META_DEFAULT_VALUES)
                 .with(FieldType.DROPDOWN, () => FIELD_DROPDOWN_META_DEFAULT_VALUES)
                 .with(FieldType.INITIALS, () => FIELD_INITIALS_META_DEFAULT_VALUES)
+                .with(FieldType.FILE_UPLOAD, () => FIELD_FILE_UPLOAD_META_DEFAULT_VALUES)
                 .with(FieldType.FREE_SIGNATURE, () => undefined)
                 .exhaustive(),
             })),

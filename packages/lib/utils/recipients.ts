@@ -113,6 +113,36 @@ export const isRecipientEmailValidForSending = (recipient: Pick<TRecipientLite, 
 };
 
 /**
+ * Comparator matching the DB-level `orderBy: [{ signingOrder: { sort: 'asc', nulls:
+ * 'last' } }, { id: 'asc' }]` used by `get-next-pending-recipient.ts`, `send-document.ts`,
+ * `complete-document-with-token.ts`, and `create-document-from-direct-template.ts` to
+ * resolve the actual sequential signing order: a null `signingOrder` sorts LAST (not
+ * first, and not "unrestricted"), and equal orders are tie-broken by recipient id.
+ */
+export const compareRecipientsBySigningOrder = (
+  a: Pick<TRecipientLite, 'id' | 'signingOrder'>,
+  b: Pick<TRecipientLite, 'id' | 'signingOrder'>,
+) => {
+  if (a.signingOrder == null && b.signingOrder == null) {
+    return a.id - b.id;
+  }
+
+  if (a.signingOrder == null) {
+    return 1;
+  }
+
+  if (b.signingOrder == null) {
+    return -1;
+  }
+
+  if (a.signingOrder !== b.signingOrder) {
+    return a.signingOrder - b.signingOrder;
+  }
+
+  return a.id - b.id;
+};
+
+/**
  * Whether the recipient's signing window has expired.
  */
 export const isRecipientExpired = (recipient: { expiresAt: Date | null }) => {

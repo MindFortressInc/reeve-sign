@@ -18,7 +18,8 @@ import {
   type TTextFieldMeta,
 } from '@documenso/lib/types/field-meta';
 import { getEnvelopeItemPermissions } from '@documenso/lib/utils/envelope';
-import { canRecipientFieldsBeModified } from '@documenso/lib/utils/recipients';
+import { getFieldCondition } from '@documenso/lib/utils/field-conditions';
+import { canRecipientFieldsBeModified, compareRecipientsBySigningOrder } from '@documenso/lib/utils/recipients';
 import { AnimateGenericFadeInOut } from '@documenso/ui/components/animate/animate-generic-fade-in-out';
 import { cn } from '@documenso/ui/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@documenso/ui/primitives/alert';
@@ -28,8 +29,8 @@ import { Sheet, SheetContent, SheetTitle } from '@documenso/ui/primitives/sheet'
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
-import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
+import { Trans, useLingui as useLinguiMacro } from '@lingui/react/macro';
+import { DocumentSigningOrder, DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
 import { FileTextIcon, PencilIcon, SparklesIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRevalidator, useSearchParams } from 'react-router';
@@ -49,6 +50,7 @@ import { EditorFieldNumberForm } from '~/components/forms/editor/editor-field-nu
 import { EditorFieldRadioForm } from '~/components/forms/editor/editor-field-radio-form';
 import { EditorFieldSignatureForm } from '~/components/forms/editor/editor-field-signature-form';
 import { EditorFieldTextForm } from '~/components/forms/editor/editor-field-text-form';
+import { EditorConditionalVisibilityField } from '~/components/general/envelope-editor/envelope-editor-conditional-visibility-field';
 import { EnvelopePdfViewer } from '~/components/general/pdf-viewer/envelope-pdf-viewer';
 import { useCurrentTeam } from '~/providers/team';
 
@@ -69,6 +71,7 @@ const FieldSettingsTypeTranslations: Record<FieldType, MessageDescriptor> = {
   [FieldType.RADIO]: msg`Radio Settings`,
   [FieldType.CHECKBOX]: msg`Checkbox Settings`,
   [FieldType.DROPDOWN]: msg`Dropdown Settings`,
+  [FieldType.FILE_UPLOAD]: msg`File Upload Settings`,
 };
 
 export const EnvelopeEditorFieldsPage = () => {
@@ -83,6 +86,7 @@ export const EnvelopeEditorFieldsPage = () => {
   const { currentEnvelopeItem } = useCurrentEnvelopeRender();
 
   const { _ } = useLingui();
+  const { t } = useLinguiMacro();
 
   const [isAiFieldDialogOpen, setIsAiFieldDialogOpen] = useState(false);
   const [isAiEnableDialogOpen, setIsAiEnableDialogOpen] = useState(false);
@@ -103,14 +107,84 @@ export const EnvelopeEditorFieldsPage = () => {
       return;
     }
 
-    const isMetaSame = isDeepEqual(selectedField.fieldMeta, fieldMeta);
+    // Per-type forms (text, number, radio, ...) rebuild fieldMeta from their
+    // own form state, which does not track `condition`. Without this merge,
+    // editing a field's type-specific settings after setting a conditional
+    // visibility rule would silently drop that condition.
+    const nextFieldMeta = {
+      ...fieldMeta,
+      condition:
+        fieldMeta && 'condition' in fieldMeta ? fieldMeta.condition : getFieldCondition(selectedField.fieldMeta),
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    } as TFieldMetaSchema;
+
+    const isMetaSame = isDeepEqual(selectedField.fieldMeta, nextFieldMeta);
 
     if (!isMetaSame) {
       editorFields.updateFieldByFormId(selectedField.formId, {
-        fieldMeta,
+        fieldMeta: nextFieldMeta,
       });
     }
   };
+
+  /**
+   * Persisted checkbox fields eligible as a conditional-visibility controller
+   * for the selected field. Only fields with a real database id are offered —
+   * see `EditorConditionalVisibilityField`'s doc comment for why.
+   *
+   * For a SEQUENTIAL envelope, a controller assigned to a recipient who signs
+   * AFTER the selected field's own recipient is excluded: that later
+   * recipient cannot act (check the box) until the earlier recipient's turn
+   * is already over, so a dependent gated on it could never be revealed in
+   * time for the earlier recipient to sign it — a structural deadlock, not
+   * just an unmet condition. Same-recipient and earlier-recipient
+   * controllers remain eligible. Eligibility is decided by each recipient's
+   * actual sequential position — `compareRecipientsBySigningOrder`, matching
+   * the DB-level ordering the signing provider uses (null signing order
+   * sorts LAST, equal orders tie-broken by recipient id) — not by comparing
+   * raw `signingOrder` values directly.
+   */
+  const availableConditionCheckboxFields = useMemo(() => {
+    const isSequential = envelope.documentMeta.signingOrder === DocumentSigningOrder.SEQUENTIAL;
+
+    const sortedRecipients = [...envelope.recipients].sort(compareRecipientsBySigningOrder);
+
+    const selectedFieldRecipientPosition = sortedRecipients.findIndex(
+      (recipient) => recipient.id === selectedField?.recipientId,
+    );
+
+    return envelope.fields
+      .filter(
+        (field): field is typeof field & { id: number } =>
+          field.type === FieldType.CHECKBOX && field.id !== undefined && field.id !== selectedField?.id,
+      )
+      .filter((field) => {
+        if (!isSequential || selectedFieldRecipientPosition === -1) {
+          return true;
+        }
+
+        const controllerRecipientPosition = sortedRecipients.findIndex(
+          (recipient) => recipient.id === field.recipientId,
+        );
+
+        return controllerRecipientPosition === -1 || controllerRecipientPosition <= selectedFieldRecipientPosition;
+      })
+      .map((field) => {
+        const meta = field.fieldMeta as TCheckboxFieldMeta | undefined;
+
+        return {
+          id: field.id,
+          label: meta?.label || t`Checkbox #${field.id}`,
+          values: (meta?.values ?? []).map((value) => ({ id: value.id, value: value.value })),
+        };
+      });
+  }, [
+    envelope.fields,
+    envelope.recipients,
+    envelope.documentMeta.signingOrder,
+    selectedField?.id,
+    selectedField?.recipientId,
+  ]);
 
   const onFieldDetectionComplete = (fields: NormalizedFieldWithContext[]) => {
     for (const field of fields) {
@@ -423,6 +497,28 @@ export const EnvelopeEditorFieldsPage = () => {
                   />
                 ))
                 .otherwise(() => null)}
+
+              {selectedField.type !== FieldType.FREE_SIGNATURE && (
+                <>
+                  <Separator className="my-4" />
+
+                  <EditorConditionalVisibilityField
+                    // Force a fresh instance (and fresh local draft state) per
+                    // field so the controller/option selection can never leak
+                    // from one field to another when switching the selection.
+                    key={selectedField.formId}
+                    condition={getFieldCondition(selectedField.fieldMeta)}
+                    availableCheckboxFields={availableConditionCheckboxFields}
+                    onChange={(condition) =>
+                      updateSelectedFieldMeta({
+                        ...selectedField.fieldMeta,
+                        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+                        condition,
+                      } as TFieldMetaSchema)
+                    }
+                  />
+                </>
+              )}
             </div>
           </section>
         )}
