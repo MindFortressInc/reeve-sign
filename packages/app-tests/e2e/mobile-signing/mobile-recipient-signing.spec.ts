@@ -69,6 +69,7 @@ import { assertFullyOnScreen, dragSignatureStroke } from '../fixtures/mobile-sig
  */
 const SCREENSHOT_DIR = path.join(__dirname, '../../test-results/dev-659-mobile-signing');
 const COMPLETION_BUDGET_MS = 120_000;
+const WARMUP_BUDGET_MS = 90_000;
 const RECIPIENT_EMAIL = 'buyer-rep-mobile-e2e@example.com';
 const RECIPIENT_NAME = 'Buyer Rep';
 
@@ -84,6 +85,10 @@ test.beforeAll(() => {
  * `npm run dev` compiles routes on demand.
  */
 test.beforeEach(async ({ page, baseURL }, testInfo) => {
+  // Hooks share the test's timeout, so give the warm-up its own budget on
+  // top of the test's rather than letting it eat into (or exceed) it.
+  testInfo.setTimeout(testInfo.timeout + WARMUP_BUDGET_MS);
+
   const { user, team } = await seedUser({ isPersonalOrganisation: true });
   const { recipients } = await seedPendingDocumentWithFullFields({
     owner: user,
@@ -93,9 +98,12 @@ test.beforeEach(async ({ page, baseURL }, testInfo) => {
   });
 
   await page.goto(`${baseURL}/sign/${recipients[0].token}`);
+  // Wait on something every layout renders: below `md` the signature pad
+  // button sits inside the collapsed mobile widget and is never visible, so
+  // waiting on it only ever ended in a timeout on phone profiles.
   await page
-    .getByTestId('signature-pad-dialog-button')
-    .waitFor({ state: 'visible', timeout: 90_000 })
+    .getByText('has invited you to sign this document')
+    .waitFor({ state: 'visible', timeout: WARMUP_BUDGET_MS - 15_000 })
     .catch(() => {
       // Best-effort warm-up only -- the real test below asserts this for real.
     });
