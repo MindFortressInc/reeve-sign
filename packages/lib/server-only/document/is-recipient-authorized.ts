@@ -90,22 +90,30 @@ export const isRecipientAuthorized = async ({
     return false;
   }
 
+  // PASSKEY / TOTP / PASSWORD below authenticate "whoever userId is" against a
+  // secret on their OWN account. That is only a valid check of THIS
+  // recipient's identity if userId's account is actually the recipient's own
+  // account -- otherwise a different logged-in user (e.g. an in-person
+  // handoff host who stays signed in across recipients, DEV-654) could
+  // satisfy another recipient's configured auth with their own credentials.
+  // ACCOUNT and the email TWO_FACTOR_AUTH method are already bound to
+  // recipient.email; bind these the same way before checking the secret.
+  const isUserBoundToRecipient = async () => {
+    if (!userId) {
+      return false;
+    }
+
+    const recipientUser = await getUserByEmail(recipient.email);
+
+    return !!recipientUser && recipientUser.id === userId;
+  };
+
   return await match(authOptions)
     .with({ type: DocumentAuth.ACCOUNT }, async () => {
-      if (!userId) {
-        return false;
-      }
-
-      const recipientUser = await getUserByEmail(recipient.email);
-
-      if (!recipientUser) {
-        return false;
-      }
-
-      return recipientUser.id === userId;
+      return await isUserBoundToRecipient();
     })
     .with({ type: DocumentAuth.PASSKEY }, async ({ authenticationResponse, tokenReference }) => {
-      if (!userId) {
+      if (!userId || !(await isUserBoundToRecipient())) {
         return false;
       }
 
@@ -129,7 +137,7 @@ export const isRecipientAuthorized = async ({
         });
       }
 
-      if (!userId) {
+      if (!userId || !(await isUserBoundToRecipient())) {
         return false;
       }
 
@@ -154,7 +162,7 @@ export const isRecipientAuthorized = async ({
       });
     })
     .with({ type: DocumentAuth.PASSWORD }, async ({ password }) => {
-      if (!userId) {
+      if (!userId || !(await isUserBoundToRecipient())) {
         return false;
       }
 
