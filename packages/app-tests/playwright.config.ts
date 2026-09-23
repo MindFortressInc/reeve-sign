@@ -93,11 +93,12 @@ export default defineConfig({
       },
       workers: 1, // Must run serially since they share a license file
     },
-    // Run UI Tests (excluding license tests which have their own project)
+    // Run UI Tests (excluding license tests and the dedicated mobile-signing
+    // suite below, which runs ONLY under the mobile-* device projects).
     {
       name: 'ui',
       testMatch: /e2e\/(?!api\/).*\.spec\.ts/,
-      testIgnore: /e2e\/license\/.*\.spec\.ts/,
+      testIgnore: [/e2e\/license\/.*\.spec\.ts/, /e2e\/mobile-signing\/.*\.spec\.ts/],
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1920, height: 1200 },
@@ -115,15 +116,48 @@ export default defineConfig({
     //   use: { ...devices['Desktop Safari'] },
     // },
 
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
+    /**
+     * DEV-659 -- Reeve.Sign mobile recipient-signing validation.
+     *
+     * Five profiles standing in for the ticket's "iPhone 12-15, Pixel 7-8,
+     * iPad Mini, iPad Pro" acceptance criterion: the iPhone range is
+     * bookended (12 = smallest/oldest, 15 = newest CSS viewport) rather than
+     * covering all 4 iPhone generations 1:1, since Documenso's fork ships no
+     * physical devices to test against -- see DEV-659's Linear ticket for the
+     * full profile-selection rationale. Playwright 1.56.1 (this repo's
+     * pinned version) has no "Pixel 8" or generic "iPad Pro" preset, so
+     * "Pixel 7" and "iPad Pro 11" stand in for those groups; real dimensions
+     * are whatever @playwright/test's `devices` registry ships for each name
+     * below, not hand-picked/fabricated numbers.
+     *
+     * Scoped ONLY to e2e/mobile-signing -- never runs the rest of the UI
+     * suite at a mobile viewport by accident.
+     */
+    {
+      name: 'mobile-iphone-12',
+      testMatch: /e2e\/mobile-signing\/.*\.spec\.ts/,
+      use: { ...devices['iPhone 12'] },
+    },
+    {
+      name: 'mobile-iphone-15',
+      testMatch: /e2e\/mobile-signing\/.*\.spec\.ts/,
+      use: { ...devices['iPhone 15'] },
+    },
+    {
+      name: 'mobile-pixel-7',
+      testMatch: /e2e\/mobile-signing\/.*\.spec\.ts/,
+      use: { ...devices['Pixel 7'] },
+    },
+    {
+      name: 'mobile-ipad-mini',
+      testMatch: /e2e\/mobile-signing\/.*\.spec\.ts/,
+      use: { ...devices['iPad Mini'] },
+    },
+    {
+      name: 'mobile-ipad-pro-11',
+      testMatch: /e2e\/mobile-signing\/.*\.spec\.ts/,
+      use: { ...devices['iPad Pro 11'] },
+    },
 
     /* Test against branded browsers. */
     // {
