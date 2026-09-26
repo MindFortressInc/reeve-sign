@@ -4,6 +4,7 @@ import { OrganisationType, WebhookTriggerEvents } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID, internalClaims } from '../../types/subscription';
+import { env } from '../../utils/env';
 import { createOrganisation } from '../organisation/create-organisation';
 import { createApiToken } from '../public-api/create-api-token';
 import { createTeam } from '../team/create-team';
@@ -25,6 +26,25 @@ export type ProvisionOrganisationResult = {
 };
 
 const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
+
+/**
+ * An org matched by the derived `reeve-ext-` url is only ours if the system
+ * user owns it: org managers can edit their url, so a foreign org can squat
+ * a derived value. Rejects it before any PLATFORM-claim/type/webhook write.
+ */
+const assertOwnedBySystemUser = (organisation: { owner: { email: string } }) => {
+  const systemUserEmail = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
+
+  if (!systemUserEmail) {
+    throw new AppError(AppErrorCode.NOT_SETUP, { message: 'REEVE_SIGN_SYSTEM_USER_EMAIL is not set.' });
+  }
+
+  if (organisation.owner.email.trim().toLowerCase() !== systemUserEmail) {
+    throw new AppError(AppErrorCode.ALREADY_EXISTS, {
+      message: 'Organisation url is taken by a non-Reeve organisation',
+    });
+  }
+};
 
 /**
  * The events reeve-agents' `/webhooks/documenso` receives today: the exact
@@ -138,10 +158,15 @@ export const provisionOrganisation = async ({
   const existingOrganisation = await prisma.organisation.findUnique({
     where: { url },
     include: {
+      owner: { select: { email: true } },
       organisationGlobalSettings: { select: { includeSenderDetails: true } },
       organisationClaim: { select: { originalSubscriptionClaimId: true } },
     },
   });
+
+  if (existingOrganisation) {
+    assertOwnedBySystemUser(existingOrganisation);
+  }
 
   if (
     existingOrganisation &&
@@ -184,7 +209,13 @@ export const provisionOrganisation = async ({
         throw err;
       }
 
-      organisation = await prisma.organisation.findUniqueOrThrow({ where: { url } });
+      const raceWinner = await prisma.organisation.findUniqueOrThrow({
+        where: { url },
+        include: { owner: { select: { email: true } } },
+      });
+
+      assertOwnedBySystemUser(raceWinner);
+      organisation = raceWinner;
     }
   }
 

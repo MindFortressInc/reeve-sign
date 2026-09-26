@@ -1,5 +1,5 @@
 import { OrganisationType, WebhookTriggerEvents } from '@prisma/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID, internalClaims } from '../../types/subscription';
@@ -93,6 +93,7 @@ const existingOrg = (id: string, url: string, overrides: Record<string, unknown>
   id,
   url,
   ownerUserId: SYSTEM_USER.id,
+  owner: { email: SYSTEM_USER.email },
   type: OrganisationType.ORGANISATION,
   organisationGlobalSettings: { includeSenderDetails: true },
   organisationClaim: { originalSubscriptionClaimId: 'platform' },
@@ -127,6 +128,11 @@ describe('provisionOrganisation', () => {
     webhookCreateMock.mockReset();
     webhookUpdateMock.mockReset();
     executeRawMock.mockReset();
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER.email);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('idempotent hit: org + team + token all already exist -> returns the existing org, creates nothing', async () => {
@@ -246,7 +252,7 @@ describe('provisionOrganisation', () => {
     createOrganisationMock.mockRejectedValueOnce(
       new AppError(AppErrorCode.ALREADY_EXISTS, { message: 'Organisation URL already exists' }),
     );
-    findUniqueOrThrowMock.mockResolvedValueOnce({ id: 'org_race_winner', url });
+    findUniqueOrThrowMock.mockResolvedValueOnce({ id: 'org_race_winner', url, owner: { email: SYSTEM_USER.email } });
     // The concurrent winner request finished its own team/token setup
     // before we observed ALREADY_EXISTS, so this is a true idempotent hit.
     findFirstMock.mockResolvedValueOnce({ id: 9, organisationId: 'org_race_winner' });
@@ -378,6 +384,79 @@ describe('provisionOrganisation', () => {
         }),
       }),
     );
+  });
+
+  it('rejects a url collision with a non-Reeve-owned org before stamping the claim, type, or webhook', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:squatted');
+
+    // A foreign org's manager set their url to the derived value.
+    findUniqueMock.mockResolvedValue(
+      existingOrg('org_foreign', url, {
+        ownerUserId: 123,
+        owner: { email: 'someone@example.com' },
+        type: OrganisationType.PERSONAL,
+        organisationClaim: { originalSubscriptionClaimId: 'free' },
+      }),
+    );
+
+    const err = await provisionOrganisation({
+      name: 'Squatted',
+      externalReference: 'host_app:squatted',
+      webhook: WEBHOOK,
+    }).catch((e: unknown) => e);
+
+    expect((err as AppError).code).toBe(AppErrorCode.ALREADY_EXISTS);
+    expect(organisationUpdateMock).not.toHaveBeenCalled();
+    expect(webhookCreateMock).not.toHaveBeenCalled();
+    expect(webhookUpdateMock).not.toHaveBeenCalled();
+    expect(createApiTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('matches the system-user owner email case-insensitively', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:case');
+
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', ' Reeve-Provisioner@MeetReeve.com ');
+    findUniqueMock.mockResolvedValue(existingOrg('org_case', url));
+    findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_case' });
+    apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 7 });
+
+    const result = await provisionOrganisation({ name: 'Case', externalReference: 'host_app:case' });
+
+    expect(result).toEqual({ organisationId: 'org_case', apiToken: null, created: false });
+  });
+
+  it('fails loud with NOT_SETUP on an existing org when REEVE_SIGN_SYSTEM_USER_EMAIL is unset', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:noenv');
+
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', '');
+    findUniqueMock.mockResolvedValue(existingOrg('org_noenv', url, { type: OrganisationType.PERSONAL }));
+
+    const err = await provisionOrganisation({ name: 'No Env', externalReference: 'host_app:noenv' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((err as AppError).code).toBe(AppErrorCode.NOT_SETUP);
+    expect(organisationUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a create race lost to a non-Reeve-owned org', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:race-foreign');
+
+    findUniqueMock.mockResolvedValueOnce(null);
+    createOrganisationMock.mockRejectedValueOnce(
+      new AppError(AppErrorCode.ALREADY_EXISTS, { message: 'Organisation URL already exists' }),
+    );
+    findUniqueOrThrowMock.mockResolvedValueOnce({ id: 'org_foreign', url, owner: { email: 'someone@example.com' } });
+
+    const err = await provisionOrganisation({
+      name: 'Race Foreign',
+      externalReference: 'host_app:race-foreign',
+      webhook: WEBHOOK,
+    }).catch((e: unknown) => e);
+
+    expect((err as AppError).code).toBe(AppErrorCode.ALREADY_EXISTS);
+    expect(findFirstMock).not.toHaveBeenCalled();
+    expect(webhookCreateMock).not.toHaveBeenCalled();
   });
 
   it('does not write when an existing org is already ORGANISATION with sender details on', async () => {
