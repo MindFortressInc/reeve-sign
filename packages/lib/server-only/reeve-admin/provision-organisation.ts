@@ -41,8 +41,10 @@ export const REEVE_WEBHOOK_EVENT_TRIGGERS = [
 ];
 
 /**
- * Idempotently ensures one webhook per (team, url): creates it, or brings a
- * drifted one (secret, events, disabled) back in line. Never duplicates.
+ * Idempotently ensures the team has a webhook for `url`: creates it, or
+ * brings a drifted one (secret, events, disabled) back in line. It never
+ * creates a second one for the same (team, url). It does not reconcile
+ * duplicates made outside this path (e.g. by hand in the Documenso UI).
  */
 const ensureTeamWebhook = async ({
   teamId,
