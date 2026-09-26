@@ -1,4 +1,4 @@
-import { OrganisationType } from '@prisma/client';
+import { OrganisationType, WebhookTriggerEvents } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
@@ -15,6 +15,10 @@ const {
   createTeamMock,
   createApiTokenMock,
   getReeveAdminSystemUserMock,
+  organisationUpdateMock,
+  webhookFindFirstMock,
+  webhookCreateMock,
+  webhookUpdateMock,
 } = vi.hoisted(() => ({
   findUniqueMock: vi.fn(),
   findUniqueOrThrowMock: vi.fn(),
@@ -25,6 +29,10 @@ const {
   createTeamMock: vi.fn(),
   createApiTokenMock: vi.fn(),
   getReeveAdminSystemUserMock: vi.fn(),
+  organisationUpdateMock: vi.fn(),
+  webhookFindFirstMock: vi.fn(),
+  webhookCreateMock: vi.fn(),
+  webhookUpdateMock: vi.fn(),
 }));
 
 vi.mock('@documenso/prisma', () => ({
@@ -32,6 +40,7 @@ vi.mock('@documenso/prisma', () => ({
     organisation: {
       findUnique: findUniqueMock,
       findUniqueOrThrow: findUniqueOrThrowMock,
+      update: organisationUpdateMock,
     },
     team: {
       findFirst: findFirstMock,
@@ -39,6 +48,11 @@ vi.mock('@documenso/prisma', () => ({
     },
     apiToken: {
       findFirst: apiTokenFindFirstMock,
+    },
+    webhook: {
+      findFirst: webhookFindFirstMock,
+      create: webhookCreateMock,
+      update: webhookUpdateMock,
     },
   },
 }));
@@ -64,6 +78,28 @@ const { provisionOrganisation } = await import('./provision-organisation');
 
 const SYSTEM_USER = { id: 999, email: 'reeve-provisioner@meetreeve.com' };
 
+// An already-provisioned org row as `findUnique` returns it (with its
+// global settings included), already in the target ORGANISATION state.
+const existingOrg = (id: string, url: string, overrides: Record<string, unknown> = {}) => ({
+  id,
+  url,
+  ownerUserId: SYSTEM_USER.id,
+  type: OrganisationType.ORGANISATION,
+  organisationGlobalSettings: { includeSenderDetails: true },
+  ...overrides,
+});
+
+const REEVE_AGENTS_WEBHOOK_EVENTS = [
+  WebhookTriggerEvents.DOCUMENT_SENT,
+  WebhookTriggerEvents.DOCUMENT_OPENED,
+  WebhookTriggerEvents.DOCUMENT_SIGNED,
+  WebhookTriggerEvents.DOCUMENT_COMPLETED,
+  WebhookTriggerEvents.DOCUMENT_REJECTED,
+  WebhookTriggerEvents.DOCUMENT_CANCELLED,
+];
+
+const WEBHOOK = { url: 'https://agents.meetreeve.com/webhooks/documenso', secret: 'whsec_1' };
+
 describe('provisionOrganisation', () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
@@ -76,12 +112,16 @@ describe('provisionOrganisation', () => {
     createApiTokenMock.mockReset();
     getReeveAdminSystemUserMock.mockReset();
     getReeveAdminSystemUserMock.mockResolvedValue(SYSTEM_USER);
+    organisationUpdateMock.mockReset();
+    webhookFindFirstMock.mockReset();
+    webhookCreateMock.mockReset();
+    webhookUpdateMock.mockReset();
   });
 
   it('idempotent hit: org + team + token all already exist -> returns the existing org, creates nothing', async () => {
     const url = deriveOrganisationUrlFromExternalReference('host_app:tenant-123');
 
-    findUniqueMock.mockResolvedValue({ id: 'org_existing', url });
+    findUniqueMock.mockResolvedValue(existingOrg('org_existing', url));
     findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_existing' });
     apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 7 });
 
@@ -99,7 +139,7 @@ describe('provisionOrganisation', () => {
 
     // First call: nothing exists yet.
     findUniqueMock.mockResolvedValueOnce(null);
-    createOrganisationMock.mockResolvedValueOnce({ id: 'org_new', url });
+    createOrganisationMock.mockResolvedValueOnce({ id: 'org_new', url, ownerUserId: SYSTEM_USER.id });
     findFirstMock.mockResolvedValueOnce(null); // no team yet
     createTeamMock.mockResolvedValueOnce(undefined);
     findFirstOrThrowMock.mockResolvedValueOnce({ id: 7, organisationId: 'org_new' });
@@ -113,7 +153,7 @@ describe('provisionOrganisation', () => {
     // Second call: the org (and its team, and its token) now exist
     // (persistent, DB-backed lookup by the deterministically-derived url —
     // not in-memory).
-    findUniqueMock.mockResolvedValueOnce({ id: 'org_new', url });
+    findUniqueMock.mockResolvedValueOnce(existingOrg('org_new', url));
     findFirstMock.mockResolvedValueOnce({ id: 7, organisationId: 'org_new' });
     apiTokenFindFirstMock.mockResolvedValueOnce({ id: 1, teamId: 7 });
 
@@ -130,7 +170,7 @@ describe('provisionOrganisation', () => {
     const url = deriveOrganisationUrlFromExternalReference(externalReference);
 
     findUniqueMock.mockResolvedValue(null);
-    createOrganisationMock.mockResolvedValue({ id: 'org_456', url });
+    createOrganisationMock.mockResolvedValue({ id: 'org_456', url, ownerUserId: SYSTEM_USER.id });
     findFirstMock.mockResolvedValue(null);
     createTeamMock.mockResolvedValue(undefined);
     findFirstOrThrowMock.mockResolvedValue({ id: 42, organisationId: 'org_456' });
@@ -215,7 +255,7 @@ describe('provisionOrganisation', () => {
     // The organisation row survives from a prior call whose createTeam or
     // createApiToken step failed (e.g. a transient DB error) after
     // createOrganisation had already committed.
-    findUniqueMock.mockResolvedValue({ id: 'org_partial', url });
+    findUniqueMock.mockResolvedValue(existingOrg('org_partial', url));
     findFirstMock.mockResolvedValueOnce(null); // no team yet -> incomplete
     createTeamMock.mockResolvedValueOnce(undefined);
     findFirstOrThrowMock.mockResolvedValueOnce({ id: 11, organisationId: 'org_partial' });
@@ -239,7 +279,7 @@ describe('provisionOrganisation', () => {
     // failed/crashed after createTeam had already committed. Team-existence
     // alone must NOT be treated as "fully provisioned" — the token is the
     // deliverable the caller actually needs.
-    findUniqueMock.mockResolvedValue({ id: 'org_partial_token', url });
+    findUniqueMock.mockResolvedValue(existingOrg('org_partial_token', url));
     findFirstMock.mockResolvedValue({ id: 21, organisationId: 'org_partial_token' });
     apiTokenFindFirstMock.mockResolvedValueOnce(null); // team exists, but no token yet
     createApiTokenMock.mockResolvedValueOnce({ id: 4, token: 'api_healed_token_2' });
@@ -265,5 +305,144 @@ describe('provisionOrganisation', () => {
     ).rejects.toThrow(AppError);
 
     expect(createOrganisationMock).not.toHaveBeenCalled();
+  });
+  it('creates new orgs as ORGANISATION type (sender details render as "<user> on behalf of <team>")', async () => {
+    findUniqueMock.mockResolvedValue(null);
+    createOrganisationMock.mockResolvedValue({ id: 'org_new', url: 'x', ownerUserId: SYSTEM_USER.id });
+    findFirstMock.mockResolvedValue(null);
+    findFirstOrThrowMock.mockResolvedValue({ id: 5, organisationId: 'org_new' });
+    createApiTokenMock.mockResolvedValue({ id: 1, token: 'api_t' });
+
+    await provisionOrganisation({ name: 'Tenant', externalReference: 'host_app:new' });
+
+    expect(createOrganisationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: OrganisationType.ORGANISATION }),
+    );
+    // A freshly created org already has type ORGANISATION and the schema
+    // default includeSenderDetails=true, so no upgrade write is needed.
+    expect(organisationUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('re-POST upgrades an existing PERSONAL org with sender details off to ORGANISATION + includeSenderDetails=true', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:legacy');
+
+    findUniqueMock.mockResolvedValue(
+      existingOrg('org_legacy', url, {
+        type: OrganisationType.PERSONAL,
+        organisationGlobalSettings: { includeSenderDetails: false },
+      }),
+    );
+    findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_legacy' });
+    apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 7 });
+
+    const result = await provisionOrganisation({ name: 'Legacy', externalReference: 'host_app:legacy' });
+
+    expect(result).toEqual({ organisationId: 'org_legacy', apiToken: null, created: false });
+    expect(organisationUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'org_legacy' },
+      data: {
+        type: OrganisationType.ORGANISATION,
+        organisationGlobalSettings: { update: { includeSenderDetails: true } },
+      },
+    });
+  });
+
+  it('does not write when an existing org is already ORGANISATION with sender details on', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:ok');
+
+    findUniqueMock.mockResolvedValue(existingOrg('org_ok', url));
+    findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_ok' });
+    apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 7 });
+
+    await provisionOrganisation({ name: 'Ok', externalReference: 'host_app:ok' });
+
+    expect(organisationUpdateMock).not.toHaveBeenCalled();
+  });
+
+  describe('webhook ensure', () => {
+    it('creates the team webhook with the reeve-agents event set when none exists', async () => {
+      findUniqueMock.mockResolvedValue(null);
+      createOrganisationMock.mockResolvedValue({ id: 'org_wh', url: 'x', ownerUserId: SYSTEM_USER.id });
+      findFirstMock.mockResolvedValue(null);
+      findFirstOrThrowMock.mockResolvedValue({ id: 31, organisationId: 'org_wh' });
+      createApiTokenMock.mockResolvedValue({ id: 1, token: 'api_t' });
+      webhookFindFirstMock.mockResolvedValue(null);
+
+      await provisionOrganisation({ name: 'Webhook Org', externalReference: 'host_app:wh', webhook: WEBHOOK });
+
+      expect(webhookFindFirstMock).toHaveBeenCalledWith({ where: { teamId: 31, webhookUrl: WEBHOOK.url } });
+      expect(webhookCreateMock).toHaveBeenCalledWith({
+        data: {
+          webhookUrl: WEBHOOK.url,
+          secret: WEBHOOK.secret,
+          eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS,
+          enabled: true,
+          userId: SYSTEM_USER.id,
+          teamId: 31,
+        },
+      });
+    });
+
+    it('is idempotent: an identical webhook already on the team is left alone', async () => {
+      const url = deriveOrganisationUrlFromExternalReference('host_app:wh2');
+
+      findUniqueMock.mockResolvedValue(existingOrg('org_wh2', url));
+      findFirstMock.mockResolvedValue({ id: 32, organisationId: 'org_wh2' });
+      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 32 });
+      webhookFindFirstMock.mockResolvedValue({
+        id: 'wh_1',
+        webhookUrl: WEBHOOK.url,
+        secret: WEBHOOK.secret,
+        // Same set, different order -> still identical.
+        eventTriggers: [...REEVE_AGENTS_WEBHOOK_EVENTS].reverse(),
+        enabled: true,
+      });
+
+      const result = await provisionOrganisation({
+        name: 'Webhook Org',
+        externalReference: 'host_app:wh2',
+        webhook: WEBHOOK,
+      });
+
+      expect(result.created).toBe(false);
+      expect(webhookCreateMock).not.toHaveBeenCalled();
+      expect(webhookUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('re-POST updates a drifted webhook (secret, events, disabled) in place instead of duplicating it', async () => {
+      const url = deriveOrganisationUrlFromExternalReference('host_app:wh3');
+
+      findUniqueMock.mockResolvedValue(existingOrg('org_wh3', url));
+      findFirstMock.mockResolvedValue({ id: 33, organisationId: 'org_wh3' });
+      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 33 });
+      webhookFindFirstMock.mockResolvedValue({
+        id: 'wh_old',
+        webhookUrl: WEBHOOK.url,
+        secret: 'old-secret',
+        eventTriggers: [WebhookTriggerEvents.DOCUMENT_COMPLETED],
+        enabled: false,
+      });
+
+      await provisionOrganisation({ name: 'Webhook Org', externalReference: 'host_app:wh3', webhook: WEBHOOK });
+
+      expect(webhookCreateMock).not.toHaveBeenCalled();
+      expect(webhookUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'wh_old' },
+        data: { secret: WEBHOOK.secret, eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS, enabled: true },
+      });
+    });
+
+    it('touches no webhook when none is requested', async () => {
+      const url = deriveOrganisationUrlFromExternalReference('host_app:nowh');
+
+      findUniqueMock.mockResolvedValue(existingOrg('org_nowh', url));
+      findFirstMock.mockResolvedValue({ id: 34, organisationId: 'org_nowh' });
+      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 34 });
+
+      await provisionOrganisation({ name: 'No Webhook', externalReference: 'host_app:nowh' });
+
+      expect(webhookFindFirstMock).not.toHaveBeenCalled();
+      expect(webhookCreateMock).not.toHaveBeenCalled();
+    });
   });
 });

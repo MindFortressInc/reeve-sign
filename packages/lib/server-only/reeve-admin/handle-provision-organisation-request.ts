@@ -13,6 +13,12 @@ import {
 const ZProvisionOrganisationRequestSchema = z.object({
   name: z.string().trim().min(3, 'name must be at least 3 characters').max(50, 'name must be at most 50 characters'),
   external_reference: z.string().trim().min(1, 'external_reference is required').max(512),
+  webhook: z
+    .object({
+      url: z.string().url(),
+      secret: z.string().min(1),
+    })
+    .optional(),
 });
 
 /**
@@ -54,10 +60,10 @@ export const handleProvisionOrganisationRequest = async (req: Request): Promise<
     return Response.json({ error: 'Invalid request body', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { name, external_reference: externalReference } = parsed.data;
+  const { name, external_reference: externalReference, webhook } = parsed.data;
 
   try {
-    const result = await provisionOrganisation({ name, externalReference });
+    const result = await provisionOrganisation({ name, externalReference, webhook });
 
     return Response.json(
       {

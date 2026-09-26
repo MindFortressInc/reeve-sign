@@ -39,17 +39,6 @@ export type ResendDocumentOptions = {
 };
 
 export const resendDocument = async ({ id, userId, recipients, teamId, requestMetadata }: ResendDocumentOptions) => {
-  const user = await prisma.user.findFirstOrThrow({
-    where: {
-      id: userId,
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-    },
-  });
-
   const { envelopeWhereInput } = await getEnvelopeWhereInput({
     id,
     type: EnvelopeType.DOCUMENT,
@@ -68,12 +57,23 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
           name: true,
         },
       },
+      // The reminder names the envelope owner, not whoever called resend
+      // (e.g. an org's system-user API token, DEV-12502).
+      user: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
     },
   });
 
   if (!envelope) {
     throw new Error('Document not found');
   }
+
+  const { user } = envelope;
 
   if (envelope.recipients.length === 0) {
     throw new Error('Document has no recipients');

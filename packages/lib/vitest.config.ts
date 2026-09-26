@@ -10,6 +10,10 @@ import { configDefaults, defineConfig } from 'vitest/config';
 // problem packages/auth/vitest.config.ts already solves this way.
 export default defineConfig({
   plugins: [macrosPlugin(), lingui()],
+  // DEV-12502: tests that render real @documenso/email templates (.tsx,
+  // tsconfig `jsx: preserve`) need the automatic runtime, or esbuild's
+  // classic default throws "React is not defined".
+  esbuild: { jsx: 'automatic' },
   test: {
     include: ['**/*.test.ts'],
     // These two specific suites hit real external infra (MinIO; Postgres) and

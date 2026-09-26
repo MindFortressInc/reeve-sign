@@ -3,6 +3,7 @@ import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { convertToPdf } from '@documenso/lib/server-only/document-conversion';
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
 import { insertFormValuesInPdf } from '@documenso/lib/server-only/pdf/insert-form-values-in-pdf';
+import { resolveOnBehalfOfUserId } from '@documenso/lib/server-only/reeve-admin/resolve-on-behalf-of-user';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { mapSecondaryIdToDocumentId } from '@documenso/lib/utils/envelope';
 import { EnvelopeType } from '@prisma/client';
@@ -36,6 +37,11 @@ export const createDocumentRoute = authenticatedProcedure
       attachments,
     } = payload;
 
+    // DEV-12502: an API token may create the envelope on behalf of a member
+    // of its team (403 otherwise), resolved before anything is stored.
+    const onBehalfOfUserId =
+      ctx.metadata.auth === 'api' ? await resolveOnBehalfOfUserId({ headers: ctx.req.headers, teamId }) : null;
+
     let pdf = await convertToPdf(file, ctx.logger);
 
     if (formValues) {
@@ -68,7 +74,7 @@ export const createDocumentRoute = authenticatedProcedure
     }
 
     const document = await createEnvelope({
-      userId: user.id,
+      userId: onBehalfOfUserId ?? user.id,
       teamId,
       internalVersion: 1,
       data: {

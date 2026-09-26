@@ -1,5 +1,6 @@
 import { prisma } from '@documenso/prisma';
-import { OrganisationType } from '@prisma/client';
+import type { Organisation } from '@prisma/client';
+import { OrganisationType, WebhookTriggerEvents } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID, internalClaims } from '../../types/subscription';
@@ -12,6 +13,8 @@ import { getReeveAdminSystemUser } from './get-reeve-admin-system-user';
 export type ProvisionOrganisationInput = {
   name: string;
   externalReference: string;
+  /** Optional team webhook to ensure on the org's team (DEV-12502). */
+  webhook?: { url: string; secret: string };
 };
 
 export type ProvisionOrganisationResult = {
@@ -22,6 +25,64 @@ export type ProvisionOrganisationResult = {
 };
 
 const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
+
+/**
+ * The events reeve-agents' `/webhooks/documenso` receives today: the exact
+ * set on the prod team-3 webhook row (DEV-12502). Completion and
+ * rejection/cancellation resume sign gates; the rest are telemetry.
+ */
+export const REEVE_WEBHOOK_EVENT_TRIGGERS = [
+  WebhookTriggerEvents.DOCUMENT_SENT,
+  WebhookTriggerEvents.DOCUMENT_OPENED,
+  WebhookTriggerEvents.DOCUMENT_SIGNED,
+  WebhookTriggerEvents.DOCUMENT_COMPLETED,
+  WebhookTriggerEvents.DOCUMENT_REJECTED,
+  WebhookTriggerEvents.DOCUMENT_CANCELLED,
+];
+
+/**
+ * Idempotently ensures one webhook per (team, url): creates it, or brings a
+ * drifted one (secret, events, disabled) back in line. Never duplicates.
+ */
+const ensureTeamWebhook = async ({
+  teamId,
+  userId,
+  webhook,
+}: {
+  teamId: number;
+  userId: number;
+  webhook: { url: string; secret: string };
+}) => {
+  const existing = await prisma.webhook.findFirst({ where: { teamId, webhookUrl: webhook.url } });
+
+  if (!existing) {
+    await prisma.webhook.create({
+      data: {
+        webhookUrl: webhook.url,
+        secret: webhook.secret,
+        eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS,
+        enabled: true,
+        userId,
+        teamId,
+      },
+    });
+
+    return;
+  }
+
+  const hasSameEvents =
+    existing.eventTriggers.length === REEVE_WEBHOOK_EVENT_TRIGGERS.length &&
+    REEVE_WEBHOOK_EVENT_TRIGGERS.every((event) => existing.eventTriggers.includes(event));
+
+  if (existing.enabled && existing.secret === webhook.secret && hasSameEvents) {
+    return;
+  }
+
+  await prisma.webhook.update({
+    where: { id: existing.id },
+    data: { secret: webhook.secret, eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS, enabled: true },
+  });
+};
 
 /**
  * Idempotently provisions a Documenso organisation for a host_app tenant and
@@ -50,14 +111,40 @@ const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
  * the lib function directly never trips it — the system user can own any
  * number of Reeve-provisioned organisations. The PLATFORM internal claim
  * marks these as platform/API-managed orgs.
+ *
+ * Sender naming (DEV-12502): orgs are `ORGANISATION` type with org-level
+ * `includeSenderDetails=true`, so signing invites read
+ * `<owner> on behalf of "<team>"`. A re-POST upgrades an org provisioned
+ * before this (or edited since) to that state, and ensures the optional
+ * team webhook.
  */
 export const provisionOrganisation = async ({
   name,
   externalReference,
+  webhook,
 }: ProvisionOrganisationInput): Promise<ProvisionOrganisationResult> => {
   const url = deriveOrganisationUrlFromExternalReference(externalReference);
 
-  let organisation = await prisma.organisation.findUnique({ where: { url } });
+  const existingOrganisation = await prisma.organisation.findUnique({
+    where: { url },
+    include: { organisationGlobalSettings: { select: { includeSenderDetails: true } } },
+  });
+
+  if (
+    existingOrganisation &&
+    (existingOrganisation.type !== OrganisationType.ORGANISATION ||
+      !existingOrganisation.organisationGlobalSettings.includeSenderDetails)
+  ) {
+    await prisma.organisation.update({
+      where: { id: existingOrganisation.id },
+      data: {
+        type: OrganisationType.ORGANISATION,
+        organisationGlobalSettings: { update: { includeSenderDetails: true } },
+      },
+    });
+  }
+
+  let organisation: Organisation | null = existingOrganisation;
 
   let systemUser: Awaited<ReturnType<typeof getReeveAdminSystemUser>> | undefined;
 
@@ -88,16 +175,7 @@ export const provisionOrganisation = async ({
 
   let team = await prisma.team.findFirst({ where: { organisationId: organisation.id } });
 
-  if (team) {
-    const existingToken = await prisma.apiToken.findFirst({ where: { teamId: team.id } });
-
-    if (existingToken) {
-      // Fully provisioned already — a true idempotent hit. The token is
-      // intentionally never re-returned once minted (see the pinned
-      // contract: `api_token: null` on every hit after the first).
-      return { organisationId: organisation.id, apiToken: null, created: false };
-    }
-  } else {
+  if (!team) {
     systemUser ??= await getReeveAdminSystemUser();
     const teamUrl = `${url}-team`;
 
@@ -112,6 +190,19 @@ export const provisionOrganisation = async ({
     team = await prisma.team.findFirstOrThrow({
       where: { organisationId: organisation.id },
     });
+  }
+
+  if (webhook) {
+    await ensureTeamWebhook({ teamId: team.id, userId: organisation.ownerUserId, webhook });
+  }
+
+  const existingToken = await prisma.apiToken.findFirst({ where: { teamId: team.id } });
+
+  if (existingToken) {
+    // Fully provisioned already — a true idempotent hit. The token is
+    // intentionally never re-returned once minted (see the pinned
+    // contract: `api_token: null` on every hit after the first).
+    return { organisationId: organisation.id, apiToken: null, created: false };
   }
 
   systemUser ??= await getReeveAdminSystemUser();

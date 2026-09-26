@@ -95,6 +95,7 @@ export const ApiContractV1 = c.router(
       responses: {
         200: ZCreateDocumentMutationResponseSchema,
         401: ZUnsuccessfulResponseSchema,
+        403: ZUnsuccessfulResponseSchema,
         404: ZUnsuccessfulResponseSchema,
       },
       summary: 'Upload a new document and get a presigned URL',
@@ -179,6 +180,7 @@ export const ApiContractV1 = c.router(
         200: ZGenerateDocumentFromTemplateMutationResponseSchema,
         400: ZUnsuccessfulResponseSchema,
         401: ZUnsuccessfulResponseSchema,
+        403: ZUnsuccessfulResponseSchema,
         404: ZUnsuccessfulResponseSchema,
         500: ZUnsuccessfulResponseSchema,
       },
