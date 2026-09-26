@@ -95,6 +95,7 @@ const existingOrg = (id: string, url: string, overrides: Record<string, unknown>
   ownerUserId: SYSTEM_USER.id,
   type: OrganisationType.ORGANISATION,
   organisationGlobalSettings: { includeSenderDetails: true },
+  organisationClaim: { originalSubscriptionClaimId: 'platform' },
   ...overrides,
 });
 
@@ -353,8 +354,30 @@ describe('provisionOrganisation', () => {
       data: {
         type: OrganisationType.ORGANISATION,
         organisationGlobalSettings: { update: { includeSenderDetails: true } },
+        organisationClaim: { update: { originalSubscriptionClaimId: 'platform' } },
       },
     });
+  });
+
+  it('re-POST re-stamps the PLATFORM claim the on-behalf-of resolver keys provenance on', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:reclaimed');
+
+    findUniqueMock.mockResolvedValue(
+      existingOrg('org_reclaimed', url, { organisationClaim: { originalSubscriptionClaimId: 'free' } }),
+    );
+    findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_reclaimed' });
+    apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 7 });
+
+    await provisionOrganisation({ name: 'Reclaimed', externalReference: 'host_app:reclaimed' });
+
+    expect(organisationUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'org_reclaimed' },
+        data: expect.objectContaining({
+          organisationClaim: { update: { originalSubscriptionClaimId: 'platform' } },
+        }),
+      }),
+    );
   });
 
   it('does not write when an existing org is already ORGANISATION with sender details on', async () => {

@@ -1,8 +1,8 @@
 import { prisma } from '@documenso/prisma';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import { buildTeamWhereQuery } from '../../utils/teams';
-import { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } from './derive-organisation-url';
 
 /**
  * Optional header on the API-token document-creating routes (DEV-12502, C1):
@@ -17,7 +17,8 @@ export const REEVE_ON_BEHALF_OF_HEADER = 'X-Reeve-Sign-On-Behalf-Of';
  * envelope. Returns null when the header is absent (callers keep the token
  * user as owner). Throws FORBIDDEN (403) unless the email belongs to an
  * enabled member of the token's own team, and that team belongs to a
- * Reeve-provisioned organisation (`POST /api/reeve-admin/organisations`).
+ * Reeve-provisioned organisation (`POST /api/reeve-admin/organisations`),
+ * identified by its PLATFORM organisation claim.
  * Ordinary Documenso teams never honour it. Callers resolve this before
  * creating anything, so a rejected header never leaves an envelope behind.
  *
@@ -60,7 +61,9 @@ export const resolveOnBehalfOfUserId = async ({
   const team = await prisma.team.findFirst({
     where: {
       ...buildTeamWhereQuery({ teamId, userId: user.id }),
-      organisation: { url: { startsWith: REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } },
+      // Provenance is the PLATFORM claim provisioning stamps, not the
+      // `reeve-ext-` url prefix: org managers can edit their url.
+      organisation: { organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
     },
     select: { id: true },
   });

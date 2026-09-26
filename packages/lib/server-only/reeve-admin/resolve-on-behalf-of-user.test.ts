@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import { buildTeamWhereQuery } from '../../utils/teams';
 
 const { userFindFirstMock, teamFindFirstMock } = vi.hoisted(() => ({
@@ -16,7 +17,6 @@ vi.mock('@documenso/prisma', () => ({
 }));
 
 const { REEVE_ON_BEHALF_OF_HEADER, resolveOnBehalfOfUserId } = await import('./resolve-on-behalf-of-user');
-const { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } = await import('./derive-organisation-url');
 
 const headersWith = (value?: string) => new Headers(value === undefined ? {} : { [REEVE_ON_BEHALF_OF_HEADER]: value });
 
@@ -58,12 +58,12 @@ describe('resolveOnBehalfOfUserId', () => {
       select: { id: true },
     });
     // Membership is scoped to the token's team, and only Reeve-provisioned
-    // orgs honour the header (upstream teams keep their own opt-in
-    // delegateDocumentOwnership instead).
+    // orgs (PLATFORM claim) honour the header (upstream teams keep their own
+    // opt-in delegateDocumentOwnership instead).
     expect(teamFindFirstMock).toHaveBeenCalledWith({
       where: {
         ...buildTeamWhereQuery({ teamId: 7, userId: 77 }),
-        organisation: { url: { startsWith: REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } },
+        organisation: { organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
       },
       select: { id: true },
     });
@@ -81,8 +81,9 @@ describe('resolveOnBehalfOfUserId', () => {
     teamFindFirstMock.mockResolvedValue(null);
 
     await expectForbidden(resolveOnBehalfOfUserId({ headers: headersWith('matt@mindfortress.com'), teamId: 3 }));
+    // Keyed on the claim, never the manager-editable `reeve-ext-` url prefix.
     expect(teamFindFirstMock.mock.calls[0][0].where.organisation).toEqual({
-      url: { startsWith: 'reeve-ext-' },
+      organisationClaim: { originalSubscriptionClaimId: 'platform' },
     });
   });
 

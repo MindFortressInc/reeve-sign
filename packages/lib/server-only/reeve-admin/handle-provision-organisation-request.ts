@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { env } from '../../utils/env';
 import { provisionOrganisation } from './provision-organisation';
 import {
   isReeveAdminProvisioningConfigured,
@@ -15,7 +16,15 @@ const ZProvisionOrganisationRequestSchema = z.object({
   external_reference: z.string().trim().min(1, 'external_reference is required').max(512),
   webhook: z
     .object({
-      url: z.string().url(),
+      // The secret travels in the X-Documenso-Secret header, so production
+      // only accepts https; http stays allowed locally for tunnels/dev.
+      url: z
+        .string()
+        .url()
+        .refine(
+          (url) => env('NODE_ENV') !== 'production' || new URL(url).protocol === 'https:',
+          'webhook.url must use https in production',
+        ),
       secret: z.string().min(1),
     })
     .optional(),

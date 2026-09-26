@@ -124,8 +124,9 @@ const ensureTeamWebhook = async ({
  * Sender naming (DEV-12502): orgs are `ORGANISATION` type with org-level
  * `includeSenderDetails=true`, so signing invites read
  * `<owner> on behalf of "<team>"`. A re-POST upgrades an org provisioned
- * before this (or edited since) to that state, and ensures the optional
- * team webhook.
+ * before this (or edited since) to that state, re-stamps the PLATFORM claim
+ * that `resolveOnBehalfOfUserId` keys provenance on, and ensures the
+ * optional team webhook.
  */
 export const provisionOrganisation = async ({
   name,
@@ -136,19 +137,24 @@ export const provisionOrganisation = async ({
 
   const existingOrganisation = await prisma.organisation.findUnique({
     where: { url },
-    include: { organisationGlobalSettings: { select: { includeSenderDetails: true } } },
+    include: {
+      organisationGlobalSettings: { select: { includeSenderDetails: true } },
+      organisationClaim: { select: { originalSubscriptionClaimId: true } },
+    },
   });
 
   if (
     existingOrganisation &&
     (existingOrganisation.type !== OrganisationType.ORGANISATION ||
-      !existingOrganisation.organisationGlobalSettings.includeSenderDetails)
+      !existingOrganisation.organisationGlobalSettings.includeSenderDetails ||
+      existingOrganisation.organisationClaim.originalSubscriptionClaimId !== INTERNAL_CLAIM_ID.PLATFORM)
   ) {
     await prisma.organisation.update({
       where: { id: existingOrganisation.id },
       data: {
         type: OrganisationType.ORGANISATION,
         organisationGlobalSettings: { update: { includeSenderDetails: true } },
+        organisationClaim: { update: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
       },
     });
   }

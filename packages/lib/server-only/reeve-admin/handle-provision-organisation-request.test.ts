@@ -175,4 +175,43 @@ describe('handleProvisionOrganisationRequest', () => {
 
     expect(provisionOrganisationMock).not.toHaveBeenCalled();
   });
+
+  it('requires an https webhook url in production (the secret rides in a header)', async () => {
+    process.env[ADMIN_TOKEN_ENV_KEY] = VALID_TOKEN;
+    vi.stubEnv('NODE_ENV', 'production');
+
+    try {
+      const response = await handleProvisionOrganisationRequest(
+        makeRequest({
+          headers: { [REEVE_ADMIN_TOKEN_HEADER]: VALID_TOKEN },
+          body: {
+            name: 'Acme',
+            external_reference: 'host_app:acme',
+            webhook: { url: 'http://agents.meetreeve.com/webhooks/documenso', secret: 'whsec_1' },
+          },
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(provisionOrganisationMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('accepts an http webhook url outside production (local tunnels)', async () => {
+    process.env[ADMIN_TOKEN_ENV_KEY] = VALID_TOKEN;
+    provisionOrganisationMock.mockResolvedValue({ organisationId: 'org_1', apiToken: null, created: false });
+
+    const webhook = { url: 'http://localhost:4000/webhooks/documenso', secret: 'whsec_1' };
+    const response = await handleProvisionOrganisationRequest(
+      makeRequest({
+        headers: { [REEVE_ADMIN_TOKEN_HEADER]: VALID_TOKEN },
+        body: { name: 'Acme', external_reference: 'host_app:acme', webhook },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(provisionOrganisationMock).toHaveBeenCalledWith(expect.objectContaining({ webhook }));
+  });
 });
