@@ -97,6 +97,7 @@ export const ApiContractV1 = c.router(
         401: ZUnsuccessfulResponseSchema,
         403: ZUnsuccessfulResponseSchema,
         404: ZUnsuccessfulResponseSchema,
+        500: ZUnsuccessfulResponseSchema,
       },
       summary: 'Upload a new document and get a presigned URL',
       deprecated: true,

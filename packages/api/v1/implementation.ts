@@ -4,6 +4,7 @@ import { DATE_FORMATS, DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/const
 import { DocumentDataType, EnvelopeType, SigningStatus } from '@prisma/client';
 import type { TsRestRequest } from '@ts-rest/serverless';
 import { tsr } from '@ts-rest/serverless/fetch';
+import type { Logger } from 'pino';
 import { match } from 'ts-pattern';
 import '@documenso/lib/constants/time-zones';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
@@ -52,9 +53,15 @@ import { authenticatedMiddleware } from './middleware/authenticated';
 /**
  * DEV-12502: the owner of a new envelope. The `X-Reeve-Sign-On-Behalf-Of`
  * member when the header is sent (403 unless they are in the token's team),
- * otherwise the token user. Resolved before anything is created.
+ * otherwise the token user. Resolved before anything is created; any other
+ * failure (e.g. a DB error) is a declared 500, not an unhandled throw.
  */
-const resolveEnvelopeOwnerId = async (req: TsRestRequest, userId: number, teamId: number) => {
+const resolveEnvelopeOwnerId = async (
+  req: TsRestRequest,
+  userId: number,
+  teamId: number,
+  logger: Logger,
+) => {
   try {
     return (await resolveOnBehalfOfUserId({ headers: req.headers, teamId })) ?? userId;
   } catch (err) {
@@ -62,7 +69,9 @@ const resolveEnvelopeOwnerId = async (req: TsRestRequest, userId: number, teamId
       return { status: 403 as const, body: { message: err.message } };
     }
 
-    throw err;
+    logger.error({ err }, 'Failed to resolve envelope owner');
+
+    return { status: 500 as const, body: { message: 'Something went wrong' } };
   }
 };
 
@@ -360,10 +369,10 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  createDocument: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  createDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { body } = args;
 
-    const ownerUserId = await resolveEnvelopeOwnerId(args.req, user.id, team.id);
+    const ownerUserId = await resolveEnvelopeOwnerId(args.req, user.id, team.id, logger);
 
     if (typeof ownerUserId !== 'number') {
       return ownerUserId;
@@ -889,7 +898,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
   generateDocumentFromTemplate: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { body, params } = args;
 
-    const ownerUserId = await resolveEnvelopeOwnerId(args.req, user.id, team.id);
+    const ownerUserId = await resolveEnvelopeOwnerId(args.req, user.id, team.id, logger);
 
     if (typeof ownerUserId !== 'number') {
       return ownerUserId;

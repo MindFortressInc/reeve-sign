@@ -2,6 +2,7 @@ import { prisma } from '@documenso/prisma';
 import { OrganisationMemberRole } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import { addUserToOrganisation } from '../organisation/accept-organisation-invitation';
 import { deriveOrganisationUrlFromExternalReference } from './derive-organisation-url';
 
@@ -38,8 +39,14 @@ export const ensureOrganisationMember = async ({
   email,
   name,
 }: EnsureOrganisationMemberInput): Promise<EnsureOrganisationMemberResult> => {
-  const organisation = await prisma.organisation.findUnique({
-    where: { url: deriveOrganisationUrlFromExternalReference(externalReference) },
+  // Provenance is the PLATFORM claim provisioning stamps (as in
+  // resolveOnBehalfOfUserId), not the `reeve-ext-` url alone: org managers
+  // can edit their url.
+  const organisation = await prisma.organisation.findFirst({
+    where: {
+      url: deriveOrganisationUrlFromExternalReference(externalReference),
+      organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
+    },
     include: { groups: true },
   });
 

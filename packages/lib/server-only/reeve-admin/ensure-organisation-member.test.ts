@@ -2,17 +2,18 @@ import { OrganisationGroupType, OrganisationMemberRole } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import { deriveOrganisationUrlFromExternalReference } from './derive-organisation-url';
 
 const {
-  organisationFindUniqueMock,
+  organisationFindFirstMock,
   userFindFirstMock,
   userCreateMock,
   organisationMemberFindFirstMock,
   organisationMemberCreateMock,
   triggerJobMock,
 } = vi.hoisted(() => ({
-  organisationFindUniqueMock: vi.fn(),
+  organisationFindFirstMock: vi.fn(),
   userFindFirstMock: vi.fn(),
   userCreateMock: vi.fn(),
   organisationMemberFindFirstMock: vi.fn(),
@@ -22,7 +23,7 @@ const {
 
 vi.mock('@documenso/prisma', () => ({
   prisma: {
-    organisation: { findUnique: organisationFindUniqueMock },
+    organisation: { findFirst: organisationFindFirstMock },
     user: { findFirst: userFindFirstMock, create: userCreateMock },
     organisationMember: { findFirst: organisationMemberFindFirstMock, create: organisationMemberCreateMock },
   },
@@ -58,7 +59,7 @@ const ORG = {
 describe('ensureOrganisationMember', () => {
   beforeEach(() => {
     for (const mock of [
-      organisationFindUniqueMock,
+      organisationFindFirstMock,
       userFindFirstMock,
       userCreateMock,
       organisationMemberFindFirstMock,
@@ -70,7 +71,7 @@ describe('ensureOrganisationMember', () => {
   });
 
   it('throws NOT_FOUND for an unknown external_reference and creates nothing', async () => {
-    organisationFindUniqueMock.mockResolvedValue(null);
+    organisationFindFirstMock.mockResolvedValue(null);
 
     const promise = ensureOrganisationMember({
       externalReference: 'org-unknown',
@@ -80,15 +81,20 @@ describe('ensureOrganisationMember', () => {
 
     await expect(promise).rejects.toThrow(AppError);
     await promise.catch((err) => expect((err as AppError).code).toBe(AppErrorCode.NOT_FOUND));
-    expect(organisationFindUniqueMock).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { url: deriveOrganisationUrlFromExternalReference('org-unknown') } }),
+    expect(organisationFindFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          url: deriveOrganisationUrlFromExternalReference('org-unknown'),
+          organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
+        },
+      }),
     );
     expect(userCreateMock).not.toHaveBeenCalled();
     expect(organisationMemberCreateMock).not.toHaveBeenCalled();
   });
 
   it('new user: creates an email-verified, passwordless user and adds them to the org MEMBER group, sending no email', async () => {
-    organisationFindUniqueMock.mockResolvedValue(ORG);
+    organisationFindFirstMock.mockResolvedValue(ORG);
     userFindFirstMock.mockResolvedValue(null);
     userCreateMock.mockResolvedValue({ id: 77, email: 'matt@mindfortress.com', name: 'Matt Rhodes' });
     organisationMemberFindFirstMock.mockResolvedValue(null);
@@ -122,7 +128,7 @@ describe('ensureOrganisationMember', () => {
   });
 
   it('existing user who is not yet a member: adds membership only, created=false, no email', async () => {
-    organisationFindUniqueMock.mockResolvedValue(ORG);
+    organisationFindFirstMock.mockResolvedValue(ORG);
     userFindFirstMock.mockResolvedValue({ id: 3, email: 'matt@mindfortress.com', name: 'Matt Rhodes' });
     organisationMemberFindFirstMock.mockResolvedValue(null);
 
@@ -142,7 +148,7 @@ describe('ensureOrganisationMember', () => {
   });
 
   it('is idempotent: an existing member is left untouched', async () => {
-    organisationFindUniqueMock.mockResolvedValue(ORG);
+    organisationFindFirstMock.mockResolvedValue(ORG);
     userFindFirstMock.mockResolvedValue({ id: 3, email: 'matt@mindfortress.com', name: 'Matt Rhodes' });
     organisationMemberFindFirstMock.mockResolvedValue({ id: 'member_1', userId: 3, organisationId: 'org_mf' });
 
@@ -159,7 +165,7 @@ describe('ensureOrganisationMember', () => {
   });
 
   it('handles a concurrent create of the same user (unique email) by re-reading the winner', async () => {
-    organisationFindUniqueMock.mockResolvedValue(ORG);
+    organisationFindFirstMock.mockResolvedValue(ORG);
     userFindFirstMock
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: 88, email: 'new@mindfortress.com', name: 'New' });
@@ -175,7 +181,7 @@ describe('ensureOrganisationMember', () => {
     expect(result).toEqual({ userId: 88, created: false });
   });
   it('handles a concurrent membership create (unique userId+organisationId) as an idempotent success', async () => {
-    organisationFindUniqueMock.mockResolvedValue(ORG);
+    organisationFindFirstMock.mockResolvedValue(ORG);
     userFindFirstMock.mockResolvedValue({ id: 3, email: 'matt@mindfortress.com', name: 'Matt Rhodes' });
     organisationMemberFindFirstMock
       .mockResolvedValueOnce(null)
@@ -193,7 +199,7 @@ describe('ensureOrganisationMember', () => {
     expect(result).toEqual({ userId: 3, created: false });
   });
   it('rejects a disabled existing user with INVALID_REQUEST and adds no membership', async () => {
-    organisationFindUniqueMock.mockResolvedValue(ORG);
+    organisationFindFirstMock.mockResolvedValue(ORG);
     userFindFirstMock.mockResolvedValue({ id: 9, email: 'gone@mindfortress.com', name: 'Gone', disabled: true });
 
     const err = await ensureOrganisationMember({

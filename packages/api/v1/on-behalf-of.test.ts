@@ -131,6 +131,15 @@ describe('v1 X-Reeve-Sign-On-Behalf-Of', () => {
       expect(createEnvelopeMock).not.toHaveBeenCalled();
     });
 
+    it('resolver DB error -> declared 500 and nothing is created', async () => {
+      userFindFirstMock.mockRejectedValue(new Error('db down'));
+
+      const response = await createDocument({ [ON_BEHALF_OF]: 'matt@mindfortress.com' });
+
+      expect(response.status).toBe(500);
+      expect(createEnvelopeMock).not.toHaveBeenCalled();
+    });
+
     it('header absent -> unchanged: the token user owns the envelope', async () => {
       const response = await createDocument();
 
@@ -158,6 +167,15 @@ describe('v1 X-Reeve-Sign-On-Behalf-Of', () => {
       const response = await generateFromTemplate({ [ON_BEHALF_OF]: 'other-org@example.com' });
 
       expect(response.status).toBe(403);
+      expect(createDocumentFromTemplateMock).not.toHaveBeenCalled();
+    });
+
+    it('resolver DB error -> declared 500 and nothing is created', async () => {
+      userFindFirstMock.mockRejectedValue(new Error('db down'));
+
+      const response = await generateFromTemplate({ [ON_BEHALF_OF]: 'matt@mindfortress.com' });
+
+      expect(response.status).toBe(500);
       expect(createDocumentFromTemplateMock).not.toHaveBeenCalled();
     });
 
