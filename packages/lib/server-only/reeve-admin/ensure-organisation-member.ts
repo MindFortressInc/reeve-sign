@@ -75,12 +75,24 @@ export const ensureOrganisationMember = async ({
   });
 
   if (!existingMember) {
+    const userId = user.id;
+
     await addUserToOrganisation({
-      userId: user.id,
+      userId,
       organisationId: organisation.id,
       organisationGroups: organisation.groups,
       organisationMemberRole: OrganisationMemberRole.MEMBER,
       bypassEmail: true,
+    }).catch(async (err) => {
+      // A concurrent request added the same membership first (unique
+      // userId+organisationId): that is the idempotent outcome we wanted.
+      const raced =
+        (err as { code?: string }).code === 'P2002' &&
+        (await prisma.organisationMember.findFirst({ where: { userId, organisationId: organisation.id } }));
+
+      if (!raced) {
+        throw err;
+      }
     });
   }
 

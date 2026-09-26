@@ -120,7 +120,7 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
     return envelope;
   }
 
-  const { branding, emailLanguage, organisationType, senderEmail, replyToEmail } = await getEmailContext({
+  const { branding, emailLanguage, settings, organisationType, senderEmail, replyToEmail } = await getEmailContext({
     emailType: 'RECIPIENT',
     source: {
       type: 'team',
@@ -186,6 +186,9 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
         selfSigner,
         organisationType,
         teamName: envelope.team?.name,
+        // Same heading as the first invite (send-signing-email.handler.ts):
+        // `<owner> on behalf of "<team>"` rather than just the team name.
+        includeSenderDetails: settings.includeSenderDetails,
       });
 
       const [html, text] = await Promise.all([

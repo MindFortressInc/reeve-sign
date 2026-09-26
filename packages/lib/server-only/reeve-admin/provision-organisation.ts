@@ -53,34 +53,41 @@ const ensureTeamWebhook = async ({
   userId: number;
   webhook: { url: string; secret: string };
 }) => {
-  const existing = await prisma.webhook.findFirst({ where: { teamId, webhookUrl: webhook.url } });
+  // Webhook has no unique (teamId, webhookUrl) constraint, so serialise
+  // find-then-create per (team, url) or two concurrent re-POSTs could both
+  // create one and every event would be delivered twice.
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reeve-webhook:${teamId}:${webhook.url}`}))`;
 
-  if (!existing) {
-    await prisma.webhook.create({
-      data: {
-        webhookUrl: webhook.url,
-        secret: webhook.secret,
-        eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS,
-        enabled: true,
-        userId,
-        teamId,
-      },
+    const existing = await tx.webhook.findFirst({ where: { teamId, webhookUrl: webhook.url } });
+
+    if (!existing) {
+      await tx.webhook.create({
+        data: {
+          webhookUrl: webhook.url,
+          secret: webhook.secret,
+          eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS,
+          enabled: true,
+          userId,
+          teamId,
+        },
+      });
+
+      return;
+    }
+
+    const hasSameEvents =
+      existing.eventTriggers.length === REEVE_WEBHOOK_EVENT_TRIGGERS.length &&
+      REEVE_WEBHOOK_EVENT_TRIGGERS.every((event) => existing.eventTriggers.includes(event));
+
+    if (existing.enabled && existing.secret === webhook.secret && hasSameEvents) {
+      return;
+    }
+
+    await tx.webhook.update({
+      where: { id: existing.id },
+      data: { secret: webhook.secret, eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS, enabled: true },
     });
-
-    return;
-  }
-
-  const hasSameEvents =
-    existing.eventTriggers.length === REEVE_WEBHOOK_EVENT_TRIGGERS.length &&
-    REEVE_WEBHOOK_EVENT_TRIGGERS.every((event) => existing.eventTriggers.includes(event));
-
-  if (existing.enabled && existing.secret === webhook.secret && hasSameEvents) {
-    return;
-  }
-
-  await prisma.webhook.update({
-    where: { id: existing.id },
-    data: { secret: webhook.secret, eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS, enabled: true },
   });
 };
 

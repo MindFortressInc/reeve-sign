@@ -174,4 +174,22 @@ describe('ensureOrganisationMember', () => {
 
     expect(result).toEqual({ userId: 88, created: false });
   });
+  it('handles a concurrent membership create (unique userId+organisationId) as an idempotent success', async () => {
+    organisationFindUniqueMock.mockResolvedValue(ORG);
+    userFindFirstMock.mockResolvedValue({ id: 3, email: 'matt@mindfortress.com', name: 'Matt Rhodes' });
+    organisationMemberFindFirstMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'member_race', userId: 3, organisationId: 'org_mf' });
+    organisationMemberCreateMock.mockRejectedValue(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+    );
+
+    const result = await ensureOrganisationMember({
+      externalReference: EXTERNAL_REFERENCE,
+      email: 'matt@mindfortress.com',
+      name: 'Matt Rhodes',
+    });
+
+    expect(result).toEqual({ userId: 3, created: false });
+  });
 });

@@ -176,6 +176,7 @@ describe('on-behalf-of envelopes: the signing invite names the envelope owner', 
     const text = sentText();
     expect(text).toContain('Matt Rhodes on behalf of "MindFortress"');
     expect(text).not.toContain(SYSTEM_USER.name);
+    expect(text).not.toContain('MindFortress has invited you');
   });
 
   it('redistribute (resend) with the system-user token names the owner, not the caller', async () => {
@@ -197,5 +198,8 @@ describe('on-behalf-of envelopes: the signing invite names the envelope owner', 
     const text = sentText();
     expect(text).toContain('Matt Rhodes on behalf of "MindFortress"');
     expect(text).not.toContain(SYSTEM_USER.name);
+    // The heading names the sender too, same as the first invite (not just
+    // "MindFortress has invited you to sign").
+    expect(text).not.toContain('MindFortress has invited you');
   });
 });

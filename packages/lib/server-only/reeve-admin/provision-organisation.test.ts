@@ -19,6 +19,7 @@ const {
   webhookFindFirstMock,
   webhookCreateMock,
   webhookUpdateMock,
+  executeRawMock,
 } = vi.hoisted(() => ({
   findUniqueMock: vi.fn(),
   findUniqueOrThrowMock: vi.fn(),
@@ -33,6 +34,7 @@ const {
   webhookFindFirstMock: vi.fn(),
   webhookCreateMock: vi.fn(),
   webhookUpdateMock: vi.fn(),
+  executeRawMock: vi.fn(),
 }));
 
 vi.mock('@documenso/prisma', () => ({
@@ -54,6 +56,13 @@ vi.mock('@documenso/prisma', () => ({
       create: webhookCreateMock,
       update: webhookUpdateMock,
     },
+    // The webhook ensure runs in a transaction under an advisory lock; the
+    // tx client is the same mock surface.
+    $transaction: async (fn: (tx: unknown) => unknown) =>
+      await fn({
+        $executeRaw: executeRawMock,
+        webhook: { findFirst: webhookFindFirstMock, create: webhookCreateMock, update: webhookUpdateMock },
+      }),
   },
 }));
 
@@ -116,6 +125,7 @@ describe('provisionOrganisation', () => {
     webhookFindFirstMock.mockReset();
     webhookCreateMock.mockReset();
     webhookUpdateMock.mockReset();
+    executeRawMock.mockReset();
   });
 
   it('idempotent hit: org + team + token all already exist -> returns the existing org, creates nothing', async () => {
@@ -370,6 +380,9 @@ describe('provisionOrganisation', () => {
 
       await provisionOrganisation({ name: 'Webhook Org', externalReference: 'host_app:wh', webhook: WEBHOOK });
 
+      // Serialised per (team, url) so concurrent re-POSTs can't both create.
+      expect(executeRawMock).toHaveBeenCalledTimes(1);
+      expect(executeRawMock.mock.calls[0].slice(1)).toEqual([`reeve-webhook:31:${WEBHOOK.url}`]);
       expect(webhookFindFirstMock).toHaveBeenCalledWith({ where: { teamId: 31, webhookUrl: WEBHOOK.url } });
       expect(webhookCreateMock).toHaveBeenCalledWith({
         data: {

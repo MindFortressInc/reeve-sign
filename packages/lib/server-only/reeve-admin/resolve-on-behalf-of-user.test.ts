@@ -16,6 +16,7 @@ vi.mock('@documenso/prisma', () => ({
 }));
 
 const { REEVE_ON_BEHALF_OF_HEADER, resolveOnBehalfOfUserId } = await import('./resolve-on-behalf-of-user');
+const { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } = await import('./derive-organisation-url');
 
 const headersWith = (value?: string) => new Headers(value === undefined ? {} : { [REEVE_ON_BEHALF_OF_HEADER]: value });
 
@@ -52,13 +53,36 @@ describe('resolveOnBehalfOfUserId', () => {
 
     expect(userId).toBe(77);
     expect(userFindFirstMock).toHaveBeenCalledWith({
-      where: { email: { equals: 'Matt@MindFortress.com', mode: 'insensitive' } },
+      where: { email: { equals: 'Matt@MindFortress.com', mode: 'insensitive' }, disabled: false },
+      orderBy: { id: 'asc' },
       select: { id: true },
     });
-    // Membership is scoped to the token's team, not any team the user is in.
+    // Membership is scoped to the token's team, and only Reeve-provisioned
+    // orgs honour the header (upstream teams keep their own opt-in
+    // delegateDocumentOwnership instead).
     expect(teamFindFirstMock).toHaveBeenCalledWith({
-      where: buildTeamWhereQuery({ teamId: 7, userId: 77 }),
+      where: {
+        ...buildTeamWhereQuery({ teamId: 7, userId: 77 }),
+        organisation: { url: { startsWith: REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } },
+      },
       select: { id: true },
+    });
+  });
+
+  it('403s for a disabled user (the lookup excludes them)', async () => {
+    userFindFirstMock.mockResolvedValue(null);
+
+    await expectForbidden(resolveOnBehalfOfUserId({ headers: headersWith('disabled@mindfortress.com'), teamId: 7 }));
+    expect(userFindFirstMock.mock.calls[0][0].where.disabled).toBe(false);
+  });
+
+  it("403s on a team that is not Reeve-provisioned, even for a real member (the team query doesn't match)", async () => {
+    userFindFirstMock.mockResolvedValue({ id: 3 });
+    teamFindFirstMock.mockResolvedValue(null);
+
+    await expectForbidden(resolveOnBehalfOfUserId({ headers: headersWith('matt@mindfortress.com'), teamId: 3 }));
+    expect(teamFindFirstMock.mock.calls[0][0].where.organisation).toEqual({
+      url: { startsWith: 'reeve-ext-' },
     });
   });
 

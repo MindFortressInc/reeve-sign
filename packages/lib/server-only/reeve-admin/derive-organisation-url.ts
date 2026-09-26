@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
  * `external_reference`. Keeps machine-provisioned org urls unambiguous from
  * human-picked ones and avoids any possibility of collision with them.
  */
-const EXTERNAL_REFERENCE_URL_PREFIX = 'reeve-ext-';
+export const REEVE_PROVISIONED_ORGANISATION_URL_PREFIX = 'reeve-ext-';
 
 /**
  * Deterministically derives an Organisation.url slug from a host_app's
@@ -19,5 +19,5 @@ const EXTERNAL_REFERENCE_URL_PREFIX = 'reeve-ext-';
 export const deriveOrganisationUrlFromExternalReference = (externalReference: string): string => {
   const hash = createHash('sha256').update(externalReference, 'utf8').digest('hex');
 
-  return `${EXTERNAL_REFERENCE_URL_PREFIX}${hash}`;
+  return `${REEVE_PROVISIONED_ORGANISATION_URL_PREFIX}${hash}`;
 };
