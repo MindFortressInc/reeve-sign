@@ -91,6 +91,8 @@ const generateFromTemplate = async (headers?: Record<string, string>) =>
 describe('v1 X-Reeve-Sign-On-Behalf-Of', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The resolver only honours orgs owned by this system user.
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER.email);
     process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT = 's3';
     getApiTokenByTokenMock.mockResolvedValue({ id: 1, user: SYSTEM_USER, team: TEAM, teamId: TEAM.id });
     getPresignPostUrlMock.mockResolvedValue({ url: 'https://s3/upload', key: 'key' });

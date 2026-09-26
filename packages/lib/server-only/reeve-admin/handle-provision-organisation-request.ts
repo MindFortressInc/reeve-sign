@@ -16,15 +16,23 @@ const ZProvisionOrganisationRequestSchema = z.object({
   external_reference: z.string().trim().min(1, 'external_reference is required').max(512),
   webhook: z
     .object({
-      // The secret travels in the X-Documenso-Secret header, so production
-      // only accepts https; http stays allowed locally for tunnels/dev.
+      // The secret travels in the X-Documenso-Secret header, so only https is
+      // accepted unless NODE_ENV is explicitly `development` (the deployed
+      // image may run with NODE_ENV unset).
       url: z
         .string()
         .url()
-        .refine(
-          (url) => env('NODE_ENV') !== 'production' || new URL(url).protocol === 'https:',
-          'webhook.url must use https in production',
-        ),
+        .refine((url) => {
+          // zod still runs refine after `.url()` fails; that case is already
+          // reported, so don't let `new URL` throw here.
+          if (!URL.canParse(url)) {
+            return true;
+          }
+
+          const { protocol } = new URL(url);
+
+          return protocol === 'https:' || (env('NODE_ENV') === 'development' && protocol === 'http:');
+        }, 'webhook.url must use https outside development'),
       secret: z.string().min(1),
     })
     .optional(),

@@ -192,6 +192,8 @@ const expectForbidden = async (promise: Promise<unknown>) => {
 describe('v2 X-Reeve-Sign-On-Behalf-Of', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The resolver only honours orgs owned by this system user.
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER.email);
     getApiTokenByTokenMock.mockResolvedValue({ id: 1, user: SYSTEM_USER, team: TEAM, teamId: TEAM.id });
     createEnvelopeMock.mockImplementation(async ({ userId }: { userId: number }) => envelopeOwnedBy(userId));
     // template/use returns getDocumentWithDetailsById's full shape; these

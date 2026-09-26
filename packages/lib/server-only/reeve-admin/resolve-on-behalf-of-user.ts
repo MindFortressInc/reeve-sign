@@ -2,6 +2,7 @@ import { prisma } from '@documenso/prisma';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID } from '../../types/subscription';
+import { env } from '../../utils/env';
 import { buildTeamWhereQuery } from '../../utils/teams';
 
 /**
@@ -17,8 +18,11 @@ export const REEVE_ON_BEHALF_OF_HEADER = 'X-Reeve-Sign-On-Behalf-Of';
  * envelope. Returns null when the header is absent (callers keep the token
  * user as owner). Throws FORBIDDEN (403) unless the email belongs to an
  * enabled member of the token's own team, and that team belongs to a
- * Reeve-provisioned organisation (`POST /api/reeve-admin/organisations`),
- * identified by its PLATFORM organisation claim.
+ * Reeve-provisioned organisation (`POST /api/reeve-admin/organisations`):
+ * owned by the Reeve system user (`REEVE_SIGN_SYSTEM_USER_EMAIL`) and
+ * carrying the PLATFORM claim. The claim alone is not provenance (a normal
+ * user can buy the PLATFORM plan); only admin flows can make the system user
+ * an org owner. Fails closed when the system user email is unset.
  * Ordinary Documenso teams never honour it. Callers resolve this before
  * creating anything, so a rejected header never leaves an envelope behind.
  *
@@ -44,7 +48,9 @@ export const resolveOnBehalfOfUserId = async ({
     message: `${REEVE_ON_BEHALF_OF_HEADER} must be the email of a member of this API token's team`,
   });
 
-  if (teamId === undefined) {
+  const systemUserEmail = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim();
+
+  if (teamId === undefined || !systemUserEmail) {
     throw forbidden;
   }
 
@@ -61,9 +67,13 @@ export const resolveOnBehalfOfUserId = async ({
   const team = await prisma.team.findFirst({
     where: {
       ...buildTeamWhereQuery({ teamId, userId: user.id }),
-      // Provenance is the PLATFORM claim provisioning stamps, not the
-      // `reeve-ext-` url prefix: org managers can edit their url.
-      organisation: { organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
+      // Provenance is system-user ownership plus the PLATFORM claim
+      // provisioning stamps, not the `reeve-ext-` url prefix (org managers
+      // can edit their url) nor the claim alone (billable by anyone).
+      organisation: {
+        owner: { email: { equals: systemUserEmail, mode: 'insensitive' } },
+        organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
+      },
     },
     select: { id: true },
   });
