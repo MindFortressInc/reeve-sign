@@ -54,6 +54,10 @@ export const handleEnsureOrganisationMemberRequest = async (
       return Response.json({ error: 'Organisation not found' }, { status: 404 });
     }
 
+    if (err instanceof AppError && err.code === AppErrorCode.INVALID_REQUEST) {
+      return Response.json({ error: err.message }, { status: 400 });
+    }
+
     console.error(err);
 
     return Response.json({ error: 'Failed to ensure organisation member' }, { status: 500 });

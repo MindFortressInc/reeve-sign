@@ -132,4 +132,18 @@ describe('handleEnsureOrganisationMemberRequest', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ user_id: 3, created: false });
   });
+  it('400 when the user is disabled', async () => {
+    process.env[ADMIN_TOKEN_ENV_KEY] = VALID_TOKEN;
+    ensureOrganisationMemberMock.mockRejectedValue(
+      new AppError(AppErrorCode.INVALID_REQUEST, { message: 'User is disabled' }),
+    );
+
+    const response = await handleEnsureOrganisationMemberRequest(
+      makeRequest({ headers: { [REEVE_ADMIN_TOKEN_HEADER]: VALID_TOKEN }, body: BODY }),
+      EXTERNAL_REFERENCE,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'User is disabled' });
+  });
 });

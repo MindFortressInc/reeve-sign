@@ -192,4 +192,18 @@ describe('ensureOrganisationMember', () => {
 
     expect(result).toEqual({ userId: 3, created: false });
   });
+  it('rejects a disabled existing user with INVALID_REQUEST and adds no membership', async () => {
+    organisationFindUniqueMock.mockResolvedValue(ORG);
+    userFindFirstMock.mockResolvedValue({ id: 9, email: 'gone@mindfortress.com', name: 'Gone', disabled: true });
+
+    const err = await ensureOrganisationMember({
+      externalReference: EXTERNAL_REFERENCE,
+      email: 'gone@mindfortress.com',
+      name: 'Gone',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe(AppErrorCode.INVALID_REQUEST);
+    expect(organisationMemberCreateMock).not.toHaveBeenCalled();
+  });
 });

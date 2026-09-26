@@ -30,7 +30,7 @@ const findUserByEmail = async (email: string) =>
  * email-verified with no password and no personal organisation (they operate
  * inside the provisioned org), and nothing emails them: no verification,
  * welcome, or member-joined email (`bypassEmail`). An existing user is used
- * as-is. Membership goes through the org's internal MEMBER group, which the
+ * as-is, unless disabled (INVALID_REQUEST). Membership goes through the org's internal MEMBER group, which the
  * provisioned team inherits as team role MEMBER.
  */
 export const ensureOrganisationMember = async ({
@@ -68,6 +68,12 @@ export const ensureOrganisationMember = async ({
         throw err;
       }
     }
+  }
+
+  // A disabled user can never be resolved as an on-behalf-of owner, so
+  // reporting them as an ensured member would be a false success.
+  if (user.disabled) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, { message: 'User is disabled' });
   }
 
   const existingMember = await prisma.organisationMember.findFirst({
