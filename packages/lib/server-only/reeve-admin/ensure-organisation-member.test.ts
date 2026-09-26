@@ -1,5 +1,5 @@
 import { OrganisationGroupType, OrganisationMemberRole } from '@prisma/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID } from '../../types/subscription';
@@ -38,6 +38,7 @@ vi.mock('../../jobs/client', () => ({
 const { ensureOrganisationMember } = await import('./ensure-organisation-member');
 
 const EXTERNAL_REFERENCE = 'org-mindfortress';
+const SYSTEM_USER_EMAIL = 'system@reeve.test';
 
 const ORG = {
   id: 'org_mf',
@@ -68,6 +69,26 @@ describe('ensureOrganisationMember', () => {
     ]) {
       mock.mockReset();
     }
+
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER_EMAIL);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('fails loud with NOT_SETUP and touches nothing when REEVE_SIGN_SYSTEM_USER_EMAIL is unset', async () => {
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', '');
+
+    const err = await ensureOrganisationMember({
+      externalReference: EXTERNAL_REFERENCE,
+      email: 'matt@mindfortress.com',
+      name: 'Matt Rhodes',
+    }).catch((e: unknown) => e);
+
+    expect((err as AppError).code).toBe(AppErrorCode.NOT_SETUP);
+    expect(organisationFindFirstMock).not.toHaveBeenCalled();
+    expect(userCreateMock).not.toHaveBeenCalled();
   });
 
   it('throws NOT_FOUND for an unknown external_reference and creates nothing', async () => {
@@ -85,6 +106,7 @@ describe('ensureOrganisationMember', () => {
       expect.objectContaining({
         where: {
           url: deriveOrganisationUrlFromExternalReference('org-unknown'),
+          owner: { email: { equals: SYSTEM_USER_EMAIL, mode: 'insensitive' } },
           organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
         },
       }),

@@ -3,6 +3,7 @@ import { OrganisationMemberRole } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID } from '../../types/subscription';
+import { env } from '../../utils/env';
 import { addUserToOrganisation } from '../organisation/accept-organisation-invitation';
 import { deriveOrganisationUrlFromExternalReference } from './derive-organisation-url';
 
@@ -39,12 +40,21 @@ export const ensureOrganisationMember = async ({
   email,
   name,
 }: EnsureOrganisationMemberInput): Promise<EnsureOrganisationMemberResult> => {
-  // Provenance is the PLATFORM claim provisioning stamps (as in
-  // resolveOnBehalfOfUserId), not the `reeve-ext-` url alone: org managers
-  // can edit their url.
+  const systemUserEmail = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim();
+
+  if (!systemUserEmail) {
+    throw new AppError(AppErrorCode.NOT_SETUP, { message: 'REEVE_SIGN_SYSTEM_USER_EMAIL is not set.' });
+  }
+
+  // Provenance matches resolveOnBehalfOfUserId: system-user ownership plus
+  // the PLATFORM claim, not the `reeve-ext-` url alone. The url is editable
+  // by an org's managers and the claim is billable by anyone, but only admin
+  // flows can make the system user an owner, so a non-Reeve org renamed to a
+  // derived url never matches.
   const organisation = await prisma.organisation.findFirst({
     where: {
       url: deriveOrganisationUrlFromExternalReference(externalReference),
+      owner: { email: { equals: systemUserEmail, mode: 'insensitive' } },
       organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
     },
     include: { groups: true },
