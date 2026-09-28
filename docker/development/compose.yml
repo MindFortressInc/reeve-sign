@@ -47,6 +47,12 @@ services:
       # with literal root credentials, so never expose it beyond the dev host.
       - '127.0.0.1:9002:9002'
       - '127.0.0.1:9001:9001'
+    # Own network, off `default`: nothing in this file talks to MinIO (the app runs
+    # on the host and uses the loopback port above), so sibling containers such as
+    # gotenberg, which parses untrusted uploads, can't reach minio:9002 either. Not
+    # `internal: true`, which would drop the published ports.
+    networks:
+      - minio
     volumes:
       - minio:/data
     environment:
@@ -108,3 +114,6 @@ volumes:
   minio:
   redis:
   documenso_database:
+
+networks:
+  minio:
