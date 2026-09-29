@@ -1,6 +1,7 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { buildFieldFileUploadKeyPrefix } from '../../types/field-file-upload';
 import { buildFieldFileUploadTmpKey } from '../../universal/upload/server-actions';
 import { finalizeFieldFileUpload } from './finalize-field-file-upload';
 
@@ -96,7 +97,8 @@ describe.skipIf(!RUN_INTEGRATION)('finalizeFieldFileUpload — live MinIO integr
     const envelopeId = `env_itest_${Date.now()}`;
     const fieldId = 4242;
     const fileName = 'license.pdf';
-    const originalContent = `original-bytes-${Date.now()}`;
+    // Real PDF signature — finalize verifies content by magic bytes.
+    const originalContent = `%PDF-1.7\noriginal-bytes-${Date.now()}`;
 
     const tmpKey = buildFieldFileUploadTmpKey({ envelopeId, fieldId, fileName });
 
@@ -184,5 +186,47 @@ describe.skipIf(!RUN_INTEGRATION)('finalizeFieldFileUpload — live MinIO integr
         claimedMimeType: 'application/pdf', // client lies about the type
       }),
     ).rejects.toThrow();
+  });
+
+  it('rejects spoofed content (HTML declared as application/pdf at PUT and sign time) and leaves neither the tmp nor a final object behind', async () => {
+    const envelopeId = `env_itest_${Date.now()}`;
+    const fieldId = 4244;
+    const fileName = 'license.pdf';
+    const spoofedContent = '<html><script>alert(document.cookie)</script></html>';
+
+    const tmpKey = buildFieldFileUploadTmpKey({ envelopeId, fieldId, fileName });
+
+    // The client declares application/pdf consistently at PUT and sign time,
+    // so every header-based check passes — only the bytes give it away.
+    await directClient.send(
+      new PutObjectCommand({
+        Bucket: s3Env.bucket,
+        Key: tmpKey,
+        Body: spoofedContent,
+        ContentType: 'application/pdf',
+      }),
+    );
+
+    await expect(
+      finalizeFieldFileUpload({
+        tmpKey,
+        fileName,
+        envelopeId,
+        fieldId,
+        claimedSize: Buffer.byteLength(spoofedContent),
+        claimedMimeType: 'application/pdf',
+      }),
+    ).rejects.toThrow('Uploaded file content does not match its declared type');
+
+    await expect(getObjectBody(tmpKey)).resolves.toBeNull();
+
+    const finalObjects = await directClient.send(
+      new ListObjectsV2Command({
+        Bucket: s3Env.bucket,
+        Prefix: buildFieldFileUploadKeyPrefix({ envelopeId, fieldId }),
+      }),
+    );
+
+    expect(finalObjects.KeyCount ?? 0).toBe(0);
   });
 });

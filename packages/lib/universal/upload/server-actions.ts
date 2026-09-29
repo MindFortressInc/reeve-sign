@@ -163,6 +163,25 @@ export const headS3File = async (
   }
 };
 
+/**
+ * Reads only the first `length` bytes of an object via a ranged GetObject —
+ * enough to inspect a file signature without downloading the whole upload.
+ * Returns fewer bytes when the object is shorter than `length`.
+ */
+export const readS3FilePrefix = async (key: string, length: number): Promise<Uint8Array> => {
+  const client = getS3Client();
+
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: env('NEXT_PRIVATE_UPLOAD_BUCKET'),
+      Key: key,
+      Range: `bytes=0-${length - 1}`,
+    }),
+  );
+
+  return (await response.Body?.transformToByteArray()) ?? new Uint8Array();
+};
+
 export const getAbsolutePresignPostUrl = async (key: string) => {
   const client = getS3Client();
 
