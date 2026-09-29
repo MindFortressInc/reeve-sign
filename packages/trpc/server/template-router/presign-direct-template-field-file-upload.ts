@@ -1,4 +1,5 @@
 import { presignDirectTemplateFieldFileUpload } from '@documenso/lib/server-only/template/presign-direct-template-field-file-upload';
+import { getTrustedIpAddress } from '@documenso/lib/universal/get-ip-address';
 
 import { maybeAuthenticatedProcedure } from '../trpc';
 import {
@@ -29,6 +30,9 @@ export const presignDirectTemplateFieldFileUploadRoute = maybeAuthenticatedProce
       contentType,
       fileSize,
       userId: ctx.user?.id,
-      ipAddress: ctx.metadata.requestMetadata.ipAddress,
+      // Not `requestMetadata.ipAddress`: that is the client-controlled first
+      // X-Forwarded-For entry, which would let a caller rotate past the
+      // per-IP limit and burn the per-token budget.
+      ipAddress: getTrustedIpAddress(ctx.req),
     });
   });

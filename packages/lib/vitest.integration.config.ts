@@ -11,6 +11,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [macrosPlugin(), lingui()],
   test: {
+    // The tmp sweep suite deletes every expired object under the shared
+    // `field-uploads-tmp/` prefix (with a future `now`), which would race the
+    // finalize and direct-template suites' PUT -> finalize. Run files serially.
+    fileParallelism: false,
     include: [
       '**/server-only/field/finalize-field-file-upload.integration.test.ts',
       '**/server-only/field/sweep-field-file-upload-tmp.integration.test.ts',
