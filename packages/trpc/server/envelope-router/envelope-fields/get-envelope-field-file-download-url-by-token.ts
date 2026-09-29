@@ -7,7 +7,6 @@ import { FieldType } from '@prisma/client';
 
 import { procedure } from '../../trpc';
 import {
-  getEnvelopeFieldFileDownloadUrlByTokenMeta,
   ZGetEnvelopeFieldFileDownloadUrlByTokenRequestSchema,
   ZGetEnvelopeFieldFileDownloadUrlByTokenResponseSchema,
 } from './get-envelope-field-file-download-url-by-token.types';
@@ -26,7 +25,6 @@ import {
  * from the field's own server-persisted (finalized) `customText`.
  */
 export const getEnvelopeFieldFileDownloadUrlByTokenRoute = procedure
-  .meta(getEnvelopeFieldFileDownloadUrlByTokenMeta)
   .input(ZGetEnvelopeFieldFileDownloadUrlByTokenRequestSchema)
   .output(ZGetEnvelopeFieldFileDownloadUrlByTokenResponseSchema)
   .query(async ({ input, ctx }) => {

@@ -1,18 +1,12 @@
 import { z } from 'zod';
 
-import type { TrpcRouteMeta } from '../../trpc';
-
-export const getEnvelopeFieldFileDownloadUrlByTokenMeta: TrpcRouteMeta = {
-  openapi: {
-    method: 'GET',
-    path: '/envelope/field/get-file-download-url-by-token',
-    summary: 'Get file download URL by token',
-    description:
-      'Mint a presigned download URL for an already-inserted FILE_UPLOAD field, for any recipient of the same envelope',
-    tags: ['Envelope Fields'],
-  },
-};
-
+/**
+ * Deliberately NOT on the public API v2 surface (no `openapi` meta), matching
+ * the other recipient-token procedures (`getDocumentByToken`,
+ * `getEnvelopeItemsByToken`): API v2 is the API-token-authenticated
+ * integrator surface, and integrators use the team-scoped
+ * `getFileDownloadUrl` instead. Reachable over tRPC only (DEV-12256).
+ */
 export const ZGetEnvelopeFieldFileDownloadUrlByTokenRequestSchema = z.object({
   token: z.string(),
   fieldId: z.number(),
