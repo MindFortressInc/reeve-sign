@@ -9,7 +9,10 @@ import {
   copyS3File,
   deleteS3File,
   headS3File,
+  readS3FilePrefix,
 } from '@documenso/lib/universal/upload/server-actions';
+
+import { detectFieldFileUploadMimeType, FIELD_FILE_UPLOAD_SIGNATURE_BYTES } from './detect-field-file-upload-mime-type';
 
 export type FinalizeFieldFileUploadOptions = {
   /** The tmp key the recipient's presigned PUT was minted for. */
@@ -123,6 +126,19 @@ export const finalizeFieldFileUpload = async ({
     if (finalHead.size !== tmpHead.size || finalHead.contentType !== tmpHead.contentType) {
       throw new AppError(AppErrorCode.UNKNOWN_ERROR, {
         message: 'Finalized file metadata did not match the uploaded file',
+      });
+    }
+
+    // Every check above trusts the Content-Type the client's PUT declared
+    // (the presigned PUT doesn't even sign it). Verify the real bytes match
+    // that type by file signature. Sniffing the FINAL key, not the tmp key,
+    // matters: a replayed PUT could rewrite tmp between a sniff and the copy,
+    // but no client can ever write the final key.
+    const prefix = await readS3FilePrefix(finalKey, FIELD_FILE_UPLOAD_SIGNATURE_BYTES);
+
+    if (detectFieldFileUploadMimeType(prefix) !== finalHead.contentType) {
+      throw new AppError(AppErrorCode.INVALID_BODY, {
+        message: 'Uploaded file content does not match its declared type — please re-upload',
       });
     }
   } catch (err) {
