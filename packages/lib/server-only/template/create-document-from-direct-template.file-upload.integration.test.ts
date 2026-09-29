@@ -6,12 +6,15 @@
  *   presigned URL -> createDocumentFromDirectTemplate -> finalizeFieldFileUpload
  *
  * Proves the submitted tmp key is ownership-checked against the template
- * field, finalized to an immutable key under the NEW envelope/field, that the
- * tmp object is removed, that content verification (magic bytes) applies,
- * and that a transaction failure after finalization deletes the final copy.
+ * field, finalized to an immutable key under the NEW envelope, that the tmp
+ * object is removed, that content verification (magic bytes) applies, that
+ * finalization (S3 I/O) never runs inside the DB transaction, and that a
+ * transaction failure after finalization deletes the final copy.
  *
  * Mock boundary, same as create-document-from-direct-template.integration.test.ts:
  * `sendDocument`, `triggerWebhook` and `jobs.triggerJob` only.
+ * `finalizeFieldFileUpload` and `prisma.$transaction` are wrapped (pass-through,
+ * never replaced) only to record whether finalize ran inside the transaction.
  *
  * Needs BOTH stores, so it self-gates on BOTH flags:
  *
@@ -40,6 +43,55 @@ const RUN_INTEGRATION =
 vi.mock('../document/send-document', () => ({ sendDocument: vi.fn() }));
 vi.mock('../webhooks/trigger/trigger-webhook', () => ({ triggerWebhook: vi.fn() }));
 vi.mock('@documenso/lib/jobs/client', () => ({ jobs: { triggerJob: vi.fn() } }));
+
+// Records, for each real finalize call, whether a `prisma.$transaction`
+// callback was running at the time (see the wrapper installed in beforeAll).
+const transactionProbe = vi.hoisted(() => ({ depth: 0, finalizeInsideTransaction: [] as boolean[] }));
+
+// The exported client is an extended Prisma client (a Proxy), so
+// `vi.spyOn(prisma, '$transaction')` can't reach it. Wrap it instead: every
+// property passes through, and `$transaction(callback)` runs the real
+// transaction while tracking whether the callback is executing.
+vi.mock('@documenso/prisma', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@documenso/prisma')>();
+  const client = actual.prisma;
+
+  const trackedTransaction = (arg: unknown, options?: unknown) => {
+    if (typeof arg !== 'function') {
+      return client.$transaction(arg as never, options as never);
+    }
+
+    return client.$transaction(async (tx: unknown) => {
+      transactionProbe.depth += 1;
+
+      try {
+        return await (arg as (tx: unknown) => Promise<unknown>)(tx);
+      } finally {
+        transactionProbe.depth -= 1;
+      }
+    }, options as never);
+  };
+
+  return {
+    ...actual,
+    prisma: new Proxy(client, {
+      get: (target, prop) => (prop === '$transaction' ? trackedTransaction : Reflect.get(target, prop)),
+    }),
+  };
+});
+
+vi.mock('../field/finalize-field-file-upload', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../field/finalize-field-file-upload')>();
+
+  return {
+    ...actual,
+    finalizeFieldFileUpload: async (...args: Parameters<typeof actual.finalizeFieldFileUpload>) => {
+      transactionProbe.finalizeInsideTransaction.push(transactionProbe.depth > 0);
+
+      return actual.finalizeFieldFileUpload(...args);
+    },
+  };
+});
 
 const REQUEST_METADATA = {
   requestMetadata: {},
@@ -160,7 +212,7 @@ describe.skipIf(!RUN_INTEGRATION)('createDocumentFromDirectTemplate — FILE_UPL
     return keys;
   };
 
-  it('finalizes the upload to an immutable key under the new envelope field and removes the tmp object', async () => {
+  it('finalizes the upload to an immutable key under the new envelope and removes the tmp object', async () => {
     const { template, directLinkToken, uploadField } = await seedUploadTemplate();
 
     const value = await uploadViaPresign(directLinkToken, uploadField.id, PDF_BYTES);
@@ -175,7 +227,7 @@ describe.skipIf(!RUN_INTEGRATION)('createDocumentFromDirectTemplate — FILE_UPL
 
     expect(persisted.inserted).toBe(true);
     expect(
-      stored?.key.startsWith(buildFieldFileUploadKeyPrefix({ envelopeId: result.envelopeId, fieldId: persisted.id })),
+      stored?.key.startsWith(buildFieldFileUploadKeyPrefix({ envelopeId: result.envelopeId, fieldId: uploadField.id })),
     ).toBe(true);
     expect(stored?.size).toBe(PDF_BYTES.byteLength);
     expect(stored?.mimeType).toBe('application/pdf');
@@ -188,6 +240,18 @@ describe.skipIf(!RUN_INTEGRATION)('createDocumentFromDirectTemplate — FILE_UPL
       where: { envelopeId: result.envelopeId, type: 'DOCUMENT_FIELD_INSERTED' },
     });
     expect(JSON.stringify(insertedAuditLog?.data)).toContain(stored?.key ?? 'missing');
+  });
+
+  it('finalizes uploads before the DB transaction, never inside it (no S3 I/O while holding row locks)', async () => {
+    const { template, directLinkToken, uploadField } = await seedUploadTemplate();
+
+    const value = await uploadViaPresign(directLinkToken, uploadField.id, PDF_BYTES);
+
+    transactionProbe.finalizeInsideTransaction.length = 0;
+
+    await submit(template.id, directLinkToken, [{ fieldId: uploadField.id, value }]);
+
+    expect(transactionProbe.finalizeInsideTransaction).toEqual([false]);
   });
 
   it("rejects a tmp key minted for a different template's field", async () => {
@@ -229,6 +293,24 @@ describe.skipIf(!RUN_INTEGRATION)('createDocumentFromDirectTemplate — FILE_UPL
 
     expect(await prisma.field.count({ where: { customText: { contains: fileName } } })).toBe(0);
     expect(await finalKeysEndingWith(fileName)).toEqual([]);
+  });
+
+  it('deletes already-finalized uploads when a later upload fails to finalize', async () => {
+    const { template, directRecipientId, directLinkToken, uploadField } = await seedUploadTemplate();
+    const secondUploadField = await createField(template.id, directRecipientId, FieldType.FILE_UPLOAD);
+    const goodFileName = `first-${uniqueSlug()}.pdf`;
+
+    const goodValue = await uploadViaPresign(directLinkToken, uploadField.id, PDF_BYTES, goodFileName);
+    const disguisedValue = await uploadViaPresign(directLinkToken, secondUploadField.id, HTML_BYTES);
+
+    await expect(
+      submit(template.id, directLinkToken, [
+        { fieldId: uploadField.id, value: goodValue },
+        { fieldId: secondUploadField.id, value: disguisedValue },
+      ]),
+    ).rejects.toThrow(/does not match its declared type/);
+
+    expect(await finalKeysEndingWith(goodFileName)).toEqual([]);
   });
 
   it('deletes the finalized copy when the transaction fails after finalization', async () => {

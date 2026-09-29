@@ -371,8 +371,7 @@ export const createDocumentFromDirectTemplate = async ({
       // `presignDirectTemplateFieldFileUpload`; it is never persisted as-is.
       // Only the key's ownership is checked here (pure, no I/O). The object
       // itself is verified and copied to an immutable key by
-      // `finalizeFieldFileUpload` inside the transaction below, once the
-      // envelope field it belongs to exists.
+      // `finalizeFieldFileUpload` just before the transaction below.
       if (templateField.type === FieldType.FILE_UPLOAD && value) {
         const pendingFileUpload = parseDirectTemplateFileUpload({
           value,
@@ -464,16 +463,64 @@ export const createDocumentFromDirectTemplate = async ({
 
   const incrementedDocumentId = await incrementDocumentId();
 
-  // Final keys written by `finalizeFieldFileUpload` inside the transaction.
-  // S3 writes don't roll back with it, so a failed transaction deletes them.
+  // Generated here, not inside the transaction, so FILE_UPLOAD finals can be
+  // keyed under the new envelope before it exists.
+  const newEnvelopeId = prefixedId('envelope');
+
+  // Final keys written by `finalizeFieldFileUpload`. S3 writes don't roll back
+  // with the transaction, so any failure from here on deletes them.
   const finalizedFileUploadKeys: string[] = [];
+
+  const deleteFinalizedFileUploads = async (err: unknown): Promise<never> => {
+    await Promise.all(finalizedFileUploadKeys.map(async (key) => deleteS3File(key).catch(() => undefined)));
+
+    throw err;
+  };
+
+  // Finalize every FILE_UPLOAD value BEFORE the transaction: each call is
+  // several sequential S3 round-trips (HEAD, a copy of up to 15MB, HEAD,
+  // ranged GET, DELETE), which must not run while the transaction holds DB
+  // locks or eat into its timeout. The transaction then only writes the
+  // resulting customText. Sequential, not in parallel, so every finalized key
+  // is recorded before anything else can fail. The final key is
+  // `<newEnvelopeId>/<templateFieldId>/…`: the new field's id doesn't exist
+  // yet, and the fieldId segment is naming only (downloads read the key stored
+  // in customText).
+  try {
+    for (const [index, fieldArgs] of directTemplateNonSignatureFields.entries()) {
+      const { pendingFileUpload, templateField } = fieldArgs;
+
+      if (!pendingFileUpload) {
+        continue;
+      }
+
+      const customText = await finalizeFieldFileUpload({
+        tmpKey: pendingFileUpload.key,
+        fileName: pendingFileUpload.fileName,
+        envelopeId: newEnvelopeId,
+        fieldId: templateField.id,
+        claimedSize: pendingFileUpload.size,
+        claimedMimeType: pendingFileUpload.mimeType,
+      });
+
+      const finalizedUpload = parseFileUploadCustomText(customText);
+
+      if (finalizedUpload) {
+        finalizedFileUploadKeys.push(finalizedUpload.key);
+      }
+
+      directTemplateNonSignatureFields[index] = { ...fieldArgs, customText, pendingFileUpload: undefined };
+    }
+  } catch (err) {
+    await deleteFinalizedFileUploads(err);
+  }
 
   const transaction = prisma.$transaction(
     async (tx) => {
       // Create the envelope and non direct template recipients.
       const createdEnvelope = await tx.envelope.create({
         data: {
-          id: prefixedId('envelope'),
+          id: newEnvelopeId,
           secondaryId: incrementedDocumentId.formattedDocumentId,
           type: EnvelopeType.DOCUMENT,
           internalVersion: directTemplateEnvelope.internalVersion,
@@ -648,41 +695,6 @@ export const createDocumentFromDirectTemplate = async ({
           return newField;
         }),
       );
-
-      // Finalize FILE_UPLOAD values now that each field's real id exists, so
-      // the final key lives under the new field's own prefix. Sequential, not
-      // in parallel: every finalized key must be recorded before anything else
-      // can fail, so the rollback cleanup below sees all of them.
-      for (const [index, { pendingFileUpload }] of directTemplateNonSignatureFields.entries()) {
-        if (!pendingFileUpload) {
-          continue;
-        }
-
-        const newField = createdDirectRecipientNonSignatureFields[index];
-
-        const customText = await finalizeFieldFileUpload({
-          tmpKey: pendingFileUpload.key,
-          fileName: pendingFileUpload.fileName,
-          envelopeId: createdEnvelope.id,
-          fieldId: newField.id,
-          claimedSize: pendingFileUpload.size,
-          claimedMimeType: pendingFileUpload.mimeType,
-        });
-
-        const finalizedUpload = parseFileUploadCustomText(customText);
-
-        if (finalizedUpload) {
-          finalizedFileUploadKeys.push(finalizedUpload.key);
-        }
-
-        const updatedField = await tx.field.update({
-          where: { id: newField.id },
-          data: { customText, inserted: true },
-        });
-
-        createdDirectRecipientNonSignatureFields[index] = updatedField;
-        allNewFields[allNewFields.findIndex((field) => field.id === updatedField.id)] = updatedField;
-      }
 
       // Create any direct recipient signature fields.
       // Note: It's done like this because we can't nest things in createMany.
@@ -983,11 +995,7 @@ export const createDocumentFromDirectTemplate = async ({
     { maxWait: 10_000, timeout: 30_000 },
   );
 
-  const { createdEnvelope, recipientId, token } = await transaction.catch(async (err: unknown) => {
-    await Promise.all(finalizedFileUploadKeys.map(async (key) => deleteS3File(key).catch(() => undefined)));
-
-    throw err;
-  });
+  const { createdEnvelope, recipientId, token } = await transaction.catch(deleteFinalizedFileUploads);
 
   const emailSettings = extractDerivedDocumentEmailSettings(documentMeta);
 
