@@ -18,6 +18,17 @@ import { openApiTrpcServerHandler } from './hono-trpc-open-api';
  * shipped.
  */
 
+// The appRouter import graph reaches `@documenso/lib/client-only/providers/
+// i18n-server`, which eagerly dynamic-imports the compiled lingui catalogs
+// (`translations/*/web.mjs`) at module load. CI's test job does not compile
+// them, so the load rejects as an unhandled error. No assertion here needs real
+// translations. Same mock as packages/auth/vitest.setup.ts.
+vi.mock('@documenso/lib/client-only/providers/i18n-server', () => ({
+  loadCatalog: vi.fn(async (lang: string) => ({ [lang]: {} })),
+  allI18nInstances: Promise.resolve({}),
+  getI18nInstance: vi.fn(async () => ({ _: (message: unknown) => message })),
+}));
+
 vi.mock('@documenso/lib/server-only/public-api/get-api-token-by-token', () => ({
   getApiTokenByToken: vi.fn(),
 }));
