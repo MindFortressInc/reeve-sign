@@ -133,7 +133,7 @@ describe.skipIf(!RUN_INTEGRATION)('finalizeFieldFileUpload — live MinIO integr
     // The tmp key was cleaned up as part of finalize.
     await expect(getObjectBody(tmpKey)).resolves.toBeNull();
 
-    // REPLAY ATTACK: someone captured the (still-valid-for-up-to-an-hour)
+    // REPLAY ATTACK: someone captured the (still-valid-for-up-to-10-minutes)
     // presigned PUT URL for the tmp key and replays it with DIFFERENT bytes
     // after the field has already been signed and finalized.
     const replayedContent = `REPLACED-bytes-${Date.now()}`;

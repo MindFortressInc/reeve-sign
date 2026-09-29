@@ -65,7 +65,7 @@ const assertHeadSatisfiesPolicy = (head: HeadResult, notFoundMessage: string) =>
  * size/mimeType — against policy, then finalizes it to an immutable-by-
  * client copy before returning the customText to persist.
  *
- * Why the copy: a presigned PUT stays valid for up to an hour after it's
+ * Why the copy: a presigned PUT stays valid for up to 10 minutes after it's
  * minted. Without this, a replayed PUT to the same key *after* the field is
  * marked signed could silently swap the accepted bytes with no new
  * authorization check — the DB would still point at a key whose contents

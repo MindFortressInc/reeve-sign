@@ -33,8 +33,8 @@ const slugifyFileNameSegment = (fileName: string): string => {
  * Builds the TMP S3 key that a recipient's presigned PUT is minted for.
  * Never re-read as the accepted attachment — `signEnvelopeFieldRoute`
  * finalizes it (server-side copy) to a separate key space before persisting
- * anything, specifically because a presigned PUT stays valid for up to an
- * hour and nothing stops it being replayed after the field is signed.
+ * anything, specifically because a presigned PUT stays valid for up to 10
+ * minutes and nothing stops it being replayed after the field is signed.
  */
 export const buildFieldFileUploadTmpKey = ({
   envelopeId,
