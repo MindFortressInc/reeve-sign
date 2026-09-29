@@ -90,8 +90,10 @@ export const presignDirectTemplateFieldFileUpload = async ({
     documentAuth: envelope.authOptions,
   });
 
-  // Mirrors `createDocumentFromDirectTemplate`'s access check, so nothing can
-  // be uploaded for a submission that would be refused anyway.
+  // Refuse uploads for a submission `createDocumentFromDirectTemplate` would
+  // refuse anyway. It is looser than that check on purpose: at presign time
+  // the visitor has not entered the email that must match the account yet,
+  // so ACCOUNT only requires being logged in here.
   const isAccessAuthValid = match(derivedRecipientAccessAuth.at(0))
     .with(DocumentAccessAuth.ACCOUNT, () => userId !== undefined)
     .with(DocumentAccessAuth.TWO_FACTOR_AUTH, () => false) // Not supported for direct templates
