@@ -427,42 +427,6 @@ export const createDocumentFromDirectTemplate = async ({
 
   const initialRequestTime = new Date();
 
-  // Key = original envelope item ID
-  // Value = duplicated envelope item ID.
-  const oldEnvelopeItemToNewEnvelopeItemIdMap: Record<string, string> = {};
-
-  // Duplicate the envelope item data.
-  const envelopeItemsToCreate = await Promise.all(
-    directTemplateEnvelope.envelopeItems.map(async (item, i) => {
-      const buffer = await getFileServerSide(item.documentData);
-
-      const titleToUse = item.title || directTemplateEnvelope.title;
-
-      const { documentData: newDocumentData } = await putPdfFileServerSide({
-        name: titleToUse,
-        type: 'application/pdf',
-        arrayBuffer: async () => Promise.resolve(buffer),
-      });
-
-      const newEnvelopeItemId = prefixedId('envelope_item');
-
-      oldEnvelopeItemToNewEnvelopeItemIdMap[item.id] = newEnvelopeItemId;
-
-      return {
-        id: newEnvelopeItemId,
-        title: titleToUse.endsWith('.pdf') ? titleToUse.slice(0, -4) : titleToUse,
-        documentDataId: newDocumentData.id,
-        order: item.order !== undefined ? item.order : i + 1,
-      };
-    }),
-  );
-
-  const documentMeta = await prisma.documentMeta.create({
-    data: derivedDocumentMeta,
-  });
-
-  const incrementedDocumentId = await incrementDocumentId();
-
   // Generated here, not inside the transaction, so FILE_UPLOAD finals can be
   // keyed under the new envelope before it exists.
   const newEnvelopeId = prefixedId('envelope');
@@ -514,6 +478,46 @@ export const createDocumentFromDirectTemplate = async ({
   } catch (err) {
     await deleteFinalizedFileUploads(err);
   }
+
+  // Key = original envelope item ID
+  // Value = duplicated envelope item ID.
+  const oldEnvelopeItemToNewEnvelopeItemIdMap: Record<string, string> = {};
+
+  // Duplicate the envelope item data. Runs after finalization so a rejected
+  // upload doesn't leave orphaned documentData/documentMeta rows behind; a
+  // failure here still deletes the finalized copies.
+  const envelopeItemsToCreate = await Promise.all(
+    directTemplateEnvelope.envelopeItems.map(async (item, i) => {
+      const buffer = await getFileServerSide(item.documentData);
+
+      const titleToUse = item.title || directTemplateEnvelope.title;
+
+      const { documentData: newDocumentData } = await putPdfFileServerSide({
+        name: titleToUse,
+        type: 'application/pdf',
+        arrayBuffer: async () => Promise.resolve(buffer),
+      });
+
+      const newEnvelopeItemId = prefixedId('envelope_item');
+
+      oldEnvelopeItemToNewEnvelopeItemIdMap[item.id] = newEnvelopeItemId;
+
+      return {
+        id: newEnvelopeItemId,
+        title: titleToUse.endsWith('.pdf') ? titleToUse.slice(0, -4) : titleToUse,
+        documentDataId: newDocumentData.id,
+        order: item.order !== undefined ? item.order : i + 1,
+      };
+    }),
+  ).catch(deleteFinalizedFileUploads);
+
+  const documentMeta = await prisma.documentMeta
+    .create({
+      data: derivedDocumentMeta,
+    })
+    .catch(deleteFinalizedFileUploads);
+
+  const incrementedDocumentId = await incrementDocumentId().catch(deleteFinalizedFileUploads);
 
   const transaction = prisma.$transaction(
     async (tx) => {

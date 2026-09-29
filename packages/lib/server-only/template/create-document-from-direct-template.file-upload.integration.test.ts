@@ -287,12 +287,19 @@ describe.skipIf(!RUN_INTEGRATION)('createDocumentFromDirectTemplate — FILE_UPL
 
     const value = await uploadViaPresign(directLinkToken, uploadField.id, HTML_BYTES, fileName);
 
+    const documentMetaCountBefore = await prisma.documentMeta.count();
+    const documentDataCountBefore = await prisma.documentData.count();
+
     await expect(submit(template.id, directLinkToken, [{ fieldId: uploadField.id, value }])).rejects.toThrow(
       /does not match its declared type/,
     );
 
     expect(await prisma.field.count({ where: { customText: { contains: fileName } } })).toBe(0);
     expect(await finalKeysEndingWith(fileName)).toEqual([]);
+    // Finalization runs before the pre-transaction documentMeta/documentData
+    // writes, so a rejected upload leaves no orphaned rows behind.
+    expect(await prisma.documentMeta.count()).toBe(documentMetaCountBefore);
+    expect(await prisma.documentData.count()).toBe(documentDataCountBefore);
   });
 
   it('deletes already-finalized uploads when a later upload fails to finalize', async () => {
