@@ -3,9 +3,10 @@ import { FIELD_FILE_UPLOAD_TMP_KEY_PREFIX } from '../../types/field-file-upload'
 import { deleteS3File, listS3FilesByPrefix } from '../../universal/upload/server-actions';
 
 /**
- * A tmp object younger than this may still be mid-flow: its presigned PUT
- * (at most one hour) may not have been used yet, or the visitor may not have
- * submitted. Past it, nothing can legitimately finalize the object.
+ * A tmp object younger than this may still be mid-flow: a direct-template
+ * visitor only finalizes their upload when they submit the whole form, which
+ * can be well after the (10 minute) presigned PUT itself. Past this age the
+ * visitor is told to re-upload instead.
  */
 export const FIELD_FILE_UPLOAD_TMP_MAX_AGE_MS = 2 * ONE_HOUR;
 
