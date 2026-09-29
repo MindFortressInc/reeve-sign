@@ -106,7 +106,8 @@ ticket builds an executor against this contract. Never the other way around.
   it is flagged, not fixed, in this repatriation-only PR.
 * `deploy.toml`, `[[config]]`, and `[[runtime_env]]` (including the
   `NODE_ENV` `fail_boot` gap that caused prod Sentry to report
-  `environment: development`) now exist at `../deploy.toml`
+  `environment: development`; `compose.yml` itself sets
+  `NODE_ENV=production` since DEV-12257) now exist at `../deploy.toml`
   ([DEV-7600](https://linear.app/mindfortress/issue/DEV-7600), T5b) —
   `reeve-deploy-validate` gates it in CI
   (`.github/workflows/deploy-contract-publish.yml`). It only declares six
