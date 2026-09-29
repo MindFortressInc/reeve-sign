@@ -26,7 +26,19 @@ import { searchDocumentRoute } from './search-document';
 import { shareDocumentRoute } from './share-document';
 import { updateDocumentRoute } from './update-document';
 
+/**
+ * Note: The order of the routes is important for public API routes. GET
+ * /document/attachment must appear before GET /document/{documentId}, or the
+ * param route catches it. Guarded by
+ * `apps/remix/server/trpc/openapi-route-shadowing.test.ts`.
+ */
 export const documentRouter = router({
+  attachment: {
+    create: createAttachmentRoute,
+    update: updateAttachmentRoute,
+    delete: deleteAttachmentRoute,
+    find: findAttachmentsRoute,
+  },
   get: getDocumentRoute,
   getMany: getDocumentsByIdsRoute,
   find: findDocumentsRoute,
@@ -62,10 +74,4 @@ export const documentRouter = router({
     find: findInboxRoute,
     getCount: getInboxCountRoute,
   }),
-  attachment: {
-    create: createAttachmentRoute,
-    update: updateAttachmentRoute,
-    delete: deleteAttachmentRoute,
-    find: findAttachmentsRoute,
-  },
 });

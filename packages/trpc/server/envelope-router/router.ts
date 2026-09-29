@@ -45,7 +45,14 @@ import { useEnvelopeRoute } from './use-envelope';
 /**
  * Note: The order of the routes is important for public API routes.
  *
- * Example: GET /envelope/attachment must appear before GET /envelope/:id
+ * trpc-to-openapi dispatches to the FIRST registered route whose path matches,
+ * and a `{param}` matches any single segment, so a literal path must be
+ * registered before a param path it would otherwise fall into.
+ *
+ * Example: GET /envelope/attachment must appear before GET /envelope/:id, and
+ * GET /envelope/field/get-file-download-url before GET /envelope/field/:fieldId.
+ *
+ * Guarded by `apps/remix/server/trpc/openapi-route-shadowing.test.ts`.
  */
 export const envelopeRouter = router({
   attachment: {
@@ -71,6 +78,7 @@ export const envelopeRouter = router({
     set: setEnvelopeRecipientsRoute,
   },
   field: {
+    getFileDownloadUrl: getEnvelopeFieldFileDownloadUrlRoute,
     get: getEnvelopeFieldRoute,
     getSignatures: getEnvelopeFieldSignaturesRoute,
     createMany: createEnvelopeFieldsRoute,
@@ -79,7 +87,6 @@ export const envelopeRouter = router({
     set: setEnvelopeFieldsRoute,
     sign: signEnvelopeFieldRoute,
     presignFileUpload: presignEnvelopeFieldFileUploadRoute,
-    getFileDownloadUrl: getEnvelopeFieldFileDownloadUrlRoute,
     getFileDownloadUrlByToken: getEnvelopeFieldFileDownloadUrlByTokenRoute,
   },
   find: findEnvelopesRoute,
