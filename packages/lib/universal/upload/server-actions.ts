@@ -14,7 +14,7 @@ import {
 import { env } from '@documenso/lib/utils/env';
 import slugify from '@sindresorhus/slugify';
 
-import { ONE_HOUR, ONE_SECOND } from '../../constants/time';
+import { ONE_HOUR, ONE_MINUTE, ONE_SECOND } from '../../constants/time';
 import { alphaid } from '../id';
 
 const slugifyFileNameSegment = (fileName: string): string => {
@@ -33,8 +33,8 @@ const slugifyFileNameSegment = (fileName: string): string => {
  * Builds the TMP S3 key that a recipient's presigned PUT is minted for.
  * Never re-read as the accepted attachment — `signEnvelopeFieldRoute`
  * finalizes it (server-side copy) to a separate key space before persisting
- * anything, specifically because a presigned PUT stays valid for up to an
- * hour and nothing stops it being replayed after the field is signed.
+ * anything, specifically because a presigned PUT stays valid for up to 10
+ * minutes and nothing stops it being replayed after the field is signed.
  */
 export const buildFieldFileUploadTmpKey = ({
   envelopeId,
@@ -67,7 +67,12 @@ export const buildFinalizedFieldFileUploadKey = ({
   return `${buildFieldFileUploadKeyPrefix({ envelopeId, fieldId })}${alphaid(12)}/${slugifyFileNameSegment(fileName)}`;
 };
 
-const signPutObjectCommand = async (key: string, contentType: string, contentLength?: number) => {
+const signPutObjectCommand = async (
+  key: string,
+  contentType: string,
+  contentLength?: number,
+  expiresInMs: number = ONE_HOUR,
+) => {
   const client = getS3Client();
 
   const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
@@ -76,15 +81,16 @@ const signPutObjectCommand = async (key: string, contentType: string, contentLen
     Bucket: env('NEXT_PRIVATE_UPLOAD_BUCKET'),
     Key: key,
     ContentType: contentType,
-    // Binding ContentLength into the signed request means S3 rejects a PUT
-    // whose body doesn't match the size the caller validated up front — a
-    // presigned URL with no length bound otherwise lets the holder upload
+    // Binding ContentLength into the signed request means the store rejects
+    // a PUT whose body doesn't match the size the caller validated up front
+    // (403 SignatureDoesNotMatch on S3, MinIO and R2 — docs/storage-provider.md).
+    // A presigned URL with no length bound otherwise lets the holder upload
     // an arbitrarily larger object than what was checked against the limit.
     ContentLength: contentLength,
   });
 
   const url = await getSignedUrl(client, putObjectCommand, {
-    expiresIn: ONE_HOUR / ONE_SECOND,
+    expiresIn: expiresInMs / ONE_SECOND,
   });
 
   return { key, url };
@@ -121,12 +127,13 @@ export const getPresignPostUrl = async (fileName: string, contentType: string, u
  * Used where the key must be scoped to a specific owning resource (e.g. a
  * recipient file-upload field) rather than just a user.
  *
- * `contentLength`, when supplied, is bound into the signed request so the
+ * `contentLength` is required and bound into the signed request, so the
  * upload can't exceed the size the caller already validated (e.g. against
- * `FIELD_FILE_UPLOAD_SIZE_LIMIT_MB`).
+ * `FIELD_FILE_UPLOAD_SIZE_LIMIT_MB`). The URL lives 10 minutes, not an hour:
+ * it can be replayed until it expires.
  */
-export const getPresignPostUrlForKey = async (key: string, contentType: string, contentLength?: number) => {
-  return signPutObjectCommand(key, contentType, contentLength);
+export const getPresignPostUrlForKey = async (key: string, contentType: string, contentLength: number) => {
+  return signPutObjectCommand(key, contentType, contentLength, 10 * ONE_MINUTE);
 };
 
 /**

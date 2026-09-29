@@ -4,7 +4,7 @@ import { z } from 'zod';
  * Two distinct key spaces, never overlapping:
  *
  * - TMP: where the client's presigned PUT lands. Mutable by design (a
- *   presigned PUT is valid for an hour and nothing stops a replay), so a tmp
+ *   presigned PUT is valid for 10 minutes and nothing stops a replay), so a tmp
  *   key is never persisted as the accepted attachment and never re-read
  *   after finalize.
  * - final (`FIELD_FILE_UPLOAD_KEY_PREFIX`): a server-side copy destination

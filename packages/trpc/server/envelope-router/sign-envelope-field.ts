@@ -312,7 +312,7 @@ export const signEnvelopeFieldRoute = procedure
 
         // The client only ever submits a key from the TMP (presign-mintable)
         // key space. Never trust its claimed size/mimeType, and never persist
-        // that key directly: a presigned PUT stays valid for up to an hour, so
+        // that key directly: a presigned PUT stays valid for up to 10 minutes, so
         // without finalizing to a copy the client (or anyone who captured the
         // URL) could replay a PUT to the same key after the field is marked
         // signed and silently swap the accepted bytes with no new
