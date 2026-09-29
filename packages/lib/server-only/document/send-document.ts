@@ -326,7 +326,10 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
           await jobs.triggerJob({
             name: 'send.signing.requested.email',
             payload: {
-              userId,
+              // The invite names the envelope owner, not whoever called send:
+              // an org's system-user API token distributes envelopes owned by
+              // the real sender (X-Reeve-Sign-On-Behalf-Of, DEV-12502).
+              userId: envelope.userId,
               documentId: legacyDocumentId,
               recipientId: recipient.id,
               requestMetadata: requestMetadata?.requestMetadata,

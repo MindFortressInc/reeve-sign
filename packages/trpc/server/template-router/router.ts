@@ -8,6 +8,7 @@ import { createDocumentData } from '@documenso/lib/server-only/document-data/cre
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
 import { duplicateEnvelope } from '@documenso/lib/server-only/envelope/duplicate-envelope';
 import { updateEnvelope } from '@documenso/lib/server-only/envelope/update-envelope';
+import { resolveOnBehalfOfUserId } from '@documenso/lib/server-only/reeve-admin/resolve-on-behalf-of-user';
 import {
   createDocumentFromDirectTemplate,
   ZCreateDocumentFromDirectTemplateResponseSchema,
@@ -561,6 +562,11 @@ export const templateRouter = router({
         },
       });
 
+      // DEV-12502: an API token may create the envelope on behalf of a member
+      // of its team (403 otherwise), resolved before anything is created.
+      const onBehalfOfUserId =
+        ctx.metadata.auth === 'api' ? await resolveOnBehalfOfUserId({ headers: ctx.req.headers, teamId }) : null;
+
       const limits = await getServerLimits({ userId: ctx.user.id, teamId });
 
       if (limits.remaining.documents === 0) {
@@ -583,7 +589,7 @@ export const templateRouter = router({
           id: templateId,
         },
         teamId,
-        userId: ctx.user.id,
+        userId: onBehalfOfUserId ?? ctx.user.id,
         recipients,
         customDocumentData,
         requestMetadata: ctx.metadata,

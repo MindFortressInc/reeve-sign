@@ -2,7 +2,9 @@ import { getServerLimits } from '@documenso/ee/server-only/limits/server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { DATE_FORMATS, DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
 import { DocumentDataType, EnvelopeType, SigningStatus } from '@prisma/client';
+import type { TsRestRequest } from '@ts-rest/serverless';
 import { tsr } from '@ts-rest/serverless/fetch';
+import type { Logger } from 'pino';
 import { match } from 'ts-pattern';
 import '@documenso/lib/constants/time-zones';
 import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
@@ -22,6 +24,7 @@ import { deleteEnvelopeRecipient } from '@documenso/lib/server-only/recipient/de
 import { getRecipientsForDocument } from '@documenso/lib/server-only/recipient/get-recipients-for-document';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
+import { resolveOnBehalfOfUserId } from '@documenso/lib/server-only/reeve-admin/resolve-on-behalf-of-user';
 import { createDocumentFromTemplate } from '@documenso/lib/server-only/template/create-document-from-template';
 import { deleteTemplate } from '@documenso/lib/server-only/template/delete-template';
 import { findTemplates } from '@documenso/lib/server-only/template/find-templates';
@@ -46,6 +49,31 @@ import { prisma } from '@documenso/prisma';
 
 import { ApiContractV1 } from './contract';
 import { authenticatedMiddleware } from './middleware/authenticated';
+
+/**
+ * DEV-12502: the owner of a new envelope. The `X-Reeve-Sign-On-Behalf-Of`
+ * member when the header is sent (403 unless they are in the token's team),
+ * otherwise the token user. Resolved before anything is created; any other
+ * failure (e.g. a DB error) is a declared 500, not an unhandled throw.
+ */
+const resolveEnvelopeOwnerId = async (
+  req: TsRestRequest,
+  userId: number,
+  teamId: number,
+  logger: Logger,
+) => {
+  try {
+    return (await resolveOnBehalfOfUserId({ headers: req.headers, teamId })) ?? userId;
+  } catch (err) {
+    if (err instanceof AppError && err.code === AppErrorCode.FORBIDDEN) {
+      return { status: 403 as const, body: { message: err.message } };
+    }
+
+    logger.error({ err }, 'Failed to resolve envelope owner');
+
+    return { status: 500 as const, body: { message: 'Something went wrong' } };
+  }
+};
 
 export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
   getDocuments: authenticatedMiddleware(async (args, user, team) => {
@@ -341,8 +369,14 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     }
   }),
 
-  createDocument: authenticatedMiddleware(async (args, user, team, { metadata }) => {
+  createDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { body } = args;
+
+    const ownerUserId = await resolveEnvelopeOwnerId(args.req, user.id, team.id, logger);
+
+    if (typeof ownerUserId !== 'number') {
+      return ownerUserId;
+    }
 
     try {
       if (process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT !== 's3') {
@@ -403,7 +437,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       });
 
       const envelope = await createEnvelope({
-        userId: user.id,
+        userId: ownerUserId,
         teamId: team.id,
         internalVersion: 1,
         data: {
@@ -864,6 +898,12 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
   generateDocumentFromTemplate: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
     const { body, params } = args;
 
+    const ownerUserId = await resolveEnvelopeOwnerId(args.req, user.id, team.id, logger);
+
+    if (typeof ownerUserId !== 'number') {
+      return ownerUserId;
+    }
+
     logger.info({
       input: {
         templateId: params.templateId,
@@ -892,7 +932,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
           id: templateId,
         },
         externalId: body.externalId || null,
-        userId: user.id,
+        userId: ownerUserId,
         teamId: team.id,
         recipients: body.recipients,
         prefillFields: body.prefillFields,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { env } from '../../utils/env';
 import { provisionOrganisation } from './provision-organisation';
 import {
   isReeveAdminProvisioningConfigured,
@@ -13,6 +14,28 @@ import {
 const ZProvisionOrganisationRequestSchema = z.object({
   name: z.string().trim().min(3, 'name must be at least 3 characters').max(50, 'name must be at most 50 characters'),
   external_reference: z.string().trim().min(1, 'external_reference is required').max(512),
+  webhook: z
+    .object({
+      // The secret travels in the X-Documenso-Secret header, so only https is
+      // accepted unless NODE_ENV is explicitly `development` (the deployed
+      // image may run with NODE_ENV unset).
+      url: z
+        .string()
+        .url()
+        .refine((url) => {
+          // zod still runs refine after `.url()` fails; that case is already
+          // reported, so don't let `new URL` throw here.
+          if (!URL.canParse(url)) {
+            return true;
+          }
+
+          const { protocol } = new URL(url);
+
+          return protocol === 'https:' || (env('NODE_ENV') === 'development' && protocol === 'http:');
+        }, 'webhook.url must use https outside development'),
+      secret: z.string().min(1),
+    })
+    .optional(),
 });
 
 /**
@@ -54,10 +77,10 @@ export const handleProvisionOrganisationRequest = async (req: Request): Promise<
     return Response.json({ error: 'Invalid request body', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { name, external_reference: externalReference } = parsed.data;
+  const { name, external_reference: externalReference, webhook } = parsed.data;
 
   try {
-    const result = await provisionOrganisation({ name, externalReference });
+    const result = await provisionOrganisation({ name, externalReference, webhook });
 
     return Response.json(
       {
