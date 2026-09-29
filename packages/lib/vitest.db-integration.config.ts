@@ -17,6 +17,7 @@ export default defineConfig({
     include: [
       '**/server-only/document/conditional-visibility-consent.integration.test.ts',
       '**/server-only/template/create-document-from-direct-template.integration.test.ts',
+      '**/server-only/template/presign-direct-template-field-file-upload.integration.test.ts',
       '**/server-only/envelope/duplicate-envelope.integration.test.ts',
       '**/server-only/recipient/get-handoff-eligibility.integration.test.ts',
     ],

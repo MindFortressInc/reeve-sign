@@ -1,9 +1,5 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
-import {
-  FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES,
-  FIELD_FILE_UPLOAD_SIZE_LIMIT_MB,
-} from '@documenso/lib/types/field-file-upload';
-import { buildFieldFileUploadTmpKey, getPresignPostUrlForKey } from '@documenso/lib/universal/upload/server-actions';
+import { presignFieldFileUpload } from '@documenso/lib/server-only/field/presign-field-file-upload';
 import { prisma } from '@documenso/prisma';
 import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 
@@ -109,30 +105,13 @@ export const presignEnvelopeFieldFileUploadRoute = procedure
       });
     }
 
-    if (
-      !FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES.includes(
-        contentType as (typeof FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES)[number],
-      )
-    ) {
-      throw new AppError(AppErrorCode.INVALID_BODY, {
-        message: `File type ${contentType} is not allowed`,
-      });
-    }
-
-    if (fileSize > FIELD_FILE_UPLOAD_SIZE_LIMIT_MB * 1024 * 1024) {
-      throw new AppError(AppErrorCode.INVALID_BODY, {
-        message: `File exceeds the ${FIELD_FILE_UPLOAD_SIZE_LIMIT_MB}MB limit`,
-      });
-    }
-
-    // A tmp key only — the presign route must never mint a PUT for a
-    // finalized key (see field-file-upload.ts). Finalization to an
-    // immutable copy happens server-side in sign-envelope-field.ts.
-    const key = buildFieldFileUploadTmpKey({ envelopeId: field.envelopeId, fieldId: field.id, fileName });
-
-    // Bind ContentLength to the already-validated fileSize so the signed PUT
-    // can't be used to upload past the size limit checked above.
-    const { url } = await getPresignPostUrlForKey(key, contentType, fileSize);
-
-    return { key, url };
+    // Upload policy (type allowlist, size ceiling) and the tmp-key mint are
+    // shared with the public direct-template presign route.
+    return await presignFieldFileUpload({
+      envelopeId: field.envelopeId,
+      fieldId: field.id,
+      fileName,
+      contentType,
+      fileSize,
+    });
   });

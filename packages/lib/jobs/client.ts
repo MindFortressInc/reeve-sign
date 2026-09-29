@@ -22,6 +22,7 @@ import { PROCESS_SIGNING_REMINDER_JOB_DEFINITION } from './definitions/internal/
 import { SEAL_DOCUMENT_JOB_DEFINITION } from './definitions/internal/seal-document';
 import { SEAL_DOCUMENT_SWEEP_JOB_DEFINITION } from './definitions/internal/seal-document-sweep';
 import { SEND_SIGNING_REMINDERS_SWEEP_JOB_DEFINITION } from './definitions/internal/send-signing-reminders-sweep';
+import { SWEEP_FIELD_FILE_UPLOAD_TMP_JOB_DEFINITION } from './definitions/internal/sweep-field-file-upload-tmp';
 import { SYNC_EMAIL_DOMAINS_JOB_DEFINITION } from './definitions/internal/sync-email-domains';
 
 /**
@@ -50,6 +51,7 @@ export const jobsClient = new JobClient([
   SEND_SIGNING_REMINDERS_SWEEP_JOB_DEFINITION,
   PROCESS_SIGNING_REMINDER_JOB_DEFINITION,
   CLEANUP_RATE_LIMITS_JOB_DEFINITION,
+  SWEEP_FIELD_FILE_UPLOAD_TMP_JOB_DEFINITION,
   SYNC_EMAIL_DOMAINS_JOB_DEFINITION,
   ADMIN_DELETE_ORGANISATION_JOB_DEFINITION,
   CANCEL_ORGANISATION_SUBSCRIPTION_JOB_DEFINITION,

@@ -8,11 +8,16 @@ import { z } from 'zod';
  *   key is never persisted as the accepted attachment and never re-read
  *   after finalize.
  * - final (`FIELD_FILE_UPLOAD_KEY_PREFIX`): a server-side copy destination
- *   that no route ever mints a presigned PUT for — `presign-envelope-field-
- *   file-upload.ts` only ever calls `buildFieldFileUploadTmpKey`, so a
- *   client can never obtain write access to a final key. Only the finalize
- *   step in `sign-envelope-field.ts` writes here, via a server-side
- *   `CopyObjectCommand`. This is what gets persisted in `Field.customText`.
+ *   that no route ever mints a presigned PUT for — `presignFieldFileUpload`
+ *   (shared by the recipient and direct-template presign routes) only ever
+ *   calls `buildFieldFileUploadTmpKey`, so a client can never obtain write
+ *   access to a final key. Only `finalizeFieldFileUpload` (called from
+ *   `sign-envelope-field.ts` and `create-document-from-direct-template.ts`)
+ *   writes here, via a server-side `CopyObjectCommand`. This is what gets
+ *   persisted in `Field.customText`.
+ *
+ * TMP objects that are never finalized are deleted by the
+ * `internal.sweep-field-file-upload-tmp` job.
  */
 export const FIELD_FILE_UPLOAD_TMP_KEY_PREFIX = 'field-uploads-tmp';
 export const FIELD_FILE_UPLOAD_KEY_PREFIX = 'field-uploads';

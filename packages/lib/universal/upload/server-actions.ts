@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -51,7 +52,7 @@ export const buildFieldFileUploadTmpKey = ({
 /**
  * Builds the FINAL, immutable-by-client S3 key an upload is copied to at
  * finalize time. No route ever mints a presigned PUT for this key space —
- * `presign-envelope-field-file-upload.ts` only ever calls
+ * `presignFieldFileUpload` (the one presign path) only ever calls
  * `buildFieldFileUploadTmpKey` — so a client can never obtain write access
  * to it. This is what gets persisted in `Field.customText`.
  */
@@ -188,6 +189,42 @@ export const readS3FilePrefix = async (key: string, length: number): Promise<Uin
 
   return (await response.Body?.transformToByteArray()) ?? new Uint8Array();
 };
+
+export type S3FileSummary = {
+  key: string;
+  lastModified: Date | null;
+};
+
+/**
+ * Lists every object under `prefix`, one ListObjectsV2 page at a time,
+ * following continuation tokens until the listing is exhausted. Yields pages
+ * so a caller can act on a large prefix without holding it all in memory.
+ */
+export async function* listS3FilesByPrefix(
+  prefix: string,
+  options?: { pageSize?: number },
+): AsyncGenerator<S3FileSummary[]> {
+  const client = getS3Client();
+
+  let continuationToken: string | undefined;
+
+  do {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: env('NEXT_PRIVATE_UPLOAD_BUCKET'),
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+        MaxKeys: options?.pageSize,
+      }),
+    );
+
+    yield (response.Contents ?? []).flatMap((object) =>
+      object.Key ? [{ key: object.Key, lastModified: object.LastModified ?? null }] : [],
+    );
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+}
 
 export const getAbsolutePresignPostUrl = async (key: string) => {
   const client = getS3Client();

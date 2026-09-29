@@ -11,6 +11,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [macrosPlugin(), lingui()],
   test: {
-    include: ['**/server-only/field/finalize-field-file-upload.integration.test.ts'],
+    include: [
+      '**/server-only/field/finalize-field-file-upload.integration.test.ts',
+      '**/server-only/field/sweep-field-file-upload-tmp.integration.test.ts',
+      // Needs MinIO AND Postgres; self-gates on both RUN_S3_INTEGRATION_TESTS
+      // and RUN_DB_INTEGRATION_TESTS.
+      '**/server-only/template/create-document-from-direct-template.file-upload.integration.test.ts',
+    ],
   },
 });

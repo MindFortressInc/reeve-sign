@@ -363,7 +363,11 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
          * FILE_UPLOAD FIELD.
          */
         .with({ type: FieldType.FILE_UPLOAD }, (field) => {
-          handleFileUploadFieldClick({ field, token: envelopeData.recipient.token })
+          handleFileUploadFieldClick({
+            field,
+            token: envelopeData.recipient.token,
+            directTemplateToken: isDirectTemplate ? (envelopeData.recipient.directToken ?? undefined) : undefined,
+          })
             .then(async (payload) => {
               if (payload) {
                 fieldGroup.add(loadingSpinnerGroup);
