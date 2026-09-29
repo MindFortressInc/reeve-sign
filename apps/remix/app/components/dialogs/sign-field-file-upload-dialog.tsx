@@ -1,4 +1,4 @@
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import {
   FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES,
   FIELD_FILE_UPLOAD_SIZE_LIMIT_MB,
@@ -102,6 +102,15 @@ export const SignFieldFileUploadDialog = createCallable<
       const error = AppError.parseError(err);
 
       console.error(error);
+
+      // Uploads are rate limited (per IP and, on a direct-template link, per
+      // link). "Please try again" would send the visitor straight back into
+      // the same limit, so tell them to wait instead.
+      if (error.code === AppErrorCode.TOO_MANY_REQUESTS) {
+        setError(t`Too many uploads in a short time. Please wait a while before trying again.`);
+        return;
+      }
+
       setError(error.userMessage || t`Something went wrong while uploading your file. Please try again.`);
     } finally {
       setIsUploading(false);
