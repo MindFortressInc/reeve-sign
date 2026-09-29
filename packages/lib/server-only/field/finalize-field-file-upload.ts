@@ -12,7 +12,11 @@ import {
   readS3FilePrefix,
 } from '@documenso/lib/universal/upload/server-actions';
 
-import { detectFieldFileUploadMimeType, FIELD_FILE_UPLOAD_SIGNATURE_BYTES } from './detect-field-file-upload-mime-type';
+import {
+  detectFieldFileUploadMimeType,
+  FIELD_FILE_UPLOAD_SIGNATURE_BYTES,
+  getFtypBoxReadLength,
+} from './detect-field-file-upload-mime-type';
 
 export type FinalizeFieldFileUploadOptions = {
   /** The tmp key the recipient's presigned PUT was minted for. */
@@ -134,7 +138,15 @@ export const finalizeFieldFileUpload = async ({
     // that type by file signature. Sniffing the FINAL key, not the tmp key,
     // matters: a replayed PUT could rewrite tmp between a sniff and the copy,
     // but no client can ever write the final key.
-    const prefix = await readS3FilePrefix(finalKey, FIELD_FILE_UPLOAD_SIGNATURE_BYTES);
+    let prefix = await readS3FilePrefix(finalKey, FIELD_FILE_UPLOAD_SIGNATURE_BYTES);
+
+    // An ISO-BMFF `ftyp` box can outrun the first read; its HEIC brand may
+    // sit anywhere in the compatible-brand list, so read the whole (bounded) box.
+    const ftypLength = getFtypBoxReadLength(prefix);
+
+    if (prefix.length === FIELD_FILE_UPLOAD_SIGNATURE_BYTES && ftypLength > prefix.length) {
+      prefix = await readS3FilePrefix(finalKey, ftypLength);
+    }
 
     if (detectFieldFileUploadMimeType(prefix) !== finalHead.contentType) {
       throw new AppError(AppErrorCode.INVALID_BODY, {

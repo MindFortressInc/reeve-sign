@@ -1,13 +1,19 @@
 import type { TFieldFileUploadAllowedMimeType } from '@documenso/lib/types/field-file-upload';
 
 /**
- * How many leading bytes `detectFieldFileUploadMimeType` needs. The fixed
- * signatures all end by byte 12 (WEBP's `RIFF....WEBP`, the HEIC `ftyp`
- * major brand); the extra room covers the `ftyp` compatible-brand list a
- * generic-HEIF (`mif1`) file must be checked against. Finalize only ever
- * range-reads this much of an object.
+ * How many leading bytes `detectFieldFileUploadMimeType` needs first. The
+ * fixed signatures all end by byte 12 (WEBP's `RIFF....WEBP`, the HEIC `ftyp`
+ * major brand); the extra room covers a typical `ftyp` compatible-brand list.
+ * A longer `ftyp` box is re-read in full via `getFtypBoxReadLength`.
  */
 export const FIELD_FILE_UPLOAD_SIGNATURE_BYTES = 64;
+
+/**
+ * Upper bound on the `ftyp` box bytes finalize will range-read. Real `ftyp`
+ * boxes are a few dozen bytes; this only stops a hostile declared size from
+ * turning the sniff into a large download.
+ */
+export const FIELD_FILE_UPLOAD_MAX_FTYP_BYTES = 1024;
 
 /**
  * ISO-BMFF `ftyp` brands that identify a HEIC still image. Image-sequence
@@ -30,6 +36,17 @@ const matchesAt = (bytes: Uint8Array, offset: number, signature: readonly number
 const asciiAt = (bytes: Uint8Array, offset: number, length: number) =>
   bytes.length >= offset + length ? String.fromCharCode(...bytes.subarray(offset, offset + length)) : null;
 
+const readBoxSize = (bytes: Uint8Array) => ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
+
+/**
+ * How many leading bytes cover the whole `ftyp` box `bytes` starts with
+ * (capped at `FIELD_FILE_UPLOAD_MAX_FTYP_BYTES`), or 0 if `bytes` does not
+ * start with one. Finalize re-reads this much when it exceeds its first read,
+ * so a HEIC brand late in a long compatible-brand list is not missed.
+ */
+export const getFtypBoxReadLength = (bytes: Uint8Array) =>
+  asciiAt(bytes, 4, 4) === 'ftyp' ? Math.min(readBoxSize(bytes), FIELD_FILE_UPLOAD_MAX_FTYP_BYTES) : 0;
+
 /**
  * Whether the `ftyp` box's compatible-brand list (4-byte brands from byte 16
  * to the box's declared size) names a HEIC brand. Only brands fully inside
@@ -40,8 +57,7 @@ const hasHeicCompatibleBrand = (bytes: Uint8Array) => {
     return false;
   }
 
-  const boxSize = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
-  const end = Math.min(boxSize, bytes.length);
+  const end = Math.min(readBoxSize(bytes), bytes.length);
 
   for (let offset = 16; offset + 4 <= end; offset += 4) {
     const brand = asciiAt(bytes, offset, 4);
@@ -81,12 +97,11 @@ export const detectFieldFileUploadMimeType = (bytes: Uint8Array): TFieldFileUplo
 
   if (asciiAt(bytes, 4, 4) === 'ftyp') {
     const majorBrand = asciiAt(bytes, 8, 4);
+    const isHeifMajorBrand = !!majorBrand && (HEIC_BRANDS.has(majorBrand) || majorBrand === GENERIC_HEIF_BRAND);
 
-    if (majorBrand && HEIC_BRANDS.has(majorBrand)) {
-      return 'image/heic';
-    }
-
-    if (majorBrand === GENERIC_HEIF_BRAND && hasHeicCompatibleBrand(bytes)) {
+    // The image/heic registration requires a HEIC brand among the compatible
+    // brands, whatever the major brand is.
+    if (isHeifMajorBrand && hasHeicCompatibleBrand(bytes)) {
       return 'image/heic';
     }
   }

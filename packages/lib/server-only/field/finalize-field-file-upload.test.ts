@@ -206,6 +206,23 @@ describe('finalizeFieldFileUpload', () => {
     expect(deleteS3File).toHaveBeenCalledWith('field-uploads/env_abc/42/finalrand12/photo.png');
   });
 
+  it('re-reads a HEIC ftyp box longer than the first read and accepts a late HEIC brand', async () => {
+    const heicOptions = { ...baseOptions, fileName: 'photo.heic', claimedMimeType: 'image/heic' };
+    const brands = ['mif1', ...Array<string>(12).fill('miaf'), 'heic'];
+    const ftyp = new Uint8Array(16 + 4 * brands.length);
+    ftyp.set([0x00, 0x00, 0x00, ftyp.length]);
+    ftyp.set(new TextEncoder().encode(`ftypmif1\0\0\0\0${brands.join('')}`), 4);
+
+    headS3File.mockResolvedValueOnce({ exists: true, size: 1024, contentType: 'image/heic' }); // tmp HEAD
+    copyS3File.mockResolvedValueOnce(undefined);
+    headS3File.mockResolvedValueOnce({ exists: true, size: 1024, contentType: 'image/heic' }); // final HEAD
+    readS3FilePrefix.mockImplementation(async (_key: string, length: number) => ftyp.subarray(0, length));
+    deleteS3File.mockResolvedValue(undefined);
+
+    await expect(finalizeFieldFileUpload(heicOptions)).resolves.toBeTypeOf('string');
+    expect(readS3FilePrefix).toHaveBeenLastCalledWith('field-uploads/env_abc/42/finalrand12/photo.heic', ftyp.length);
+  });
+
   it('cleans up both keys and rethrows when the content read itself fails', async () => {
     headS3File.mockResolvedValueOnce({ exists: true, size: 1024, contentType: 'application/pdf' }); // tmp HEAD
     copyS3File.mockResolvedValueOnce(undefined);
