@@ -2,7 +2,7 @@ import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } fr
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildFieldFileUploadKeyPrefix } from '../../types/field-file-upload';
-import { buildFieldFileUploadTmpKey } from '../../universal/upload/server-actions';
+import { buildFieldFileUploadTmpKey, getPresignPostUrlForKey } from '../../universal/upload/server-actions';
 import { finalizeFieldFileUpload } from './finalize-field-file-upload';
 
 /**
@@ -228,5 +228,63 @@ describe.skipIf(!RUN_INTEGRATION)('finalizeFieldFileUpload — live MinIO integr
     );
 
     expect(finalObjects.KeyCount ?? 0).toBe(0);
+  });
+  // DEV-12064: the 15MB ceiling holds BEFORE bytes land, because the
+  // presigned PUT signs the declared size. Prod is Cloudflare R2, which was
+  // measured to behave the same way (docs/storage-provider.md).
+  describe('presigned PUT size binding', () => {
+    const declared = 4096;
+
+    const presignTmpKey = async (fieldId: number) => {
+      const tmpKey = buildFieldFileUploadTmpKey({ envelopeId: `env_itest_${Date.now()}`, fieldId, fileName: 'a.pdf' });
+      const { url } = await getPresignPostUrlForKey(tmpKey, 'application/pdf', declared);
+
+      return { tmpKey, url };
+    };
+
+    const put = async (url: string, body: BodyInit) =>
+      fetch(url, {
+        method: 'PUT',
+        body,
+        headers: { 'Content-Type': 'application/pdf' },
+        // Required by undici for a streamed (chunked) request body.
+        duplex: 'half',
+      } as RequestInit);
+
+    it('accepts a PUT of exactly the declared size', async () => {
+      const { tmpKey, url } = await presignTmpKey(4251);
+
+      const response = await put(url, new Uint8Array(declared));
+
+      expect(response.status).toBe(200);
+      await expect(getObjectBody(tmpKey)).resolves.toHaveLength(declared);
+    });
+
+    it('rejects a PUT larger than the declared size before storing anything', async () => {
+      const { tmpKey, url } = await presignTmpKey(4252);
+
+      const response = await put(url, new Uint8Array(declared + 1000));
+
+      expect(response.status).toBe(403);
+      await expect(response.text()).resolves.toContain('SignatureDoesNotMatch');
+      await expect(getObjectBody(tmpKey)).resolves.toBeNull();
+    });
+
+    it('rejects a chunked PUT that omits Content-Length', async () => {
+      const { tmpKey, url } = await presignTmpKey(4253);
+
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(declared + 1000));
+          controller.close();
+        },
+      });
+
+      const response = await put(url, stream);
+
+      // MinIO answers 411 Length Required; R2 answers 403 SignatureDoesNotMatch.
+      expect([403, 411]).toContain(response.status);
+      await expect(getObjectBody(tmpKey)).resolves.toBeNull();
+    });
   });
 });
