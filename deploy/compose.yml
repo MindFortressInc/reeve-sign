@@ -8,6 +8,9 @@ services:
       - 169.254.169.253  # AWS VPC resolver — ensures RDS hostname resolves to private VPC IP
     environment:
       - PORT=3000
+      # DEV-12257 — deploy.toml declares NODE_ENV fail_boot. Unset, tRPC returns
+      # stack traces in API error bodies and Sentry reports `development`.
+      - NODE_ENV=production
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - NEXT_PRIVATE_ENCRYPTION_KEY=${NEXT_PRIVATE_ENCRYPTION_KEY}
       - NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY=${NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY}

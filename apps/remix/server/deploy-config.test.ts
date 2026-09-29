@@ -279,6 +279,14 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     expect(compose).toMatch(/-\s*NEXT_PUBLIC_SENTRY_DSN=\$\{NEXT_PUBLIC_SENTRY_DSN\}/);
   });
 
+  it('runs documenso with NODE_ENV=production (DEV-12257)', () => {
+    // Unset NODE_ENV made tRPC include `stack` in every API error body and
+    // Sentry report `environment: development`; deploy.toml declares it
+    // `on_missing = "fail_boot"` for documenso.
+    const { services } = parseCompose();
+    expect(services?.documenso?.environment).toContain('NODE_ENV=production');
+  });
+
   it('mounts cert.p12 read-only for document signing', () => {
     expect(compose).toContain('/home/ubuntu/reeve-sign/cert.p12:/opt/documenso/cert.p12:ro');
   });
