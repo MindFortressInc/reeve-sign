@@ -21,7 +21,7 @@ Local dev and CI use MinIO. Its config is in `docker/development/compose.yml`.
 A FILE_UPLOAD field enforces its 15MB limit (`FIELD_FILE_UPLOAD_SIZE_LIMIT_MB`) at two points.
 
 1. **Presign, before any bytes are stored.** `presignEnvelopeFieldFileUploadRoute` rejects a declared `fileSize` over the limit. It then calls `getPresignPostUrlForKey(key, contentType, fileSize)`, which puts `content-length` into `X-Amz-SignedHeaders`. When a PUT's length differs from the signed length, the store rejects the signature before it writes anything. The URL expires after 10 minutes.
-2. **Finalize, as a second check.** `finalizeFieldFileUpload` reads the real stored size with HeadObject and re-checks it against the limit and the claimed size. On any failure it deletes the tmp object.
+2. **Finalize, as a second check.** `finalizeFieldFileUpload` reads the real stored size with HeadObject and re-checks it against the limit and the claimed size. When the object fails a check, finalize tries to delete the tmp object. The delete is best-effort and is skipped if HeadObject or the copy itself errors.
 
 Presigned POST with a `content-length-range` policy is **not an option on R2**. Cloudflare documents that "`POST` (multipart form uploads via HTML forms) is not currently supported" (<https://developers.cloudflare.com/r2/api/s3/presigned-urls/>).
 
