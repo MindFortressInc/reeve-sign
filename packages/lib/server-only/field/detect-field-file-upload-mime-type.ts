@@ -49,10 +49,10 @@ export const getFtypBoxReadLength = (bytes: Uint8Array) =>
 
 /**
  * Whether the `ftyp` box's compatible-brand list (4-byte brands from byte 16
- * to the box's declared size) names a HEIC brand. Only brands fully inside
+ * to the box's declared size) names one of `brands`. Only brands fully inside
  * both the box and the bytes read are considered.
  */
-const hasHeicCompatibleBrand = (bytes: Uint8Array) => {
+const hasCompatibleBrand = (bytes: Uint8Array, brands: ReadonlySet<string>) => {
   if (bytes.length < 8) {
     return false;
   }
@@ -62,13 +62,15 @@ const hasHeicCompatibleBrand = (bytes: Uint8Array) => {
   for (let offset = 16; offset + 4 <= end; offset += 4) {
     const brand = asciiAt(bytes, offset, 4);
 
-    if (brand && HEIC_BRANDS.has(brand)) {
+    if (brand && brands.has(brand)) {
       return true;
     }
   }
 
   return false;
 };
+
+const GENERIC_HEIF_BRANDS: ReadonlySet<string> = new Set([GENERIC_HEIF_BRAND]);
 
 /**
  * Identifies which allowlisted FILE_UPLOAD type a file really is from its
@@ -97,11 +99,16 @@ export const detectFieldFileUploadMimeType = (bytes: Uint8Array): TFieldFileUplo
 
   if (asciiAt(bytes, 4, 4) === 'ftyp') {
     const majorBrand = asciiAt(bytes, 8, 4);
-    const isHeifMajorBrand = !!majorBrand && (HEIC_BRANDS.has(majorBrand) || majorBrand === GENERIC_HEIF_BRAND);
 
-    // The image/heic registration requires a HEIC brand among the compatible
-    // brands, whatever the major brand is.
-    if (isHeifMajorBrand && hasHeicCompatibleBrand(bytes)) {
+    // A HEIC major brand needs the `mif1` HEIF structural brand among the
+    // compatible brands (some encoders list only `mif1`, not the major brand
+    // again). The generic `mif1` major brand needs a HEIC compatible brand,
+    // since AVIF uses `mif1` too. An empty compatible-brand list never passes.
+    const isHeic =
+      (!!majorBrand && HEIC_BRANDS.has(majorBrand) && hasCompatibleBrand(bytes, GENERIC_HEIF_BRANDS)) ||
+      (majorBrand === GENERIC_HEIF_BRAND && hasCompatibleBrand(bytes, HEIC_BRANDS));
+
+    if (isHeic) {
       return 'image/heic';
     }
   }

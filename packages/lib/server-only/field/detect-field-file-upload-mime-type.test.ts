@@ -29,6 +29,7 @@ describe('detectFieldFileUploadMimeType', () => {
     ['image/webp', bytes('RIFF', [0x24, 0x00, 0x00, 0x00], 'WEBPVP8 ')],
     ['image/heic', isoBmff('heic', 'mif1', 'heic')],
     ['image/heic', isoBmff('heix', 'mif1', 'heix')],
+    ['image/heic', isoBmff('heic', 'mif1')],
     ['image/heic', isoBmff('mif1', 'mif1', 'miaf', 'heic')],
   ])('detects %s from its file signature', (expected, input) => {
     expect(detectFieldFileUploadMimeType(input)).toBe(expected);
@@ -42,6 +43,8 @@ describe('detectFieldFileUploadMimeType', () => {
     ['an MP4 video (ISO-BMFF, non-HEIC brand)', isoBmff('isom')],
     ['a generic HEIF image with no HEIC compatible brand', isoBmff('mif1')],
     ['a bare heic major brand with no compatible brands', isoBmff('heic')],
+    ['a heic major brand without the mif1 structural brand', isoBmff('heic', 'miaf')],
+    ['a generic mif1 major brand listing only mif1', isoBmff('mif1', 'mif1')],
     ['an AVIF image written with the generic mif1 major brand', isoBmff('mif1', 'mif1', 'miaf', 'avif')],
     ['a HEIF image sequence (msf1)', isoBmff('msf1', 'msf1', 'hevc')],
     ['a HEVC image sequence (hevc)', isoBmff('hevc', 'msf1', 'hevc')],
