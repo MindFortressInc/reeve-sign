@@ -40,4 +40,8 @@ Under every framing, R2 stores at most the signed length. MinIO behaves the same
 
 ### What stays unbounded
 
-A presigned URL can be replayed until it expires. Each replay is still capped at the signed size and overwrites the same tmp key. A recipient can mint new URLs, up to the global tRPC limit of 100 requests/min per IP (`apiTrpcRateLimit`). Nothing caps the total tmp-key storage per recipient. No job in this repo deletes tmp objects that are never finalized. If an R2 lifecycle rule exists on the bucket, it is not tracked here. DEV-12800 tracks adding an expiry for `field-uploads-tmp/`.
+A presigned URL can be replayed until it expires. Each replay is still capped at the signed size and overwrites the same tmp key. A recipient can mint new URLs, up to the global tRPC limit of 100 requests/min per IP (`apiTrpcRateLimit`). Nothing caps the total tmp-key storage per recipient.
+
+A direct-template (public link) visitor has no recipient token, so the link token is their only credential. Their presign (`template.presignDirectTemplateFieldFileUpload`) is also limited by `directTemplateFileUploadRateLimit`: 10 per hour per IP and 200 per hour per link token.
+
+Tmp objects that are never finalized are deleted by the `internal.sweep-field-file-upload-tmp` job. It runs every 15 minutes and deletes objects under `field-uploads-tmp/` whose `LastModified` is more than 2 hours old. It never deletes a key outside that prefix. So abandoned uploads occupy storage for about 2 hours, not forever.

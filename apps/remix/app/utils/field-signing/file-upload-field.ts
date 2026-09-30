@@ -8,12 +8,14 @@ import { SignFieldFileUploadDialog } from '~/components/dialogs/sign-field-file-
 type HandleFileUploadFieldClickOptions = {
   field: TFieldFileUpload;
   token: string;
+  /** The direct-link token, when signing a direct template. */
+  directTemplateToken?: string;
 };
 
 export const handleFileUploadFieldClick = async (
   options: HandleFileUploadFieldClickOptions,
 ): Promise<Extract<TSignEnvelopeFieldValue, { type: typeof FieldType.FILE_UPLOAD }> | null> => {
-  const { field, token } = options;
+  const { field, token, directTemplateToken } = options;
 
   if (field.type !== FieldType.FILE_UPLOAD) {
     throw new AppError(AppErrorCode.INVALID_REQUEST, {
@@ -28,7 +30,7 @@ export const handleFileUploadFieldClick = async (
     };
   }
 
-  const uploadResult = await SignFieldFileUploadDialog.call({ token, fieldId: field.id });
+  const uploadResult = await SignFieldFileUploadDialog.call({ token, fieldId: field.id, directTemplateToken });
 
   if (!uploadResult) {
     return null;

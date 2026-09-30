@@ -24,10 +24,13 @@ import { DOCUMENT_AUDIT_LOG_TYPE, RECIPIENT_DIFF_TYPE } from '../../types/docume
 import type { TRecipientActionAuthTypes } from '../../types/document-auth';
 import { DocumentAccessAuth, ZRecipientAuthOptionsSchema } from '../../types/document-auth';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
+import type { TFieldFileUploadValue } from '../../types/field-file-upload';
+import { isFieldFileUploadTmpKeyOwnedBy, parseFileUploadCustomText } from '../../types/field-file-upload';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import type { ApiRequestMetadata } from '../../universal/extract-request-metadata';
 import { getFileServerSide } from '../../universal/upload/get-file.server';
 import { putPdfFileServerSide } from '../../universal/upload/put-file.server';
+import { deleteS3File } from '../../universal/upload/server-actions';
 import { fieldsContainUnsignedRequiredField, isRequiredField } from '../../utils/advanced-fields-helpers';
 import { extractDerivedDocumentMeta } from '../../utils/document';
 import type { CreateDocumentAuditLogDataResponse } from '../../utils/document-audit-logs';
@@ -49,6 +52,7 @@ import {
 import { sendDocument } from '../document/send-document';
 import { validateFieldAuth } from '../document/validate-field-auth';
 import { incrementDocumentId } from '../envelope/increment-id';
+import { finalizeFieldFileUpload } from '../field/finalize-field-file-upload';
 import { getTeamSettings } from '../team/get-team-settings';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
@@ -69,6 +73,61 @@ export type CreateDocumentFromDirectTemplateOptions = {
     email: string;
     name: string;
   };
+};
+
+type DirectRecipientFieldArgs = {
+  templateField: Field;
+  customText: string | undefined;
+  derivedRecipientActionAuth: Awaited<ReturnType<typeof validateFieldAuth>>;
+  signature: { signatureImageAsBase64?: string; typedSignature?: string } | null;
+  /** A FILE_UPLOAD claim that still has to go through `finalizeFieldFileUpload`. */
+  pendingFileUpload?: TFieldFileUploadValue;
+};
+
+/**
+ * Parses a submitted FILE_UPLOAD value and checks that its tmp key was minted
+ * for THIS template field (`presignDirectTemplateFieldFileUpload` scopes keys
+ * to `<templateEnvelopeId>/<templateFieldId>`), so a submission can never
+ * reference another field's, envelope's or visitor's object.
+ */
+const parseDirectTemplateFileUpload = ({
+  value,
+  templateField,
+  internalVersion,
+}: {
+  value: string;
+  templateField: Field;
+  internalVersion: number;
+}): TFieldFileUploadValue => {
+  // FILE_UPLOAD is only placeable in the V2 editor and the presign route only
+  // serves V2 templates, so a V1 value can't have come from a real upload.
+  if (internalVersion !== 2) {
+    throw new AppError(AppErrorCode.INVALID_REQUEST, {
+      message: 'File uploads are only supported on version 2 templates',
+    });
+  }
+
+  const upload = parseFileUploadCustomText(value);
+
+  if (!upload) {
+    throw new AppError(AppErrorCode.INVALID_BODY, {
+      message: 'Invalid file upload value',
+    });
+  }
+
+  if (
+    !isFieldFileUploadTmpKeyOwnedBy({
+      key: upload.key,
+      envelopeId: templateField.envelopeId,
+      fieldId: templateField.id,
+    })
+  ) {
+    throw new AppError(AppErrorCode.INVALID_BODY, {
+      message: 'Uploaded file does not belong to this field',
+    });
+  }
+
+  return upload;
 };
 
 type CreatedDirectRecipientField = {
@@ -249,21 +308,8 @@ export const createDocumentFromDirectTemplate = async ({
   });
 
   const createDirectRecipientFieldArgs = await Promise.all(
-    fieldsToProcess.map(async (templateField) => {
+    fieldsToProcess.map(async (templateField): Promise<DirectRecipientFieldArgs> => {
       const signedFieldValue = signedFieldValues.find((value) => value.fieldId === templateField.id);
-
-      // FILE_UPLOAD values must go through `finalizeFieldFileUpload` (S3 key
-      // validation, immutable-key finalization, tmp-object cleanup) before
-      // they can be trusted as `customText`. Direct templates have no upload
-      // dialog wired up to produce that finalized value, so a client-supplied
-      // value here would be stored verbatim -- reject it instead of trusting
-      // it, mirroring the same interim guard already applied to the v1 API
-      // create/update paths for this field type.
-      if (templateField.type === FieldType.FILE_UPLOAD && signedFieldValue) {
-        throw new AppError(AppErrorCode.INVALID_REQUEST, {
-          message: 'FILE_UPLOAD fields are not supported in direct templates yet',
-        });
-      }
 
       if (
         isRequiredField(templateField) &&
@@ -321,6 +367,27 @@ export const createDocumentFromDirectTemplate = async ({
 
       const { value, isBase64 } = signedFieldValue;
 
+      // A FILE_UPLOAD value is the client's claim about a tmp object it PUT via
+      // `presignDirectTemplateFieldFileUpload`; it is never persisted as-is.
+      // Only the key's ownership is checked here (pure, no I/O). The object
+      // itself is verified and copied to an immutable key by
+      // `finalizeFieldFileUpload` just before the transaction below.
+      if (templateField.type === FieldType.FILE_UPLOAD && value) {
+        const pendingFileUpload = parseDirectTemplateFileUpload({
+          value,
+          templateField,
+          internalVersion: directTemplateEnvelope.internalVersion,
+        });
+
+        return {
+          templateField,
+          customText: '',
+          derivedRecipientActionAuth,
+          signature: null,
+          pendingFileUpload,
+        };
+      }
+
       const isSignatureField =
         templateField.type === FieldType.SIGNATURE || templateField.type === FieldType.FREE_SIGNATURE;
 
@@ -360,11 +427,65 @@ export const createDocumentFromDirectTemplate = async ({
 
   const initialRequestTime = new Date();
 
+  // Generated here, not inside the transaction, so FILE_UPLOAD finals can be
+  // keyed under the new envelope before it exists.
+  const newEnvelopeId = prefixedId('envelope');
+
+  // Final keys written by `finalizeFieldFileUpload`. S3 writes don't roll back
+  // with the transaction, so any failure from here on deletes them.
+  const finalizedFileUploadKeys: string[] = [];
+
+  const deleteFinalizedFileUploads = async (err: unknown): Promise<never> => {
+    await Promise.all(finalizedFileUploadKeys.map(async (key) => deleteS3File(key).catch(() => undefined)));
+
+    throw err;
+  };
+
+  // Finalize every FILE_UPLOAD value BEFORE the transaction: each call is
+  // several sequential S3 round-trips (HEAD, a copy of up to 15MB, HEAD,
+  // ranged GET, DELETE), which must not run while the transaction holds DB
+  // locks or eat into its timeout. The transaction then only writes the
+  // resulting customText. Sequential, not in parallel, so every finalized key
+  // is recorded before anything else can fail. The final key is
+  // `<newEnvelopeId>/<templateFieldId>/…`: the new field's id doesn't exist
+  // yet, and the fieldId segment is naming only (downloads read the key stored
+  // in customText).
+  try {
+    for (const [index, fieldArgs] of directTemplateNonSignatureFields.entries()) {
+      const { pendingFileUpload, templateField } = fieldArgs;
+
+      if (!pendingFileUpload) {
+        continue;
+      }
+
+      const customText = await finalizeFieldFileUpload({
+        tmpKey: pendingFileUpload.key,
+        fileName: pendingFileUpload.fileName,
+        envelopeId: newEnvelopeId,
+        fieldId: templateField.id,
+        claimedSize: pendingFileUpload.size,
+        claimedMimeType: pendingFileUpload.mimeType,
+      });
+
+      const finalizedUpload = parseFileUploadCustomText(customText);
+
+      if (finalizedUpload) {
+        finalizedFileUploadKeys.push(finalizedUpload.key);
+      }
+
+      directTemplateNonSignatureFields[index] = { ...fieldArgs, customText, pendingFileUpload: undefined };
+    }
+  } catch (err) {
+    await deleteFinalizedFileUploads(err);
+  }
+
   // Key = original envelope item ID
   // Value = duplicated envelope item ID.
   const oldEnvelopeItemToNewEnvelopeItemIdMap: Record<string, string> = {};
 
-  // Duplicate the envelope item data.
+  // Duplicate the envelope item data. Runs after finalization so a rejected
+  // upload doesn't leave orphaned documentData/documentMeta rows behind; a
+  // failure here still deletes the finalized copies.
   const envelopeItemsToCreate = await Promise.all(
     directTemplateEnvelope.envelopeItems.map(async (item, i) => {
       const buffer = await getFileServerSide(item.documentData);
@@ -388,20 +509,22 @@ export const createDocumentFromDirectTemplate = async ({
         order: item.order !== undefined ? item.order : i + 1,
       };
     }),
-  );
+  ).catch(deleteFinalizedFileUploads);
 
-  const documentMeta = await prisma.documentMeta.create({
-    data: derivedDocumentMeta,
-  });
+  const documentMeta = await prisma.documentMeta
+    .create({
+      data: derivedDocumentMeta,
+    })
+    .catch(deleteFinalizedFileUploads);
 
-  const incrementedDocumentId = await incrementDocumentId();
+  const incrementedDocumentId = await incrementDocumentId().catch(deleteFinalizedFileUploads);
 
-  const { createdEnvelope, recipientId, token } = await prisma.$transaction(
+  const transaction = prisma.$transaction(
     async (tx) => {
       // Create the envelope and non direct template recipients.
       const createdEnvelope = await tx.envelope.create({
         data: {
-          id: prefixedId('envelope'),
+          id: newEnvelopeId,
           secondaryId: incrementedDocumentId.formattedDocumentId,
           type: EnvelopeType.DOCUMENT,
           internalVersion: directTemplateEnvelope.internalVersion,
@@ -875,6 +998,8 @@ export const createDocumentFromDirectTemplate = async ({
     // Per-field creates + condition remap; see set-fields-for-document.ts.
     { maxWait: 10_000, timeout: 30_000 },
   );
+
+  const { createdEnvelope, recipientId, token } = await transaction.catch(deleteFinalizedFileUploads);
 
   const emailSettings = extractDerivedDocumentEmailSettings(documentMeta);
 

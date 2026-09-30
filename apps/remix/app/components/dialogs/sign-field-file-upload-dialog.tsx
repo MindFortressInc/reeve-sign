@@ -1,4 +1,4 @@
-import { AppError } from '@documenso/lib/errors/app-error';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import {
   FIELD_FILE_UPLOAD_ALLOWED_MIME_TYPES,
   FIELD_FILE_UPLOAD_SIZE_LIMIT_MB,
@@ -20,6 +20,12 @@ import { createCallable } from 'react-call';
 export type SignFieldFileUploadDialogProps = {
   token: string;
   fieldId: number;
+  /**
+   * Set on a direct-template (public link) signing page. There is no signing
+   * recipient yet, so the upload is authorized by the link token instead of
+   * `token`.
+   */
+  directTemplateToken?: string;
 };
 
 export type SignFieldFileUploadResult = {
@@ -34,13 +40,25 @@ const ALLOWED_MIME_TYPES: readonly string[] = FIELD_FILE_UPLOAD_ALLOWED_MIME_TYP
 export const SignFieldFileUploadDialog = createCallable<
   SignFieldFileUploadDialogProps,
   SignFieldFileUploadResult | null
->(({ call, token, fieldId }) => {
+>(({ call, token, fieldId, directTemplateToken }) => {
   const { t } = useLingui();
 
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const { mutateAsync: presignFileUpload } = trpc.envelope.field.presignFileUpload.useMutation();
+  const { mutateAsync: presignRecipientFileUpload } = trpc.envelope.field.presignFileUpload.useMutation();
+  const { mutateAsync: presignDirectTemplateFileUpload } =
+    trpc.template.presignDirectTemplateFieldFileUpload.useMutation();
+
+  const presignFileUpload = async (file: File) => {
+    const upload = { fieldId, fileName: file.name, contentType: file.type, fileSize: file.size };
+
+    if (directTemplateToken) {
+      return await presignDirectTemplateFileUpload({ directTemplateToken, ...upload });
+    }
+
+    return await presignRecipientFileUpload({ token, ...upload });
+  };
 
   const onFileSelected = async (file: File | undefined) => {
     if (!file) {
@@ -67,13 +85,7 @@ export const SignFieldFileUploadDialog = createCallable<
     setIsUploading(true);
 
     try {
-      const { key, url } = await presignFileUpload({
-        token,
-        fieldId,
-        fileName: file.name,
-        contentType: file.type,
-        fileSize: file.size,
-      });
+      const { key, url } = await presignFileUpload(file);
 
       const response = await fetch(url, {
         method: 'PUT',
@@ -90,6 +102,15 @@ export const SignFieldFileUploadDialog = createCallable<
       const error = AppError.parseError(err);
 
       console.error(error);
+
+      // Uploads are rate limited (per IP and, on a direct-template link, per
+      // link). "Please try again" would send the visitor straight back into
+      // the same limit, so tell them to wait instead.
+      if (error.code === AppErrorCode.TOO_MANY_REQUESTS) {
+        setError(t`Too many uploads in a short time. Please wait a while before trying again.`);
+        return;
+      }
+
       setError(error.userMessage || t`Something went wrong while uploading your file. Please try again.`);
     } finally {
       setIsUploading(false);

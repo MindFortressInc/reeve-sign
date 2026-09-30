@@ -34,6 +34,7 @@ import { DocumentDataType, EnvelopeType } from '@prisma/client';
 import { ZGenericSuccessResponse, ZSuccessResponseSchema } from '../schema';
 import { authenticatedProcedure, maybeAuthenticatedProcedure, router } from '../trpc';
 import { getTemplatesByIdsRoute } from './get-templates-by-ids';
+import { presignDirectTemplateFieldFileUploadRoute } from './presign-direct-template-field-file-upload';
 import {
   ZBulkSendTemplateMutationSchema,
   ZCreateDocumentFromDirectTemplateRequestSchema,
@@ -683,6 +684,13 @@ export const templateRouter = router({
         requestMetadata: ctx.metadata,
       });
     }),
+
+  /**
+   * Mints a FILE_UPLOAD presigned PUT for a direct-link visitor.
+   *
+   * @private
+   */
+  presignDirectTemplateFieldFileUpload: presignDirectTemplateFieldFileUploadRoute,
 
   /**
    * @public
