@@ -5,7 +5,6 @@ import { formatter } from '@lingui/format-po';
 const config: LinguiConfig = {
   sourceLocale: APP_I18N_OPTIONS.sourceLang,
   locales: APP_I18N_OPTIONS.supportedLangs as unknown as string[],
-  // Any changes to these catalogue paths should be reflected in crowdin.yml
   catalogs: [
     {
       path: '<rootDir>/packages/lib/translations/{locale}/web',
