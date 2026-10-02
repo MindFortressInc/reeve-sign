@@ -13,7 +13,12 @@ type File = {
   arrayBuffer: () => Promise<ArrayBuffer>;
 };
 
-export const putPdfFile = async (file: File) => {
+/**
+ * Uploads a PDF through `/api/files/upload-pdf`, which needs a session or,
+ * from the embedded authoring iframe (no session cookie), the embedding
+ * presign token as `presignToken` (DEV-12801).
+ */
+export const putPdfFile = async (file: File, options: { presignToken?: string } = {}) => {
   const formData = new FormData();
 
   // Create a proper File object from the data
@@ -25,6 +30,7 @@ export const putPdfFile = async (file: File) => {
 
   const response = await fetch('/api/files/upload-pdf', {
     method: 'POST',
+    headers: options.presignToken ? { Authorization: `Bearer ${options.presignToken}` } : undefined,
     body: formData,
   });
 
@@ -63,6 +69,8 @@ const putFileInDatabase = async (file: File) => {
 };
 
 const putFileInS3 = async (file: File) => {
+  const body = await file.arrayBuffer();
+
   const getPresignedUrlResponse = await fetch(`${NEXT_PUBLIC_WEBAPP_URL()}/api/files/presigned-post-url`, {
     method: 'POST',
     headers: {
@@ -71,6 +79,8 @@ const putFileInS3 = async (file: File) => {
     body: JSON.stringify({
       fileName: file.name,
       contentType: file.type,
+      // The presigned PUT is signed for exactly this many bytes (DEV-12801).
+      fileSize: body.byteLength,
     }),
   });
 
@@ -79,8 +89,6 @@ const putFileInS3 = async (file: File) => {
   }
 
   const { url, key }: TGetPresignedPostUrlResponse = await getPresignedUrlResponse.json();
-
-  const body = await file.arrayBuffer();
 
   const reponse = await fetch(url, {
     method: 'PUT',

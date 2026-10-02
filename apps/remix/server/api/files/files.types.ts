@@ -16,6 +16,9 @@ export type TUploadPdfResponse = z.infer<typeof ZUploadPdfResponseSchema>;
 export const ZGetPresignedPostUrlRequestSchema = z.object({
   fileName: z.string().min(1),
   contentType: z.string().min(1),
+  // Bound into the presigned PUT's signature, so the upload must be exactly
+  // this many bytes (DEV-12801).
+  fileSize: z.number().int().positive(),
 });
 
 export const ZGetPresignedPostUrlResponseSchema = z.object({
