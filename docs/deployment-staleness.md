@@ -147,7 +147,8 @@ the box as a tarball, never via a registry pull.
    **Retention rule for `ghcr.io/mindfortressinc/reeve-sign` on the box:**
    keep the running `sha-*` tag and the two most recent previous `sha-*`
    tags. These are the rollback targets. Remove every other tag, including
-   the moving `:dev` tag that `docker load` lands. Never use
+   the moving `:dev` tag. `docker load` lands `:dev` whenever the tarball
+   was exported with `tag=dev`. Never use
    `docker system prune -a`, `--volumes`, `rmi -f`, or `docker image prune`.
    `docker image prune` is host-wide and can delete another service's
    untagged rollback image. Never remove images that belong to other
