@@ -126,6 +126,33 @@ the box as a tarball, never via a registry pull.
    DEV-9526 lands — step 5's pre-load check is the integrity gate that
    actually works today.
 
+9. **Reclaim disk (DEV-11112)** — only after step 8 and a green
+   `/api/health` smoke. `reeve-ec2` is shared with reeve-services and other
+   containers, and every reeve-sign image is ~3.9 GB. Without this step each
+   deploy adds one image and none are ever removed (the root fs reached 96%
+   on 2026-09-09).
+
+   ```bash
+   # 1. The transferred tarball (keep the .digests record).
+   rm -f ~/reeve-sign-image.tar.gz
+   # 2. Build cache. The box builds nothing, so this is never load-bearing.
+   docker builder prune -af
+   # 3. reeve-sign sha tags outside the retention rule below. Plain `rmi`
+   #    (no -f) refuses any image a container still uses.
+   docker images ghcr.io/mindfortressinc/reeve-sign --format '{{.Tag}}'
+   docker rmi ghcr.io/mindfortressinc/reeve-sign:<old-tag> ...
+   # 4. Dangling layers only.
+   docker image prune -f
+   df -h /
+   ```
+
+   **Retention rule for `ghcr.io/mindfortressinc/reeve-sign` on the box:**
+   keep the running `sha-*` tag and the two most recent previous `sha-*`
+   tags. These are the rollback targets. Remove every other tag, including
+   the moving `:dev` tag that `docker load` lands. Never use
+   `docker system prune -a`, `--volumes`, or `rmi -f`, and never remove
+   images that belong to other services on this box.
+
 ## Digest pinning (DEV-7600)
 
 Tags are strings and can move; the drift assertion must compare **digests**.
