@@ -141,8 +141,6 @@ the box as a tarball, never via a registry pull.
    #    (no -f) refuses any image a container still uses.
    docker images ghcr.io/mindfortressinc/reeve-sign --format '{{.Tag}}'
    docker rmi ghcr.io/mindfortressinc/reeve-sign:<old-tag> ...
-   # 4. Dangling layers only.
-   docker image prune -f
    df -h /
    ```
 
@@ -150,8 +148,10 @@ the box as a tarball, never via a registry pull.
    keep the running `sha-*` tag and the two most recent previous `sha-*`
    tags. These are the rollback targets. Remove every other tag, including
    the moving `:dev` tag that `docker load` lands. Never use
-   `docker system prune -a`, `--volumes`, or `rmi -f`, and never remove
-   images that belong to other services on this box.
+   `docker system prune -a`, `--volumes`, `rmi -f`, or `docker image prune`.
+   `docker image prune` is host-wide and can delete another service's
+   untagged rollback image. Never remove images that belong to other
+   services on this box.
 
 ## Digest pinning (DEV-7600)
 
