@@ -97,7 +97,22 @@ const signPutObjectCommand = async (
   return { key, url };
 };
 
-export const getPresignPostUrl = async (fileName: string, contentType: string, userId?: number) => {
+/**
+ * Mints a presigned PUT under a generated key (prefixed with `userId` when
+ * given).
+ *
+ * Pass `contentLength` whenever the size is known up front (the browser
+ * upload route always does, DEV-12801). It is bound into the signature, so
+ * the store rejects any other body size, and the URL then lives 10 minutes
+ * instead of an hour. Without it the URL accepts any size for an hour; only
+ * the authenticated server-side API presigns still rely on that.
+ */
+export const getPresignPostUrl = async (
+  fileName: string,
+  contentType: string,
+  userId?: number,
+  contentLength?: number,
+) => {
   // Get the basename and extension for the file
   const { name, ext } = path.parse(fileName);
 
@@ -118,6 +133,10 @@ export const getPresignPostUrl = async (fileName: string, contentType: string, u
 
   if (userId) {
     key = `${userId}/${key}`;
+  }
+
+  if (contentLength !== undefined) {
+    return signPutObjectCommand(key, contentType, contentLength, 10 * ONE_MINUTE);
   }
 
   return signPutObjectCommand(key, contentType);

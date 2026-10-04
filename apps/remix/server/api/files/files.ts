@@ -8,6 +8,7 @@ import { prisma } from '@documenso/prisma';
 import { sValidator } from '@hono/standard-validator';
 import type { Prisma } from '@prisma/client';
 import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
 
 import type { HonoEnv } from '../../router';
 import { checkEnvelopeFileAccess, handleEnvelopeItemFileRequest } from './files.helpers';
@@ -24,23 +25,74 @@ import {
 import getEnvelopeItemPdfRoute from './routes/get-envelope-item-pdf';
 import getEnvelopeItemPdfByTokenRoute from './routes/get-envelope-item-pdf-by-token';
 
+// Convert MB to bytes (1 MB = 1024 * 1024 bytes)
+const MAX_FILE_SIZE = APP_DOCUMENT_UPLOAD_SIZE_LIMIT * 1024 * 1024;
+
+type UploaderEnv = HonoEnv & { Variables: HonoEnv['Variables'] & { uploaderUserId: number } };
+
+const getBearerToken = (authorization: string | undefined) => {
+  const [token] = (authorization || '').split('Bearer ').filter((s) => s.length > 0);
+
+  return token;
+};
+
+/**
+ * Both upload routes write into the prod bucket, so they run only for a
+ * signed-in user (DEV-12801). These run BEFORE body validation: an anonymous
+ * caller gets 401 without the server ever buffering its body.
+ */
+const requireSessionUser = createMiddleware<UploaderEnv>(async (c, next) => {
+  const session = await getOptionalSession(c);
+
+  if (!session.user) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  c.set('uploaderUserId', session.user.id);
+
+  await next();
+});
+
+/**
+ * Like `requireSessionUser`, but also admits a valid embedding presign token
+ * as `Authorization: Bearer`. The embedded V1 authoring iframe (Reeve's
+ * sign-embed app) uploads its PDF here from a third-party frame with no
+ * session cookie; the token is the same one its tRPC calls carry.
+ */
+const requireSessionUserOrEmbedToken = createMiddleware<UploaderEnv>(async (c, next) => {
+  const session = await getOptionalSession(c);
+
+  let userId = session.user?.id;
+
+  const presignToken = userId ? undefined : getBearerToken(c.req.header('authorization'));
+
+  if (presignToken) {
+    const apiToken = await verifyEmbeddingPresignToken({ token: presignToken }).catch(() => undefined);
+
+    userId = apiToken?.userId ?? undefined;
+  }
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  c.set('uploaderUserId', userId);
+
+  await next();
+});
+
 export const filesRoute = new Hono<HonoEnv>()
   /**
    * Uploads a document file to the appropriate storage location and creates
    * a document data record.
    */
-  .post('/upload-pdf', sValidator('form', ZUploadPdfRequestSchema), async (c) => {
+  .post('/upload-pdf', requireSessionUserOrEmbedToken, sValidator('form', ZUploadPdfRequestSchema), async (c) => {
     try {
       const { file } = c.req.valid('form');
 
       if (!file) {
         return c.json({ error: 'No file provided' }, 400);
       }
-
-      // Todo: (RR7) This is new.
-      // Add file size validation.
-      // Convert MB to bytes (1 MB = 1024 * 1024 bytes)
-      const MAX_FILE_SIZE = APP_DOCUMENT_UPLOAD_SIZE_LIMIT * 1024 * 1024;
 
       if (file.size > MAX_FILE_SIZE) {
         return c.json({ error: 'File too large' }, 400);
@@ -54,11 +106,17 @@ export const filesRoute = new Hono<HonoEnv>()
       return c.json({ error: 'Upload failed' }, 500);
     }
   })
-  .post('/presigned-post-url', sValidator('json', ZGetPresignedPostUrlRequestSchema), async (c) => {
-    const { fileName, contentType } = c.req.valid('json');
+  .post('/presigned-post-url', requireSessionUser, sValidator('json', ZGetPresignedPostUrlRequestSchema), async (c) => {
+    const { fileName, contentType, fileSize } = c.req.valid('json');
+
+    if (fileSize > MAX_FILE_SIZE) {
+      return c.json({ error: 'File too large' }, 400);
+    }
 
     try {
-      const { key, url } = await getPresignPostUrl(fileName, contentType);
+      // Size-bound (signed Content-Length, 10 minute TTL) and keyed under the
+      // uploader's id.
+      const { key, url } = await getPresignPostUrl(fileName, contentType, c.get('uploaderUserId'), fileSize);
 
       return c.json({ key, url } satisfies TGetPresignedPostUrlResponse);
     } catch (err) {

@@ -2,7 +2,6 @@ import {
   type TBaseEmbedAuthoringSchema,
   ZBaseEmbedAuthoringSchema,
 } from '@documenso/lib/types/embed-authoring-base-schema';
-import { putPdfFile } from '@documenso/lib/universal/upload/put-file';
 import { trpc } from '@documenso/trpc/react';
 import { Stepper } from '@documenso/ui/primitives/stepper';
 import { useToast } from '@documenso/ui/primitives/use-toast';
@@ -15,6 +14,7 @@ import { ConfigureDocumentView } from '~/components/embed/authoring/configure-do
 import type { TConfigureEmbedFormSchema } from '~/components/embed/authoring/configure-document-view.types';
 import { ConfigureFieldsView } from '~/components/embed/authoring/configure-fields-view';
 import type { TConfigureFieldsFormSchema } from '~/components/embed/authoring/configure-fields-view.types';
+import { uploadEmbedAuthoringPdf } from '~/utils/embed-authoring-upload';
 
 export default function EmbeddingAuthoringTemplateCreatePage() {
   const { _ } = useLingui();
@@ -55,7 +55,7 @@ export default function EmbeddingAuthoringTemplateCreatePage() {
 
       const fields = data.fields;
 
-      const documentData = await putPdfFile({
+      const documentData = await uploadEmbedAuthoringPdf({
         arrayBuffer: async () => Promise.resolve(configuration.documentData!.data.buffer),
         name: configuration.documentData.name,
         type: configuration.documentData.type,
