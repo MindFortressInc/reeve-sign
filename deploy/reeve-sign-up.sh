@@ -36,6 +36,11 @@ die() { log "ABORT: $*; not running up -d, containers keep their current env"; e
 
 [ -r "$ENV_FILE" ] || die "cannot read $ENV_FILE"
 flag="$(sed -n 's/^REEVE_SECRETS_ENABLED=//p' "$ENV_FILE" | tail -n1)"
+flag="${flag%$'\r'}"
+# Compose reads REEVE_SECRETS_ENABLED="1" / '1' as 1; strip only matching outer quotes.
+case "$flag" in
+  \"*\" | \'*\') flag="${flag:1:${#flag}-2}" ;;
+esac
 args=(--env-file "$ENV_FILE")
 
 if [ "$flag" = 1 ]; then
