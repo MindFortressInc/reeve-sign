@@ -37,10 +37,28 @@ image   = "ghcr.io/mindfortressinc/reeve-sign"
 # compose.yml pins an explicit top-level `name:`, but matching the existing
 # script's invocation keeps there being exactly one way this box runs
 # compose, not two equivalent-but-different ones.
+#
+# DEV-14025 (Reeve.Secrets 4/6): compose is never run bare any more.
+# deploy/reeve-sign-up.sh is the `up -d`: it layers the Secrets Manager render
+# (/run/reeve-secrets/reeve-sign.env) over .env as a second --env-file once
+# REEVE_SECRETS_ENABLED=1 is in the box .env, and aborts before `up -d` if
+# that render fails. Inert (plain .env) without the flag.
 [[config]]
 repo   = "deploy/compose.yml"
 box    = "/home/ubuntu/reeve-sign/compose.yml"
-reload = "docker compose --project-directory /home/ubuntu/reeve-sign up -d"
+reload = "bash /home/ubuntu/reeve-sign/reeve-sign-up.sh"
+
+[[config]]
+repo   = "deploy/reeve-sign-up.sh"
+box    = "/home/ubuntu/reeve-sign/reeve-sign-up.sh"
+reload = "bash /home/ubuntu/reeve-sign/reeve-sign-up.sh"
+
+# The renderer runs as ubuntu and cannot mkdir in /run; this creates
+# /run/reeve-secrets (0700 ubuntu) at every boot.
+[[config]]
+repo   = "deploy/tmpfiles.d/reeve-sign-secrets.conf"
+box    = "/etc/tmpfiles.d/reeve-sign-secrets.conf"
+reload = "systemd-tmpfiles --create /etc/tmpfiles.d/reeve-sign-secrets.conf"
 
 # deploy/README.md: "The nginx filename mismatch is intentional and
 # permanent" — the box's live site file is named `sign-meetreeve`, no
