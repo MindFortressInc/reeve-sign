@@ -111,8 +111,10 @@ docker compose --project-directory /home/ubuntu/reeve-sign \
   `manifest/reeve-sign.json` absent, the renderer's disabled path assumes
   service `reeve-services` and deletes *that* service's live render.
 
-Cutover: add `REEVE_SECRETS_ENABLED=1` to `.env`, then run the script. Rollback:
-delete that line, then run the script again.
+Cutover. Prerequisites: reeve-services#5987 is deployed (the box has
+`deploy/secrets/manifest/reeve-sign.json`), the bundle is seeded, and the
+instance role can read it. Then add `REEVE_SECRETS_ENABLED=1` to `.env` and run
+the script. Rollback: delete that line, then run the script again.
 
 ## The failure mode this exists to kill
 
