@@ -45,10 +45,17 @@ while IFS= read -r line || [ -n "$line" ]; do
   if [[ $line =~ $flag_re ]]; then flag="${BASH_REMATCH[2]}"; fi
 done < "$ENV_FILE"
 dq_re='^"([^"]*)"' sq_re="^'([^']*)'"
-if [[ $flag =~ $dq_re || $flag =~ $sq_re ]]; then
+if [[ $flag =~ $sq_re ]]; then
   flag="${BASH_REMATCH[1]}"
 else
-  flag="$(printf '%s' "$flag" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//')"
+  if [[ $flag =~ $dq_re ]]; then
+    flag="${BASH_REMATCH[1]}"
+  else
+    flag="$(printf '%s' "$flag" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//')"
+  fi
+  # Compose interpolates unquoted and double-quoted values (`${ROLLOUT:-1}`);
+  # this parser cannot, so refuse rather than guess the flag's value.
+  [[ $flag != *'$'* ]] || die "REEVE_SECRETS_ENABLED='$flag' uses compose interpolation; set a literal value"
 fi
 args=(--env-file "$ENV_FILE")
 
