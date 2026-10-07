@@ -79,4 +79,6 @@ else
   log "REEVE_SECRETS_ENABLED is '$flag', not 1; .env only"
 fi
 
-exec docker compose --project-directory "$SIGN_DIR" "${args[@]}" up -d "$@"
+# `-f` too: an inherited or .env-set COMPOSE_FILE would otherwise pick the file.
+exec docker compose --project-directory "$SIGN_DIR" -f "$SIGN_DIR/compose.yml" \
+  "${args[@]}" up -d "$@"

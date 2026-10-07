@@ -86,6 +86,7 @@ script layers that bundle over `.env` as a second `--env-file`:
 
 ```
 docker compose --project-directory /home/ubuntu/reeve-sign \
+  -f /home/ubuntu/reeve-sign/compose.yml \
   --env-file /home/ubuntu/reeve-sign/.env \
   --env-file /run/reeve-secrets/reeve-sign.env up -d     # later file wins
 ```
