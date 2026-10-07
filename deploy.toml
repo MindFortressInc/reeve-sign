@@ -32,6 +32,22 @@ image   = "ghcr.io/mindfortressinc/reeve-sign"
 
 # --- [[config]] — repo -> box path mapping, byte-matched to deploy/README.md's table ---
 
+# Listed in apply order: a first deploy, applied mapping by mapping, must
+# install the tmpfiles rule and the wrapper before compose.yml's reload
+# invokes that wrapper.
+#
+# The renderer runs as ubuntu and cannot mkdir in /run; this creates
+# /run/reeve-secrets (0700 ubuntu) at every boot.
+[[config]]
+repo   = "deploy/tmpfiles.d/reeve-sign-secrets.conf"
+box    = "/etc/tmpfiles.d/reeve-sign-secrets.conf"
+reload = "systemd-tmpfiles --create /etc/tmpfiles.d/reeve-sign-secrets.conf"
+
+[[config]]
+repo   = "deploy/reeve-sign-up.sh"
+box    = "/home/ubuntu/reeve-sign/reeve-sign-up.sh"
+reload = "bash /home/ubuntu/reeve-sign/reeve-sign-up.sh"
+
 # `--project-directory`, not `-f`, matching deploy/check-image-drift.sh's
 # own BOX_COMPOSE_DIR convention (:48,:94) — both work here since
 # compose.yml pins an explicit top-level `name:`, but matching the existing
@@ -47,18 +63,6 @@ image   = "ghcr.io/mindfortressinc/reeve-sign"
 repo   = "deploy/compose.yml"
 box    = "/home/ubuntu/reeve-sign/compose.yml"
 reload = "bash /home/ubuntu/reeve-sign/reeve-sign-up.sh"
-
-[[config]]
-repo   = "deploy/reeve-sign-up.sh"
-box    = "/home/ubuntu/reeve-sign/reeve-sign-up.sh"
-reload = "bash /home/ubuntu/reeve-sign/reeve-sign-up.sh"
-
-# The renderer runs as ubuntu and cannot mkdir in /run; this creates
-# /run/reeve-secrets (0700 ubuntu) at every boot.
-[[config]]
-repo   = "deploy/tmpfiles.d/reeve-sign-secrets.conf"
-box    = "/etc/tmpfiles.d/reeve-sign-secrets.conf"
-reload = "systemd-tmpfiles --create /etc/tmpfiles.d/reeve-sign-secrets.conf"
 
 # deploy/README.md: "The nginx filename mismatch is intentional and
 # permanent" — the box's live site file is named `sign-meetreeve`, no

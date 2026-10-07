@@ -26,9 +26,9 @@ against T3/DEV-5836's schema). This PR (T5a) was repatriation only:
 
 | Repo path | Box path | Host |
 | --- | --- | --- |
-| `deploy/compose.yml` | `/home/ubuntu/reeve-sign/compose.yml` | `reeve-ec2` |
-| `deploy/reeve-sign-up.sh` | `/home/ubuntu/reeve-sign/reeve-sign-up.sh` | `reeve-ec2` |
 | `deploy/tmpfiles.d/reeve-sign-secrets.conf` | `/etc/tmpfiles.d/reeve-sign-secrets.conf` | `reeve-ec2` |
+| `deploy/reeve-sign-up.sh` | `/home/ubuntu/reeve-sign/reeve-sign-up.sh` | `reeve-ec2` |
+| `deploy/compose.yml` | `/home/ubuntu/reeve-sign/compose.yml` | `reeve-ec2` |
 | `deploy/nginx/sign.meetreeve.com.conf` | `/etc/nginx/sites-available/sign-meetreeve` (symlinked from `/etc/nginx/sites-enabled/sign-meetreeve`) | `reeve-ec2` |
 
 The nginx filename mismatch is **intentional and permanent**: the box's
