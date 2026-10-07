@@ -32,15 +32,38 @@ image   = "ghcr.io/mindfortressinc/reeve-sign"
 
 # --- [[config]] — repo -> box path mapping, byte-matched to deploy/README.md's table ---
 
-# `--project-directory`, not `-f`, matching deploy/check-image-drift.sh's
-# own BOX_COMPOSE_DIR convention (:48,:94) — both work here since
-# compose.yml pins an explicit top-level `name:`, but matching the existing
-# script's invocation keeps there being exactly one way this box runs
-# compose, not two equivalent-but-different ones.
+# Listed in apply order: a first deploy, applied mapping by mapping, must
+# install the tmpfiles rule and the wrapper before compose.yml's reload
+# invokes that wrapper.
+#
+# The renderer runs as ubuntu and cannot mkdir in /run; this creates
+# /run/reeve-secrets (0700 ubuntu) at every boot.
+[[config]]
+repo   = "deploy/tmpfiles.d/reeve-sign-secrets.conf"
+box    = "/etc/tmpfiles.d/reeve-sign-secrets.conf"
+reload = "systemd-tmpfiles --create /etc/tmpfiles.d/reeve-sign-secrets.conf"
+
+# Guarded: on a first deploy compose.yml is not on the box yet, so `up -d`
+# would fail; the compose mapping below runs the wrapper once it lands.
+[[config]]
+repo   = "deploy/reeve-sign-up.sh"
+box    = "/home/ubuntu/reeve-sign/reeve-sign-up.sh"
+reload = "if [ -f /home/ubuntu/reeve-sign/compose.yml ]; then bash /home/ubuntu/reeve-sign/reeve-sign-up.sh; fi"
+
+# `--project-directory`, matching deploy/check-image-drift.sh's own
+# BOX_COMPOSE_DIR convention (:48,:94); compose.yml pins an explicit
+# top-level `name:`. The wrapper also passes `-f .../compose.yml` so an
+# inherited or .env-set COMPOSE_FILE cannot redirect `up -d` to another file.
+#
+# DEV-14025 (Reeve.Secrets 4/6): compose is never run bare any more.
+# deploy/reeve-sign-up.sh is the `up -d`: it layers the Secrets Manager render
+# (/run/reeve-secrets/reeve-sign.env) over .env as a second --env-file once
+# REEVE_SECRETS_ENABLED=1 is in the box .env, and aborts before `up -d` if
+# that render fails. Inert (plain .env) without the flag.
 [[config]]
 repo   = "deploy/compose.yml"
 box    = "/home/ubuntu/reeve-sign/compose.yml"
-reload = "docker compose --project-directory /home/ubuntu/reeve-sign up -d"
+reload = "bash /home/ubuntu/reeve-sign/reeve-sign-up.sh"
 
 # deploy/README.md: "The nginx filename mismatch is intentional and
 # permanent" — the box's live site file is named `sign-meetreeve`, no

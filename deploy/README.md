@@ -26,6 +26,8 @@ against T3/DEV-5836's schema). This PR (T5a) was repatriation only:
 
 | Repo path | Box path | Host |
 | --- | --- | --- |
+| `deploy/tmpfiles.d/reeve-sign-secrets.conf` | `/etc/tmpfiles.d/reeve-sign-secrets.conf` | `reeve-ec2` |
+| `deploy/reeve-sign-up.sh` | `/home/ubuntu/reeve-sign/reeve-sign-up.sh` | `reeve-ec2` |
 | `deploy/compose.yml` | `/home/ubuntu/reeve-sign/compose.yml` | `reeve-ec2` |
 | `deploy/nginx/sign.meetreeve.com.conf` | `/etc/nginx/sites-available/sign-meetreeve` (symlinked from `/etc/nginx/sites-enabled/sign-meetreeve`) | `reeve-ec2` |
 
@@ -50,7 +52,7 @@ collector/evaluator in DEV-4419. Until then, verify by hand:
 ```
 
 This is a **read-only** diff: it SSHes in, `cat`s (and for the nginx file,
-`sudo cat`s) the two live files, and diffs them against the committed
+`sudo cat`s) the live files in the table above, and diffs them against the committed
 copies. It writes nothing to the box — no `docker`, no `nginx -s reload`,
 no file writes — and exits non-zero the moment either file differs. Run it
 after any box-side change, and before/after any deploy that touches these
@@ -66,6 +68,57 @@ vhost's cert paths and HTTP→HTTPS redirect — and fails if a future hand-edit
 ever pastes a literal secret value into either file instead of a `${VAR}`
 reference. That test runs in CI; `check-drift.sh` does not (it needs the
 box).
+
+## Running compose: always `reeve-sign-up.sh` (DEV-14025)
+
+Never run `docker compose ... up -d` by hand on the box, and never
+`docker compose restart`, which keeps a container's old env. Run:
+
+```console
+bash /home/ubuntu/reeve-sign/reeve-sign-up.sh            # both services
+bash /home/ubuntu/reeve-sign/reeve-sign-up.sh documenso  # extra args go to `up -d`
+```
+
+`compose.yml` reads every secret by `${VAR}` interpolation. Reeve.Secrets
+([DEV-14015](https://linear.app/mindfortress/issue/DEV-14015)) moves those
+values into the Secrets Manager bundle `reeve/platform/reeve-sign/prod`, so the
+script layers that bundle over `.env` as a second `--env-file`:
+
+```
+docker compose --project-directory /home/ubuntu/reeve-sign \
+  -f /home/ubuntu/reeve-sign/compose.yml \
+  --env-file /home/ubuntu/reeve-sign/.env \
+  --env-file /run/reeve-secrets/reeve-sign.env up -d     # later file wins
+```
+
+* **Flag off** (no `REEVE_SECRETS_ENABLED=1` line in `/home/ubuntu/reeve-sign/.env`,
+  the default): compose runs on `.env` alone, and any stale
+  `/run/reeve-secrets/reeve-sign.env` is deleted. This is today's behavior.
+* **Flag on** (`REEVE_SECRETS_ENABLED=1`, or any line compose's env-file reader
+  reads as `1`: quoted, `export`, ` # comment`): the script runs reeve-services'
+  `deploy/secrets/render-env.py --format compose` against
+  `manifest/reeve-sign.json` ([reeve-services#5987](https://github.com/MindFortressInc/reeve-services/pull/5987)),
+  writing the render to tmpfs at 0600. It **fails closed**: if the render dir is
+  missing, the render fails, or the render comes back empty, it exits 1 *before*
+  `up -d`, so the running containers keep their current env.
+  Rendered keys are unset from the invoking shell before `up -d`, since compose
+  lets the shell environment override every `--env-file`.
+* Why not `env_file:` in `compose.yml`? `environment: - X=${X}` overrides
+  `env_file:`, so `.env` would still win.
+* Why `--format compose`? The default systemd escaping corrupts backticks
+  under compose's `.env` parser.
+* `/run/reeve-secrets` is tmpfs and root-owned, and the ubuntu renderer can't
+  create it. `tmpfiles.d/reeve-sign-secrets.conf` recreates it, 0700 ubuntu,
+  at every boot. Docker restores a container's env on reboot, so the render
+  only has to exist when `up -d` runs.
+* The flag-off path deliberately does not call the renderer. With
+  `manifest/reeve-sign.json` absent, the renderer's disabled path assumes
+  service `reeve-services` and deletes *that* service's live render.
+
+Cutover. Prerequisites: reeve-services#5987 is deployed (the box has
+`deploy/secrets/manifest/reeve-sign.json`), the bundle is seeded, and the
+instance role can read it. Then add `REEVE_SECRETS_ENABLED=1` to `.env` and run
+the script. Rollback: delete that line, then run the script again.
 
 ## The failure mode this exists to kill
 
