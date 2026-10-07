@@ -93,12 +93,15 @@ docker compose --project-directory /home/ubuntu/reeve-sign \
 * **Flag off** (no `REEVE_SECRETS_ENABLED=1` line in `/home/ubuntu/reeve-sign/.env`,
   the default): compose runs on `.env` alone, and any stale
   `/run/reeve-secrets/reeve-sign.env` is deleted. This is today's behavior.
-* **Flag on** (`REEVE_SECRETS_ENABLED=1`, exactly): the script runs reeve-services'
+* **Flag on** (`REEVE_SECRETS_ENABLED=1`, or any line compose's env-file reader
+  reads as `1`: quoted, `export`, ` # comment`): the script runs reeve-services'
   `deploy/secrets/render-env.py --format compose` against
   `manifest/reeve-sign.json` ([reeve-services#5987](https://github.com/MindFortressInc/reeve-services/pull/5987)),
   writing the render to tmpfs at 0600. It **fails closed**: if the render dir is
   missing, the render fails, or the render comes back empty, it exits 1 *before*
   `up -d`, so the running containers keep their current env.
+  Rendered keys are unset from the invoking shell before `up -d`, since compose
+  lets the shell environment override every `--env-file`.
 * Why not `env_file:` in `compose.yml`? `environment: - X=${X}` overrides
   `env_file:`, so `.env` would still win.
 * Why `--format compose`? The default systemd escaping corrupts backticks
