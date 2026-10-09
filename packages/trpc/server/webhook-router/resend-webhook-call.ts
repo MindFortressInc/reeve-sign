@@ -47,6 +47,7 @@ export const resendWebhookCallRoute = authenticatedProcedure
         event: webhookCall.event,
         webhookId,
         data,
+        isResend: true,
       },
     });
   });

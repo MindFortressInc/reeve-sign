@@ -195,7 +195,9 @@ describe('v2 X-Reeve-Sign-On-Behalf-Of', () => {
     // The resolver only honours orgs owned by this system user.
     vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER.email);
     getApiTokenByTokenMock.mockResolvedValue({ id: 1, user: SYSTEM_USER, team: TEAM, teamId: TEAM.id });
-    createEnvelopeMock.mockImplementation(async ({ userId }: { userId: number }) => envelopeOwnedBy(userId));
+    createEnvelopeMock.mockImplementation(async ({ userId, ownerUserId }: { userId: number; ownerUserId?: number }) =>
+      envelopeOwnedBy(ownerUserId ?? userId),
+    );
     // template/use returns getDocumentWithDetailsById's full shape; these
     // tests only need to see who createDocumentFromTemplate was called for.
     createDocumentFromTemplateMock.mockRejectedValue(new AppError(AppErrorCode.NOT_FOUND, { message: 'stop here' }));
@@ -212,12 +214,15 @@ describe('v2 X-Reeve-Sign-On-Behalf-Of', () => {
   };
 
   describe('POST /api/v2/document/create', () => {
-    it('member -> the envelope is owned by that member', async () => {
+    it('member -> the envelope is owned by that member; the token user stays the actor', async () => {
       asMember();
 
       await callerWith({ [ON_BEHALF_OF]: MEMBER.email }).create(createInput() as never);
 
-      expect(createEnvelopeMock).toHaveBeenCalledWith(expect.objectContaining({ userId: MEMBER.id, teamId: TEAM.id }));
+      // DEV-12518: actor = token user (audit + lookups), owner = member.
+      expect(createEnvelopeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: SYSTEM_USER.id, ownerUserId: MEMBER.id, teamId: TEAM.id }),
+      );
     });
 
     it('non-member -> 403 and nothing is created', async () => {
@@ -233,21 +238,24 @@ describe('v2 X-Reeve-Sign-On-Behalf-Of', () => {
 
       expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
       expect(createEnvelopeMock).toHaveBeenCalledWith(expect.objectContaining({ userId: SYSTEM_USER.id }));
+      expect(createEnvelopeMock.mock.calls[0][0].ownerUserId).toBeUndefined();
     });
   });
 
   describe('POST /api/v2/template/use', () => {
     const useInput = { templateId: 5, recipients: [] };
 
-    it('member -> the envelope is created for that member', async () => {
+    it('member -> the template is looked up as the token user; the envelope is owned by the member', async () => {
       asMember();
 
       await callerWith({ [ON_BEHALF_OF]: MEMBER.email })
         .useTemplate(useInput)
         .catch(() => undefined);
 
+      // DEV-12518: the template lookup runs as `userId` (team ADMIN), so a
+      // MEMBER-invisible template no longer 404s; the member only owns it.
       expect(createDocumentFromTemplateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: MEMBER.id, teamId: TEAM.id }),
+        expect.objectContaining({ userId: SYSTEM_USER.id, ownerUserId: MEMBER.id, teamId: TEAM.id }),
       );
     });
 
@@ -265,6 +273,7 @@ describe('v2 X-Reeve-Sign-On-Behalf-Of', () => {
         .catch(() => undefined);
 
       expect(createDocumentFromTemplateMock).toHaveBeenCalledWith(expect.objectContaining({ userId: SYSTEM_USER.id }));
+      expect(createDocumentFromTemplateMock.mock.calls[0][0].ownerUserId).toBeUndefined();
     });
   });
 

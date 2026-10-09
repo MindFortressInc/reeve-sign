@@ -74,7 +74,10 @@ export const createDocumentRoute = authenticatedProcedure
     }
 
     const document = await createEnvelope({
-      userId: onBehalfOfUserId ?? user.id,
+      // DEV-12518: the token user acts (audited as the delegator); the
+      // on-behalf-of member owns the envelope.
+      userId: user.id,
+      ownerUserId: onBehalfOfUserId ?? undefined,
       teamId,
       internalVersion: 1,
       data: {
