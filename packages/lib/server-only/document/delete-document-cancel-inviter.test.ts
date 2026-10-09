@@ -100,4 +100,22 @@ describe('deleteDocument: the cancellation email names the envelope owner', () =
     expect(String(html)).toContain('Matt Rhodes');
     expect(`${text}${html}`).not.toContain('Reeve Provisioner');
   });
+
+  it("falls back to the owner's email when the owner has no name", async () => {
+    prismaMock.envelope.findUnique.mockImplementation(async ({ include }: { include?: { user?: unknown } }) =>
+      include?.user ? { ...ENVELOPE, user: { ...MEMBER, name: null } } : ENVELOPE,
+    );
+
+    await deleteDocument({
+      id: { type: 'documentId', id: 42 },
+      userId: SYSTEM_USER.id,
+      teamId: ENVELOPE.teamId,
+      requestMetadata: { requestMetadata: {}, source: 'apiV1', auth: 'api' } as never,
+    });
+
+    const { text } = sendMailMock.mock.calls[0][0];
+
+    expect(String(text)).toContain(`${MEMBER.email} has cancelled the document`);
+    expect(String(text)).not.toContain('Lucas Smith');
+  });
 });

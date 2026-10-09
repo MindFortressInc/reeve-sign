@@ -204,7 +204,7 @@ const handleDocumentOwnerDelete = async ({ envelope, requestMetadata }: HandleDo
         documentName: envelope.title,
         // Name the envelope owner, not whoever voided it (e.g. an org's
         // system-user API token voiding an on-behalf-of envelope, DEV-12519).
-        inviterName: envelope.user.name || undefined,
+        inviterName: envelope.user.name || envelope.user.email,
         inviterEmail: envelope.user.email,
         assetBaseUrl,
       });
