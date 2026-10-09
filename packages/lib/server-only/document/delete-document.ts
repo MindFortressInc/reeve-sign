@@ -48,6 +48,7 @@ export const deleteDocument = async ({ id, userId, teamId, requestMetadata }: De
     include: {
       recipients: true,
       documentMeta: true,
+      user: { select: { name: true, email: true } },
     },
   });
 
@@ -80,7 +81,6 @@ export const deleteDocument = async ({ id, userId, teamId, requestMetadata }: De
   if (isUserOwner || isUserTeamMember) {
     await handleDocumentOwnerDelete({
       envelope,
-      user,
       requestMetadata,
     });
 
@@ -116,12 +116,12 @@ type HandleDocumentOwnerDeleteOptions = {
   envelope: Envelope & {
     recipients: Recipient[];
     documentMeta: DocumentMeta | null;
+    user: Pick<User, 'name' | 'email'>;
   };
-  user: User;
   requestMetadata: ApiRequestMetadata;
 };
 
-const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: HandleDocumentOwnerDeleteOptions) => {
+const handleDocumentOwnerDelete = async ({ envelope, requestMetadata }: HandleDocumentOwnerDeleteOptions) => {
   if (envelope.deletedAt) {
     return;
   }
@@ -202,8 +202,10 @@ const handleDocumentOwnerDelete = async ({ envelope, user, requestMetadata }: Ha
 
       const template = createElement(DocumentCancelTemplate, {
         documentName: envelope.title,
-        inviterName: user.name || undefined,
-        inviterEmail: user.email,
+        // Name the envelope owner, not whoever voided it (e.g. an org's
+        // system-user API token voiding an on-behalf-of envelope, DEV-12519).
+        inviterName: envelope.user.name || undefined,
+        inviterEmail: envelope.user.email,
         assetBaseUrl,
       });
 

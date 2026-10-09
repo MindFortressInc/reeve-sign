@@ -1,6 +1,6 @@
 import { prisma } from '@documenso/prisma';
 import type { Organisation } from '@prisma/client';
-import { OrganisationType, WebhookTriggerEvents } from '@prisma/client';
+import { DocumentVisibility, OrganisationType, WebhookTriggerEvents } from '@prisma/client';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { INTERNAL_CLAIM_ID, internalClaims } from '../../types/subscription';
@@ -174,6 +174,12 @@ const ensureTeamWebhook = async ({
  * before this (or edited since) to that state, re-stamps the PLATFORM claim
  * that `resolveOnBehalfOfUserId` keys provenance on, and ensures the
  * optional team webhook.
+ *
+ * Sender-only visibility (DEV-12519): on-behalf-of senders are org MEMBERs
+ * who can reach the Documenso UI through OIDC. Org-level
+ * `documentVisibility=ADMIN` (set on create, enforced on re-POST) keeps each
+ * member to their own envelopes via the owner clause, while the system-user
+ * token (team ADMIN) still sees every envelope.
  */
 export const provisionOrganisation = async ({
   name,
@@ -186,7 +192,7 @@ export const provisionOrganisation = async ({
     where: { url },
     include: {
       owner: { select: { email: true } },
-      organisationGlobalSettings: { select: { includeSenderDetails: true } },
+      organisationGlobalSettings: { select: { includeSenderDetails: true, documentVisibility: true } },
       organisationClaim: { select: { originalSubscriptionClaimId: true } },
     },
   });
@@ -199,13 +205,16 @@ export const provisionOrganisation = async ({
     existingOrganisation &&
     (existingOrganisation.type !== OrganisationType.ORGANISATION ||
       !existingOrganisation.organisationGlobalSettings.includeSenderDetails ||
+      existingOrganisation.organisationGlobalSettings.documentVisibility !== DocumentVisibility.ADMIN ||
       existingOrganisation.organisationClaim.originalSubscriptionClaimId !== INTERNAL_CLAIM_ID.PLATFORM)
   ) {
     await prisma.organisation.update({
       where: { id: existingOrganisation.id },
       data: {
         type: OrganisationType.ORGANISATION,
-        organisationGlobalSettings: { update: { includeSenderDetails: true } },
+        organisationGlobalSettings: {
+          update: { includeSenderDetails: true, documentVisibility: DocumentVisibility.ADMIN },
+        },
         organisationClaim: { update: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
       },
     });
@@ -225,6 +234,11 @@ export const provisionOrganisation = async ({
         type: OrganisationType.ORGANISATION,
         url,
         claim: internalClaims[INTERNAL_CLAIM_ID.PLATFORM],
+      });
+
+      await prisma.organisation.update({
+        where: { id: organisation.id },
+        data: { organisationGlobalSettings: { update: { documentVisibility: DocumentVisibility.ADMIN } } },
       });
     } catch (err) {
       // Two concurrent requests for the same external_reference can both
