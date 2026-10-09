@@ -10,6 +10,9 @@ const EXECUTE_WEBHOOK_JOB_DEFINITION_SCHEMA = z.object({
   event: z.nativeEnum(WebhookTriggerEvents),
   webhookId: z.string(),
   data: z.unknown(),
+  // An explicit manual resend delivers even if the webhook has since been
+  // disabled; queued event deliveries and their retries do not.
+  isResend: z.boolean().optional(),
   requestMetadata: ZRequestMetadataSchema.optional(),
 });
 
