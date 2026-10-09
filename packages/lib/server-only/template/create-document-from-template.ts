@@ -386,6 +386,15 @@ export const createDocumentFromTemplate = async ({
     teamId,
   });
 
+  // Resolved before any document data is duplicated, so a failed lookup leaves nothing behind.
+  const delegatedOwner =
+    ownerUserId !== undefined && ownerUserId !== userId
+      ? await prisma.user.findFirstOrThrow({
+          where: { id: ownerUserId },
+          select: { id: true, name: true, email: true },
+        })
+      : null;
+
   // Check that all the passed in recipient IDs can be associated with a template recipient.
   recipients.forEach((recipient) => {
     const foundRecipient = template.recipients.find((templateRecipient) => templateRecipient.id === recipient.id);
@@ -513,14 +522,6 @@ export const createDocumentFromTemplate = async ({
       };
     }),
   );
-
-  const delegatedOwner =
-    ownerUserId !== undefined && ownerUserId !== userId
-      ? await prisma.user.findFirstOrThrow({
-          where: { id: ownerUserId },
-          select: { id: true, name: true, email: true },
-        })
-      : null;
 
   const incrementedDocumentId = await incrementDocumentId();
 
