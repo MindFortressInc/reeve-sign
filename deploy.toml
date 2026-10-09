@@ -194,8 +194,12 @@ reaches    = ["documenso"]
 # packages/lib/server-only/reeve-admin/get-reeve-admin-system-user.ts —
 # the Documenso user (reeve-system@sign.meetreeve.com in prod) that owns
 # every Reeve-provisioned organisation. Absent: provisioning throws
-# NOT_SETUP and member-ensure refuses, so the same shared-org fallback as
-# above applies. Passed through next to REEVE_SIGN_ADMIN_TOKEN (DEV-12505).
+# NOT_SETUP, which handle-provision-organisation-request.ts answers as a
+# 500, and member-ensure refuses. reeve-services' _provision_org /
+# _ensure_member raise_for_status() on any non-2xx, and the resolver's
+# `except httpx.HTTPError` (api/services/sign/reeve_sign_tenant.py) falls
+# back to the shared Documenso org — the same degrade as above, not a
+# 404-specific path. Passed through next to REEVE_SIGN_ADMIN_TOKEN (DEV-12505).
 name       = "REEVE_SIGN_SYSTEM_USER_EMAIL"
 on_missing = "degrade"
 reaches    = ["documenso"]
