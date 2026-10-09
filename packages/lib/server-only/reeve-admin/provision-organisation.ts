@@ -61,10 +61,17 @@ export const REEVE_WEBHOOK_EVENT_TRIGGERS = [
 ];
 
 /**
- * Idempotently ensures the team has a webhook for `url`: creates it, or
- * brings a drifted one (secret, events, disabled) back in line. It never
- * creates a second one for the same (team, url). It does not reconcile
- * duplicates made outside this path (e.g. by hand in the Documenso UI).
+ * Idempotently ensures the team has exactly one enabled reeve-managed
+ * webhook, pointing at `webhook.url` with `webhook.secret`.
+ *
+ * Reeve-managed = on this team, owned by the org owner (the system user,
+ * enforced by `assertOwnedBySystemUser`), with a secret. That excludes rows a
+ * human team manager created (their own userId) and Zapier subscriptions
+ * (secret null). It is keyed on that identity rather than the url, so a
+ * receiver url move (DEV-12847: agents.meetreeve.com -> api.meetreeve.com)
+ * repoints the row in place instead of adding a second one and leaving the
+ * old url enabled. Any other reeve-managed rows are disabled, never deleted,
+ * so their delivery history stays.
  */
 const ensureTeamWebhook = async ({
   teamId,
@@ -75,15 +82,18 @@ const ensureTeamWebhook = async ({
   userId: number;
   webhook: { url: string; secret: string };
 }) => {
-  // Webhook has no unique (teamId, webhookUrl) constraint, so serialise
-  // find-then-create per (team, url) or two concurrent re-POSTs could both
-  // create one and every event would be delivered twice.
+  // Serialise per team: two concurrent re-POSTs (even with different urls)
+  // could otherwise both create a row, and every event would be delivered
+  // twice.
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reeve-webhook:${teamId}:${webhook.url}`}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reeve-webhook:${teamId}`}))`;
 
-    const existing = await tx.webhook.findFirst({ where: { teamId, webhookUrl: webhook.url } });
+    const reeveManaged = await tx.webhook.findMany({
+      where: { teamId, userId, secret: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+    });
 
-    if (!existing) {
+    if (reeveManaged.length === 0) {
       await tx.webhook.create({
         data: {
           webhookUrl: webhook.url,
@@ -98,18 +108,35 @@ const ensureTeamWebhook = async ({
       return;
     }
 
-    const hasSameEvents =
-      existing.eventTriggers.length === REEVE_WEBHOOK_EVENT_TRIGGERS.length &&
-      REEVE_WEBHOOK_EVENT_TRIGGERS.every((event) => existing.eventTriggers.includes(event));
+    const keeper = reeveManaged.find((row) => row.webhookUrl === webhook.url) ?? reeveManaged[0];
 
-    if (existing.enabled && existing.secret === webhook.secret && hasSameEvents) {
-      return;
+    const hasSameEvents =
+      keeper.eventTriggers.length === REEVE_WEBHOOK_EVENT_TRIGGERS.length &&
+      REEVE_WEBHOOK_EVENT_TRIGGERS.every((event) => keeper.eventTriggers.includes(event));
+
+    const isInSync =
+      keeper.enabled && keeper.webhookUrl === webhook.url && keeper.secret === webhook.secret && hasSameEvents;
+
+    if (!isInSync) {
+      await tx.webhook.update({
+        where: { id: keeper.id },
+        data: {
+          webhookUrl: webhook.url,
+          secret: webhook.secret,
+          eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS,
+          enabled: true,
+        },
+      });
     }
 
-    await tx.webhook.update({
-      where: { id: existing.id },
-      data: { secret: webhook.secret, eventTriggers: REEVE_WEBHOOK_EVENT_TRIGGERS, enabled: true },
-    });
+    const otherIds = reeveManaged.filter((row) => row.id !== keeper.id).map((row) => row.id);
+
+    if (otherIds.length > 0) {
+      await tx.webhook.updateMany({
+        where: { id: { in: otherIds }, enabled: true },
+        data: { enabled: false },
+      });
+    }
   });
 };
 
