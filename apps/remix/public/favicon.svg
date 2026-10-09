@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Reeve">
+  <defs>
+    <linearGradient id="rmk-navy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f1d36"/>
+      <stop offset="100%" stop-color="#1a2f55"/>
+    </linearGradient>
+    <linearGradient id="rmk-orange" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF6B2B"/>
+      <stop offset="100%" stop-color="#FF9B5C"/>
+    </linearGradient>
+    <style>
+      /* The "R" is navy by default. On a dark UI surface (e.g. Chrome's
+         dark-mode tab strip) navy-on-dark is unreadable, so flip the R to
+         white via prefers-color-scheme. The orange period is unchanged in
+         both themes. */
+      .rmk-r { fill: url(#rmk-navy); }
+      @media (prefers-color-scheme: dark) {
+        .rmk-r { fill: #FFFFFF; }
+      }
+    </style>
+  </defs>
+  <!-- R baseline at y=50; dot bottom (cy + r) matches that baseline so
+       the period reads as level with the foot of the R. -->
+  <text x="2" y="50" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-weight="900" font-size="58" letter-spacing="-2" class="rmk-r">R</text>
+  <circle cx="46" cy="45" r="5" fill="url(#rmk-orange)"/>
+</svg>
