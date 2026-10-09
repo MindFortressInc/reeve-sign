@@ -272,6 +272,12 @@ describe('provisionOrganisation', () => {
     expect(result).toEqual({ organisationId: 'org_race_winner', apiToken: null, created: false });
     expect(createTeamMock).not.toHaveBeenCalled();
     expect(createApiTokenMock).not.toHaveBeenCalled();
+    // The race loser still enforces sender-only visibility on the winner's
+    // org, in case the winner's own write never lands (DEV-12519).
+    expect(organisationUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'org_race_winner' },
+      data: { organisationGlobalSettings: { update: { documentVisibility: DocumentVisibility.ADMIN } } },
+    });
   });
 
   it('self-heals a partial prior failure: org exists but its team/token step never completed', async () => {

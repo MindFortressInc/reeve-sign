@@ -235,11 +235,6 @@ export const provisionOrganisation = async ({
         url,
         claim: internalClaims[INTERNAL_CLAIM_ID.PLATFORM],
       });
-
-      await prisma.organisation.update({
-        where: { id: organisation.id },
-        data: { organisationGlobalSettings: { update: { documentVisibility: DocumentVisibility.ADMIN } } },
-      });
     } catch (err) {
       // Two concurrent requests for the same external_reference can both
       // pass the findUnique check above and race on the DB-level unique
@@ -258,6 +253,14 @@ export const provisionOrganisation = async ({
       assertOwnedBySystemUser(raceWinner);
       organisation = raceWinner;
     }
+
+    // A new org starts on the schema default (EVERYONE). Written on the race
+    // path too, before any team/token step, so neither request can finish
+    // provisioning while the winner's own write is still pending.
+    await prisma.organisation.update({
+      where: { id: organisation.id },
+      data: { organisationGlobalSettings: { update: { documentVisibility: DocumentVisibility.ADMIN } } },
+    });
   }
 
   let team = await prisma.team.findFirst({ where: { organisationId: organisation.id } });
