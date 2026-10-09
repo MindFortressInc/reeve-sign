@@ -590,7 +590,10 @@ export const templateRouter = router({
           id: templateId,
         },
         teamId,
-        userId: onBehalfOfUserId ?? ctx.user.id,
+        // DEV-12518: the template is looked up as the token user; the
+        // on-behalf-of member only owns the new envelope.
+        userId: ctx.user.id,
+        ownerUserId: onBehalfOfUserId ?? undefined,
         recipients,
         customDocumentData,
         requestMetadata: ctx.metadata,

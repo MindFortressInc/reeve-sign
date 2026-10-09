@@ -15,6 +15,7 @@ import type { CreateEnvelopeOptions } from './create-envelope';
 // inside the factories below.
 const {
   teamFindFirstMock,
+  userFindFirstOrThrowMock,
   documentMetaCreateMock,
   transactionMock,
   txEnvelopeCreateMock,
@@ -28,6 +29,7 @@ const {
   zWebhookDocumentSchemaParseMock,
 } = vi.hoisted(() => ({
   teamFindFirstMock: vi.fn(),
+  userFindFirstOrThrowMock: vi.fn(),
   documentMetaCreateMock: vi.fn(),
   transactionMock: vi.fn(),
   txEnvelopeCreateMock: vi.fn(),
@@ -44,6 +46,7 @@ const {
 vi.mock('@documenso/prisma', () => ({
   prisma: {
     team: { findFirst: teamFindFirstMock },
+    user: { findFirstOrThrow: userFindFirstOrThrowMock },
     documentMeta: { create: documentMetaCreateMock },
     $transaction: transactionMock,
   },
@@ -128,6 +131,9 @@ const baseCreateEnvelopeOptions = (): CreateEnvelopeOptions => ({
 
 beforeEach(() => {
   teamFindFirstMock.mockReset().mockResolvedValue(TEAM_ROW);
+  userFindFirstOrThrowMock
+    .mockReset()
+    .mockResolvedValue({ id: 77, name: 'Matt Rhodes', email: 'matt@mindfortress.com' });
   documentMetaCreateMock.mockReset().mockResolvedValue({ id: 'meta_1' });
   getTeamSettingsMock.mockReset().mockResolvedValue(TEAM_SETTINGS);
   incrementDocumentIdMock.mockReset().mockResolvedValue({ documentId: 1, formattedDocumentId: 123 });
@@ -219,5 +225,42 @@ describe('createEnvelope — senderVerification (DEV-8741)', () => {
       verifiedAt: '2026-08-14T18:29:00.000Z',
       ipAddress: null,
     });
+  });
+});
+
+// DEV-12518: `X-Reeve-Sign-On-Behalf-Of` passes the token user as `userId`
+// (the actor) and the member as `ownerUserId`, mirroring upstream's
+// delegated-owner path: the member owns the envelope and DOCUMENT_CREATED,
+// and DOCUMENT_DELEGATED_OWNER_CREATED names the actor.
+describe('createEnvelope — ownerUserId (DEV-12518)', () => {
+  it('the owner owns the envelope; a DOCUMENT_DELEGATED_OWNER_CREATED row names the token actor', async () => {
+    await createEnvelope({ ...baseCreateEnvelopeOptions(), userId: 999, ownerUserId: 77 });
+
+    expect(txEnvelopeCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: 77 }) }),
+    );
+    expect(userFindFirstOrThrowMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 77 } }));
+
+    const calls = txDocumentAuditLogCreateMock.mock.calls.map(([arg]) => arg.data);
+
+    expect(calls.map((c) => c.type)).toEqual(['DOCUMENT_CREATED', 'DOCUMENT_DELEGATED_OWNER_CREATED']);
+    expect(calls[0].userId).toBe(77);
+    expect(calls[1].userId).toBe(999);
+    expect(calls[1].data).toEqual({
+      delegatedOwnerName: 'Matt Rhodes',
+      delegatedOwnerEmail: 'matt@mindfortress.com',
+      teamName: 'Test Team',
+    });
+
+    // Team, folder and webhook lookups stay keyed on the actor.
+    expect(getTeamSettingsMock).toHaveBeenCalledWith({ userId: 999, teamId: 10 });
+    expect(triggerWebhookMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 999 }));
+  });
+
+  it('owner equal to the token user is not a delegation', async () => {
+    await createEnvelope({ ...baseCreateEnvelopeOptions(), userId: 1, ownerUserId: 1 });
+
+    expect(userFindFirstOrThrowMock).not.toHaveBeenCalled();
+    expect(txDocumentAuditLogCreateMock).toHaveBeenCalledTimes(1);
   });
 });
