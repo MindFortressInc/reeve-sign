@@ -279,6 +279,13 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     expect(compose).toMatch(/-\s*NEXT_PUBLIC_SENTRY_DSN=\$\{NEXT_PUBLIC_SENTRY_DSN\}/);
   });
 
+  it('passes the Reeve admin provisioning env through to documenso (DEV-12505)', () => {
+    // Same DEV-2900 gotcha: without these lines the box .env never reaches the
+    // container and /api/reeve-admin/* stays fail-closed (404) in prod.
+    expect(compose).toMatch(/-\s*REEVE_SIGN_ADMIN_TOKEN=\$\{REEVE_SIGN_ADMIN_TOKEN\}/);
+    expect(compose).toMatch(/-\s*REEVE_SIGN_SYSTEM_USER_EMAIL=\$\{REEVE_SIGN_SYSTEM_USER_EMAIL\}/);
+  });
+
   it('runs documenso with NODE_ENV=production (DEV-12257)', () => {
     // Unset NODE_ENV made tRPC include `stack` in every API error body and
     // Sentry report `environment: development`; deploy.toml declares it
