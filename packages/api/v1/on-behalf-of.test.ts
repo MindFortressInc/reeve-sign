@@ -119,7 +119,10 @@ describe('v1 X-Reeve-Sign-On-Behalf-Of', () => {
       const response = await createDocument({ [ON_BEHALF_OF]: 'matt@mindfortress.com' });
 
       expect(response.status).toBe(200);
-      expect(createEnvelopeMock).toHaveBeenCalledWith(expect.objectContaining({ userId: MEMBER_ID, teamId: TEAM.id }));
+      // DEV-12518: actor = token user (audit + lookups), owner = member.
+      expect(createEnvelopeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: SYSTEM_USER.id, ownerUserId: MEMBER_ID, teamId: TEAM.id }),
+      );
     });
 
     it('non-member -> 403 and nothing is created', async () => {
@@ -158,8 +161,10 @@ describe('v1 X-Reeve-Sign-On-Behalf-Of', () => {
       const response = await generateFromTemplate({ [ON_BEHALF_OF]: 'matt@mindfortress.com' });
 
       expect(response.status).toBe(200);
+      // DEV-12518: the template is looked up as the token user (team ADMIN);
+      // the member only owns the generated envelope.
       expect(createDocumentFromTemplateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: MEMBER_ID, teamId: TEAM.id }),
+        expect.objectContaining({ userId: SYSTEM_USER.id, ownerUserId: MEMBER_ID, teamId: TEAM.id }),
       );
     });
 

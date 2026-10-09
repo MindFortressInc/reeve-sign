@@ -56,12 +56,7 @@ import { authenticatedMiddleware } from './middleware/authenticated';
  * otherwise the token user. Resolved before anything is created; any other
  * failure (e.g. a DB error) is a declared 500, not an unhandled throw.
  */
-const resolveEnvelopeOwnerId = async (
-  req: TsRestRequest,
-  userId: number,
-  teamId: number,
-  logger: Logger,
-) => {
+const resolveEnvelopeOwnerId = async (req: TsRestRequest, userId: number, teamId: number, logger: Logger) => {
   try {
     return (await resolveOnBehalfOfUserId({ headers: req.headers, teamId })) ?? userId;
   } catch (err) {
@@ -437,7 +432,8 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       });
 
       const envelope = await createEnvelope({
-        userId: ownerUserId,
+        userId: user.id,
+        ownerUserId,
         teamId: team.id,
         internalVersion: 1,
         data: {
@@ -932,7 +928,8 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
           id: templateId,
         },
         externalId: body.externalId || null,
-        userId: ownerUserId,
+        userId: user.id,
+        ownerUserId,
         teamId: team.id,
         recipients: body.recipients,
         prefillFields: body.prefillFields,

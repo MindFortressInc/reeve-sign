@@ -59,7 +59,14 @@ type CreateEnvelopeRecipientOptions = {
 };
 
 export type CreateEnvelopeOptions = {
+  /** The acting user: team, folder and settings lookups, webhooks and the delegation audit row. */
   userId: number;
+  /**
+   * DEV-12518: owner of the new envelope when it differs from `userId`
+   * (`X-Reeve-Sign-On-Behalf-Of`, already resolved to a team member). The
+   * owner gets DOCUMENT_CREATED; DOCUMENT_DELEGATED_OWNER_CREATED names `userId`.
+   */
+  ownerUserId?: number;
   teamId: number;
   normalizePdf?: boolean;
   internalVersion: 1 | 2;
@@ -120,6 +127,7 @@ export type CreateEnvelopeOptions = {
 
 export const createEnvelope = async ({
   userId,
+  ownerUserId,
   teamId,
   normalizePdf,
   data,
@@ -304,6 +312,17 @@ export const createEnvelope = async ({
     return delegatedOwner;
   };
 
+  const getOnBehalfOfOwner = async () => {
+    if (ownerUserId === undefined || ownerUserId === userId) {
+      return null;
+    }
+
+    return await prisma.user.findFirstOrThrow({
+      where: { id: ownerUserId },
+      select: { id: true, name: true, email: true },
+    });
+  };
+
   const [documentMeta, secondaryId, delegatedOwner] = await Promise.all([
     prisma.documentMeta.create({
       data: extractDerivedDocumentMeta(settings, {
@@ -314,7 +333,7 @@ export const createEnvelope = async ({
     type === EnvelopeType.DOCUMENT
       ? incrementDocumentId().then((v) => v.formattedDocumentId)
       : incrementTemplateId().then((v) => v.formattedTemplateId),
-    getValidatedDelegatedOwner(),
+    getValidatedDelegatedOwner().then(async (owner) => owner ?? (await getOnBehalfOfOwner())),
   ]);
   const envelopeOwnerId = delegatedOwner?.id ?? userId;
 

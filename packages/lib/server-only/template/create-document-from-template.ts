@@ -63,7 +63,16 @@ type FinalRecipient = Pick<Recipient, 'name' | 'email' | 'role' | 'authOptions' 
 export type CreateDocumentFromTemplateOptions = {
   id: EnvelopeIdOptions;
   externalId?: string | null;
+  /** The acting user: template, folder and settings lookups, webhooks and the delegation audit row. */
   userId: number;
+  /**
+   * DEV-12518: owner of the new envelope when it differs from `userId`
+   * (`X-Reeve-Sign-On-Behalf-Of`, already resolved to a team member). The
+   * template is still looked up as `userId`, so a MEMBER owner doesn't narrow
+   * which templates resolve. The owner gets DOCUMENT_CREATED;
+   * DOCUMENT_DELEGATED_OWNER_CREATED names `userId`.
+   */
+  ownerUserId?: number;
   teamId: number;
   recipients: {
     id: number;
@@ -292,6 +301,7 @@ export const createDocumentFromTemplate = async ({
   id,
   externalId,
   userId,
+  ownerUserId,
   teamId,
   recipients,
   customDocumentData = [],
@@ -375,6 +385,15 @@ export const createDocumentFromTemplate = async ({
     userId,
     teamId,
   });
+
+  // Resolved before any document data is duplicated, so a failed lookup leaves nothing behind.
+  const delegatedOwner =
+    ownerUserId !== undefined && ownerUserId !== userId
+      ? await prisma.user.findFirstOrThrow({
+          where: { id: ownerUserId },
+          select: { id: true, name: true, email: true },
+        })
+      : null;
 
   // Check that all the passed in recipient IDs can be associated with a template recipient.
   recipients.forEach((recipient) => {
@@ -537,7 +556,7 @@ export const createDocumentFromTemplate = async ({
           source: DocumentSource.TEMPLATE,
           externalId: externalId || template.externalId,
           templateId: legacyTemplateId, // The template this envelope was created from.
-          userId,
+          userId: delegatedOwner?.id ?? userId,
           folderId,
           teamId,
           title: finalEnvelopeTitle,
@@ -738,6 +757,7 @@ export const createDocumentFromTemplate = async ({
         data: createDocumentAuditLogData({
           type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_CREATED,
           envelopeId: envelope.id,
+          user: delegatedOwner ? { id: delegatedOwner.id } : undefined,
           metadata: requestMetadata,
           data: {
             title: envelope.title,
@@ -748,6 +768,22 @@ export const createDocumentFromTemplate = async ({
           },
         }),
       });
+
+      if (delegatedOwner) {
+        await tx.documentAuditLog.create({
+          data: createDocumentAuditLogData({
+            type: DOCUMENT_AUDIT_LOG_TYPE.DOCUMENT_DELEGATED_OWNER_CREATED,
+            envelopeId: envelope.id,
+            user: { id: userId },
+            metadata: requestMetadata,
+            data: {
+              delegatedOwnerName: delegatedOwner.name,
+              delegatedOwnerEmail: delegatedOwner.email,
+              teamName: callerTeam.name,
+            },
+          }),
+        });
+      }
 
       const templateAttachments = await tx.envelopeAttachment.findMany({
         where: {
