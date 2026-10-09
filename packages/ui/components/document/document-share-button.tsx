@@ -6,7 +6,7 @@ import { trpc } from '@documenso/trpc/react';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { Copy, Share } from 'lucide-react';
+import { Copy, ShareIcon } from 'lucide-react';
 import type React from 'react';
 import type { HTMLAttributes } from 'react';
 import { useState } from 'react';
@@ -127,7 +127,7 @@ export const DocumentShareButton = ({ token, documentId, className, trigger }: D
             className={cn('h-11 w-full max-w-lg flex-1', className)}
             loading={isLoading}
           >
-            {!isLoading && <Share className="mr-2 h-5 w-5" />}
+            {!isLoading && <ShareIcon className="mr-2 h-5 w-5" />}
             <Trans>Share</Trans>
           </Button>
         )}
