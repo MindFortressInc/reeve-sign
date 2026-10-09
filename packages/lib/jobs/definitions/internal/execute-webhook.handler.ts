@@ -7,13 +7,19 @@ import type { JobRunIO } from '../../client/_internal/job';
 import type { TExecuteWebhookJobDefinition } from './execute-webhook';
 
 export const run = async ({ payload, io: _io }: { payload: TExecuteWebhookJobDefinition; io: JobRunIO }) => {
-  const { event, webhookId, data } = payload;
+  const { event, webhookId, data, isResend } = payload;
 
   const webhook = await prisma.webhook.findUniqueOrThrow({
     where: {
       id: webhookId,
     },
   });
+
+  // `enabled` is only checked when the job is queued, so re-check it here: a
+  // job queued (or retrying) before the webhook was disabled must not deliver.
+  if (!webhook.enabled && !isResend) {
+    return { success: false, skipped: true };
+  }
 
   const { webhookUrl: url, secret } = webhook;
 

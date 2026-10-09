@@ -16,9 +16,10 @@ const {
   createApiTokenMock,
   getReeveAdminSystemUserMock,
   organisationUpdateMock,
-  webhookFindFirstMock,
+  webhookFindManyMock,
   webhookCreateMock,
   webhookUpdateMock,
+  webhookUpdateManyMock,
   executeRawMock,
 } = vi.hoisted(() => ({
   findUniqueMock: vi.fn(),
@@ -31,9 +32,10 @@ const {
   createApiTokenMock: vi.fn(),
   getReeveAdminSystemUserMock: vi.fn(),
   organisationUpdateMock: vi.fn(),
-  webhookFindFirstMock: vi.fn(),
+  webhookFindManyMock: vi.fn(),
   webhookCreateMock: vi.fn(),
   webhookUpdateMock: vi.fn(),
+  webhookUpdateManyMock: vi.fn(),
   executeRawMock: vi.fn(),
 }));
 
@@ -52,16 +54,22 @@ vi.mock('@documenso/prisma', () => ({
       findFirst: apiTokenFindFirstMock,
     },
     webhook: {
-      findFirst: webhookFindFirstMock,
+      findMany: webhookFindManyMock,
       create: webhookCreateMock,
       update: webhookUpdateMock,
+      updateMany: webhookUpdateManyMock,
     },
     // The webhook ensure runs in a transaction under an advisory lock; the
     // tx client is the same mock surface.
     $transaction: async (fn: (tx: unknown) => unknown) =>
       await fn({
         $executeRaw: executeRawMock,
-        webhook: { findFirst: webhookFindFirstMock, create: webhookCreateMock, update: webhookUpdateMock },
+        webhook: {
+          findMany: webhookFindManyMock,
+          create: webhookCreateMock,
+          update: webhookUpdateMock,
+          updateMany: webhookUpdateManyMock,
+        },
       }),
   },
 }));
@@ -124,9 +132,10 @@ describe('provisionOrganisation', () => {
     getReeveAdminSystemUserMock.mockReset();
     getReeveAdminSystemUserMock.mockResolvedValue(SYSTEM_USER);
     organisationUpdateMock.mockReset();
-    webhookFindFirstMock.mockReset();
+    webhookFindManyMock.mockReset();
     webhookCreateMock.mockReset();
     webhookUpdateMock.mockReset();
+    webhookUpdateManyMock.mockReset();
     executeRawMock.mockReset();
     vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER.email);
   });
@@ -472,20 +481,50 @@ describe('provisionOrganisation', () => {
   });
 
   describe('webhook ensure', () => {
+    const NEW_URL = 'https://api.meetreeve.com/webhooks/documenso';
+
+    // The reeve-managed rows on a team: owned by the org owner (the system
+    // user) and secret-bearing, which excludes Zapier rows (secret null) and
+    // rows a human team manager created.
+    const reeveManagedWhere = (teamId: number) => ({
+      where: { teamId, userId: SYSTEM_USER.id, secret: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const reeveRow = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      webhookUrl: WEBHOOK.url,
+      secret: WEBHOOK.secret,
+      eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS,
+      enabled: true,
+      ...overrides,
+    });
+
+    // An already-provisioned org on `teamId`, so only the webhook ensure runs.
+    const givenProvisionedOrg = (externalReference: string, teamId: number) => {
+      const url = deriveOrganisationUrlFromExternalReference(externalReference);
+      const orgId = `org_${teamId}`;
+
+      findUniqueMock.mockResolvedValue(existingOrg(orgId, url));
+      findFirstMock.mockResolvedValue({ id: teamId, organisationId: orgId });
+      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId });
+    };
+
     it('creates the team webhook with the reeve-agents event set when none exists', async () => {
       findUniqueMock.mockResolvedValue(null);
       createOrganisationMock.mockResolvedValue({ id: 'org_wh', url: 'x', ownerUserId: SYSTEM_USER.id });
       findFirstMock.mockResolvedValue(null);
       findFirstOrThrowMock.mockResolvedValue({ id: 31, organisationId: 'org_wh' });
       createApiTokenMock.mockResolvedValue({ id: 1, token: 'api_t' });
-      webhookFindFirstMock.mockResolvedValue(null);
+      webhookFindManyMock.mockResolvedValue([]);
 
       await provisionOrganisation({ name: 'Webhook Org', externalReference: 'host_app:wh', webhook: WEBHOOK });
 
-      // Serialised per (team, url) so concurrent re-POSTs can't both create.
+      // Serialised per team (not per url) so concurrent re-POSTs, even with
+      // different urls, can't both create one.
       expect(executeRawMock).toHaveBeenCalledTimes(1);
-      expect(executeRawMock.mock.calls[0].slice(1)).toEqual([`reeve-webhook:31:${WEBHOOK.url}`]);
-      expect(webhookFindFirstMock).toHaveBeenCalledWith({ where: { teamId: 31, webhookUrl: WEBHOOK.url } });
+      expect(executeRawMock.mock.calls[0].slice(1)).toEqual(['reeve-webhook:31']);
+      expect(webhookFindManyMock).toHaveBeenCalledWith(reeveManagedWhere(31));
       expect(webhookCreateMock).toHaveBeenCalledWith({
         data: {
           webhookUrl: WEBHOOK.url,
@@ -496,22 +535,15 @@ describe('provisionOrganisation', () => {
           teamId: 31,
         },
       });
+      expect(webhookUpdateManyMock).not.toHaveBeenCalled();
     });
 
     it('is idempotent: an identical webhook already on the team is left alone', async () => {
-      const url = deriveOrganisationUrlFromExternalReference('host_app:wh2');
-
-      findUniqueMock.mockResolvedValue(existingOrg('org_wh2', url));
-      findFirstMock.mockResolvedValue({ id: 32, organisationId: 'org_wh2' });
-      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 32 });
-      webhookFindFirstMock.mockResolvedValue({
-        id: 'wh_1',
-        webhookUrl: WEBHOOK.url,
-        secret: WEBHOOK.secret,
-        // Same set, different order -> still identical.
-        eventTriggers: [...REEVE_AGENTS_WEBHOOK_EVENTS].reverse(),
-        enabled: true,
-      });
+      givenProvisionedOrg('host_app:wh2', 32);
+      // Same set, different order -> still identical.
+      webhookFindManyMock.mockResolvedValue([
+        reeveRow('wh_1', { eventTriggers: [...REEVE_AGENTS_WEBHOOK_EVENTS].reverse() }),
+      ]);
 
       const result = await provisionOrganisation({
         name: 'Webhook Org',
@@ -522,41 +554,111 @@ describe('provisionOrganisation', () => {
       expect(result.created).toBe(false);
       expect(webhookCreateMock).not.toHaveBeenCalled();
       expect(webhookUpdateMock).not.toHaveBeenCalled();
+      expect(webhookUpdateManyMock).not.toHaveBeenCalled();
     });
 
     it('re-POST updates a drifted webhook (secret, events, disabled) in place instead of duplicating it', async () => {
-      const url = deriveOrganisationUrlFromExternalReference('host_app:wh3');
-
-      findUniqueMock.mockResolvedValue(existingOrg('org_wh3', url));
-      findFirstMock.mockResolvedValue({ id: 33, organisationId: 'org_wh3' });
-      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 33 });
-      webhookFindFirstMock.mockResolvedValue({
-        id: 'wh_old',
-        webhookUrl: WEBHOOK.url,
-        secret: 'old-secret',
-        eventTriggers: [WebhookTriggerEvents.DOCUMENT_COMPLETED],
-        enabled: false,
-      });
+      givenProvisionedOrg('host_app:wh3', 33);
+      webhookFindManyMock.mockResolvedValue([
+        reeveRow('wh_old', {
+          secret: 'old-secret',
+          eventTriggers: [WebhookTriggerEvents.DOCUMENT_COMPLETED],
+          enabled: false,
+        }),
+      ]);
 
       await provisionOrganisation({ name: 'Webhook Org', externalReference: 'host_app:wh3', webhook: WEBHOOK });
 
       expect(webhookCreateMock).not.toHaveBeenCalled();
       expect(webhookUpdateMock).toHaveBeenCalledWith({
         where: { id: 'wh_old' },
-        data: { secret: WEBHOOK.secret, eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS, enabled: true },
+        data: {
+          webhookUrl: WEBHOOK.url,
+          secret: WEBHOOK.secret,
+          eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS,
+          enabled: true,
+        },
+      });
+    });
+
+    // DEV-12847: a receiver url move (agents.meetreeve.com -> api.meetreeve.com)
+    // used to add a second row and leave the old-url row enabled, so every
+    // event was also delivered to the old url.
+    it('re-POST with a moved receiver url repoints the reeve-managed row in place, not a second row', async () => {
+      givenProvisionedOrg('host_app:wh5', 35);
+      webhookFindManyMock.mockResolvedValue([reeveRow('wh_agents')]);
+
+      await provisionOrganisation({
+        name: 'Webhook Org',
+        externalReference: 'host_app:wh5',
+        webhook: { url: NEW_URL, secret: 'whsec_2' },
+      });
+
+      expect(webhookCreateMock).not.toHaveBeenCalled();
+      expect(webhookUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'wh_agents' },
+        data: { webhookUrl: NEW_URL, secret: 'whsec_2', eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS, enabled: true },
+      });
+      expect(webhookUpdateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('keeps the row already at the new url and disables every other reeve-managed row (no delete)', async () => {
+      givenProvisionedOrg('host_app:wh6', 36);
+      // Newest first: a stale old-url row updated more recently than the
+      // new-url row must not be the one kept.
+      webhookFindManyMock.mockResolvedValue([
+        reeveRow('wh_agents_newer'),
+        reeveRow('wh_api', { webhookUrl: NEW_URL }),
+        reeveRow('wh_agents_older', { enabled: false }),
+      ]);
+
+      await provisionOrganisation({
+        name: 'Webhook Org',
+        externalReference: 'host_app:wh6',
+        webhook: { url: NEW_URL, secret: WEBHOOK.secret },
+      });
+
+      expect(webhookCreateMock).not.toHaveBeenCalled();
+      // The keeper already matches, so it is left alone.
+      expect(webhookUpdateMock).not.toHaveBeenCalled();
+      expect(webhookUpdateManyMock).toHaveBeenCalledWith({
+        where: { id: { in: ['wh_agents_newer', 'wh_agents_older'] }, enabled: true },
+        data: { enabled: false },
+      });
+    });
+
+    it('with no row at the new url, repoints the most recently updated reeve-managed row and disables the rest', async () => {
+      givenProvisionedOrg('host_app:wh7', 37);
+      webhookFindManyMock.mockResolvedValue([reeveRow('wh_newest'), reeveRow('wh_oldest')]);
+
+      await provisionOrganisation({
+        name: 'Webhook Org',
+        externalReference: 'host_app:wh7',
+        webhook: { url: NEW_URL, secret: WEBHOOK.secret },
+      });
+
+      expect(webhookUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'wh_newest' },
+        data: {
+          webhookUrl: NEW_URL,
+          secret: WEBHOOK.secret,
+          eventTriggers: REEVE_AGENTS_WEBHOOK_EVENTS,
+          enabled: true,
+        },
+      });
+      expect(webhookUpdateManyMock).toHaveBeenCalledWith({
+        where: { id: { in: ['wh_oldest'] }, enabled: true },
+        data: { enabled: false },
       });
     });
 
     it('touches no webhook when none is requested', async () => {
-      const url = deriveOrganisationUrlFromExternalReference('host_app:nowh');
-
-      findUniqueMock.mockResolvedValue(existingOrg('org_nowh', url));
-      findFirstMock.mockResolvedValue({ id: 34, organisationId: 'org_nowh' });
-      apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 34 });
+      givenProvisionedOrg('host_app:nowh', 34);
 
       await provisionOrganisation({ name: 'No Webhook', externalReference: 'host_app:nowh' });
 
-      expect(webhookFindFirstMock).not.toHaveBeenCalled();
+      expect(executeRawMock).not.toHaveBeenCalled();
+      expect(webhookFindManyMock).not.toHaveBeenCalled();
       expect(webhookCreateMock).not.toHaveBeenCalled();
     });
   });
