@@ -1,4 +1,4 @@
-import { OrganisationType, WebhookTriggerEvents } from '@prisma/client';
+import { DocumentVisibility, OrganisationType, WebhookTriggerEvents } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
@@ -103,7 +103,7 @@ const existingOrg = (id: string, url: string, overrides: Record<string, unknown>
   ownerUserId: SYSTEM_USER.id,
   owner: { email: SYSTEM_USER.email },
   type: OrganisationType.ORGANISATION,
-  organisationGlobalSettings: { includeSenderDetails: true },
+  organisationGlobalSettings: { includeSenderDetails: true, documentVisibility: DocumentVisibility.ADMIN },
   organisationClaim: { originalSubscriptionClaimId: 'platform' },
   ...overrides,
 });
@@ -272,6 +272,12 @@ describe('provisionOrganisation', () => {
     expect(result).toEqual({ organisationId: 'org_race_winner', apiToken: null, created: false });
     expect(createTeamMock).not.toHaveBeenCalled();
     expect(createApiTokenMock).not.toHaveBeenCalled();
+    // The race loser still enforces sender-only visibility on the winner's
+    // org, in case the winner's own write never lands (DEV-12519).
+    expect(organisationUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'org_race_winner' },
+      data: { organisationGlobalSettings: { update: { documentVisibility: DocumentVisibility.ADMIN } } },
+    });
   });
 
   it('self-heals a partial prior failure: org exists but its team/token step never completed', async () => {
@@ -345,8 +351,13 @@ describe('provisionOrganisation', () => {
       expect.objectContaining({ type: OrganisationType.ORGANISATION }),
     );
     // A freshly created org already has type ORGANISATION and the schema
-    // default includeSenderDetails=true, so no upgrade write is needed.
-    expect(organisationUpdateMock).not.toHaveBeenCalled();
+    // default includeSenderDetails=true; the only write is sender-only
+    // visibility (the schema default is EVERYONE).
+    expect(organisationUpdateMock).toHaveBeenCalledTimes(1);
+    expect(organisationUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'org_new' },
+      data: { organisationGlobalSettings: { update: { documentVisibility: DocumentVisibility.ADMIN } } },
+    });
   });
 
   it('re-POST upgrades an existing PERSONAL org with sender details off to ORGANISATION + includeSenderDetails=true', async () => {
@@ -355,7 +366,7 @@ describe('provisionOrganisation', () => {
     findUniqueMock.mockResolvedValue(
       existingOrg('org_legacy', url, {
         type: OrganisationType.PERSONAL,
-        organisationGlobalSettings: { includeSenderDetails: false },
+        organisationGlobalSettings: { includeSenderDetails: false, documentVisibility: DocumentVisibility.ADMIN },
       }),
     );
     findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_legacy' });
@@ -368,10 +379,38 @@ describe('provisionOrganisation', () => {
       where: { id: 'org_legacy' },
       data: {
         type: OrganisationType.ORGANISATION,
-        organisationGlobalSettings: { update: { includeSenderDetails: true } },
+        organisationGlobalSettings: {
+          update: { includeSenderDetails: true, documentVisibility: DocumentVisibility.ADMIN },
+        },
         organisationClaim: { update: { originalSubscriptionClaimId: 'platform' } },
       },
     });
+  });
+
+  it('re-POST tightens an existing org still on EVERYONE visibility to ADMIN (sender-only, DEV-12519)', async () => {
+    const url = deriveOrganisationUrlFromExternalReference('host_app:open');
+
+    findUniqueMock.mockResolvedValue(
+      existingOrg('org_open', url, {
+        organisationGlobalSettings: { includeSenderDetails: true, documentVisibility: DocumentVisibility.EVERYONE },
+      }),
+    );
+    findFirstMock.mockResolvedValue({ id: 7, organisationId: 'org_open' });
+    apiTokenFindFirstMock.mockResolvedValue({ id: 1, teamId: 7 });
+
+    await provisionOrganisation({ name: 'Open', externalReference: 'host_app:open' });
+
+    expect(organisationUpdateMock).toHaveBeenCalledTimes(1);
+    expect(organisationUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'org_open' },
+        data: expect.objectContaining({
+          organisationGlobalSettings: {
+            update: { includeSenderDetails: true, documentVisibility: DocumentVisibility.ADMIN },
+          },
+        }),
+      }),
+    );
   });
 
   it('re-POST re-stamps the PLATFORM claim the on-behalf-of resolver keys provenance on', async () => {
@@ -468,7 +507,7 @@ describe('provisionOrganisation', () => {
     expect(webhookCreateMock).not.toHaveBeenCalled();
   });
 
-  it('does not write when an existing org is already ORGANISATION with sender details on', async () => {
+  it('does not write when an existing org is already ORGANISATION with sender details on and ADMIN visibility', async () => {
     const url = deriveOrganisationUrlFromExternalReference('host_app:ok');
 
     findUniqueMock.mockResolvedValue(existingOrg('org_ok', url));
