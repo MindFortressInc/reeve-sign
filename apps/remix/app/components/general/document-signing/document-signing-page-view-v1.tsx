@@ -45,6 +45,7 @@ import { DocumentSigningRejectDialog } from '~/components/general/document-signi
 import { DocumentSigningSignatureField } from '~/components/general/document-signing/document-signing-signature-field';
 import { DocumentSigningTextField } from '~/components/general/document-signing/document-signing-text-field';
 import PDFViewerLazy from '~/components/general/pdf-viewer/pdf-viewer-lazy';
+import { getSigningPageSender } from '~/utils/signing-sender';
 
 import { useRequiredDocumentSigningAuthContext } from './document-signing-auth-provider';
 import { DocumentSigningCompleteDialog } from './document-signing-complete-dialog';
@@ -126,13 +127,11 @@ export const DocumentSigningPageViewV1 = ({
     }
   };
 
-  let senderName = document.user.name ?? '';
-  let senderEmail = `(${document.user.email})`;
-
-  if (includeSenderDetails) {
-    senderName = document.team?.name ?? '';
-    senderEmail = document.team?.teamEmail?.email ? `(${document.team.teamEmail.email})` : '';
-  }
+  const { senderName, senderEmail } = getSigningPageSender({
+    user: document.user,
+    team: document.team,
+    includeSenderDetails,
+  });
 
   const selectedSigner = allRecipients?.find((r) => r.id === selectedSignerId);
   const targetSigner = recipient.role === RecipientRole.ASSISTANT && selectedSigner ? selectedSigner : null;
