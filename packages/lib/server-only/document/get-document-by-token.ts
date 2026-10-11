@@ -104,6 +104,11 @@ export const getDocumentAndSenderByToken = async ({
           name: true,
           teamEmail: true,
           url: true,
+          organisation: {
+            select: {
+              type: true,
+            },
+          },
           teamGlobalSettings: {
             select: {
               brandingEnabled: true,

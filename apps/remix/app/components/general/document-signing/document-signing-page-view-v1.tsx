@@ -127,9 +127,10 @@ export const DocumentSigningPageViewV1 = ({
     }
   };
 
-  const { senderName, senderEmail } = getSigningPageSender({
+  const { senderName, senderEmail, onBehalfOf } = getSigningPageSender({
     user: document.user,
     team: document.team,
+    organisationType: document.team?.organisation.type,
     includeSenderDetails,
   });
 
@@ -189,7 +190,7 @@ export const DocumentSigningPageViewV1 = ({
             <span className="text-muted-foreground">
               {match(recipient.role)
                 .with(RecipientRole.VIEWER, () =>
-                  includeSenderDetails ? (
+                  onBehalfOf ? (
                     <Trans>
                       <span className="truncate" title={senderName}>
                         {senderName} {senderEmail}
@@ -206,7 +207,7 @@ export const DocumentSigningPageViewV1 = ({
                   ),
                 )
                 .with(RecipientRole.SIGNER, () =>
-                  includeSenderDetails ? (
+                  onBehalfOf ? (
                     <Trans>
                       <span className="truncate" title={senderName}>
                         {senderName} {senderEmail}
@@ -223,7 +224,7 @@ export const DocumentSigningPageViewV1 = ({
                   ),
                 )
                 .with(RecipientRole.APPROVER, () =>
-                  includeSenderDetails ? (
+                  onBehalfOf ? (
                     <Trans>
                       <span className="truncate" title={senderName}>
                         {senderName} {senderEmail}
@@ -240,7 +241,7 @@ export const DocumentSigningPageViewV1 = ({
                   ),
                 )
                 .with(RecipientRole.ASSISTANT, () =>
-                  includeSenderDetails ? (
+                  onBehalfOf ? (
                     <Trans>
                       <span className="truncate" title={senderName}>
                         {senderName} {senderEmail}
