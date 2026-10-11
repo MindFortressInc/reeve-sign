@@ -2,6 +2,7 @@ import signingCelebration from '@documenso/assets/images/signing-celebration.png
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
 import { isSignupEnabledForProvider } from '@documenso/lib/constants/auth';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
@@ -9,7 +10,6 @@ import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-f
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { getRecipientSignatures } from '@documenso/lib/server-only/recipient/get-recipient-signatures';
 import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-email';
-import { isDocumentCompleted } from '@documenso/lib/utils/document';
 import { trpc } from '@documenso/trpc/react';
 import { DocumentShareButton } from '@documenso/ui/components/document/document-share-button';
 import { SigningCard3D } from '@documenso/ui/components/signing-card';
@@ -28,6 +28,7 @@ import { ClaimAccount } from '~/components/general/claim-account';
 import { DocumentSigningAuthPageView } from '~/components/general/document-signing/document-signing-auth-page';
 import { DocumentSigningHandoffPanel } from '~/components/general/document-signing/document-signing-handoff-panel';
 import { RecipientBranding } from '~/components/general/recipient-branding';
+import { getCompletionDownloadState } from '~/utils/completion-download';
 import { useCspNonce } from '~/utils/nonce';
 
 import type { Route } from './+types/complete';
@@ -123,7 +124,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
   } = loaderData;
 
   // Poll signing status every few seconds
-  const { data: signingStatusData } = trpc.envelope.signingStatus.useQuery(
+  const { data: signingStatusData, error: signingStatusError } = trpc.envelope.signingStatus.useQuery(
     {
       token: recipient?.token || '',
     },
@@ -139,6 +140,12 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
 
   // Use signing status from query if available, otherwise fall back to document status
   const signingStatus = signingStatusData?.status ?? 'PENDING';
+
+  const downloadState = getCompletionDownloadState({
+    signingStatus,
+    deletedAt: document?.deletedAt ?? null,
+    envelopeNotFound: !!signingStatusError && AppError.parseError(signingStatusError).code === AppErrorCode.NOT_FOUND,
+  });
 
   if (!isDocumentAccessValid) {
     return (
@@ -256,10 +263,10 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                 className="w-full max-w-none md:flex-1"
               />
 
-              {isDocumentCompleted(document) && (
+              {downloadState.kind === 'ready' && (
                 <EnvelopeDownloadDialog
                   envelopeId={document.envelopeId}
-                  envelopeStatus={document.status}
+                  envelopeStatus={downloadState.envelopeStatus}
                   envelopeItems={document.envelopeItems}
                   token={recipient?.token}
                   trigger={
@@ -271,6 +278,19 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                 />
               )}
 
+              {downloadState.kind === 'pending' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 md:flex-initial"
+                  disabled
+                  aria-describedby="completion-download-reason"
+                >
+                  <DownloadIcon className="mr-2 h-5 w-5" />
+                  <Trans>Download</Trans>
+                </Button>
+              )}
+
               {user && (
                 <Button asChild>
                   <Link to={returnToHomePath}>
@@ -279,6 +299,12 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
                 </Button>
               )}
             </div>
+
+            {downloadState.kind === 'pending' && (
+              <p id="completion-download-reason" className="mt-3 text-center text-muted-foreground/60 text-xs">
+                <Trans>The signed PDF can be downloaded once the document is complete.</Trans>
+              </p>
+            )}
 
             {/* DEV-654: renders only on an in-person handoff device (see the panel). */}
             {document.status === DocumentStatus.PENDING && (
