@@ -2,6 +2,7 @@ import signingCelebration from '@documenso/assets/images/signing-celebration.png
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
 import { isSignupEnabledForProvider } from '@documenso/lib/constants/auth';
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
@@ -123,7 +124,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
   } = loaderData;
 
   // Poll signing status every few seconds
-  const { data: signingStatusData } = trpc.envelope.signingStatus.useQuery(
+  const { data: signingStatusData, error: signingStatusError } = trpc.envelope.signingStatus.useQuery(
     {
       token: recipient?.token || '',
     },
@@ -143,6 +144,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
   const downloadState = getCompletionDownloadState({
     signingStatus,
     deletedAt: document?.deletedAt ?? null,
+    envelopeNotFound: !!signingStatusError && AppError.parseError(signingStatusError).code === AppErrorCode.NOT_FOUND,
   });
 
   if (!isDocumentAccessValid) {

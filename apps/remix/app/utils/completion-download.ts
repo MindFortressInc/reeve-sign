@@ -13,14 +13,24 @@ export type CompletionDownloadState =
  * The last signer usually lands on the page before the seal job has flipped the
  * envelope to COMPLETED, so a loader-time gate hid Download for exactly the
  * recipient who just completed the document.
+ *
+ * `envelopeNotFound` is the poll returning NOT_FOUND: an owner cancelling a
+ * non-completed envelope hard-deletes it, so the loader-time `deletedAt` never
+ * reflects that cancellation and the last polled status is stale.
  */
 export const getCompletionDownloadState = ({
   signingStatus,
   deletedAt,
+  envelopeNotFound,
 }: {
   signingStatus: TSigningStatusEnvelopeResponse['status'];
   deletedAt: Date | null;
+  envelopeNotFound: boolean;
 }): CompletionDownloadState => {
+  if (envelopeNotFound) {
+    return { kind: 'hidden' };
+  }
+
   if (signingStatus === 'COMPLETED') {
     return { kind: 'ready', envelopeStatus: DocumentStatus.COMPLETED };
   }
