@@ -18,7 +18,7 @@ import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
 import { CheckCircle2, Clock8, DownloadIcon, Loader2 } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, redirect } from 'react-router';
 import { match } from 'ts-pattern';
 
 import { EnvelopeDownloadDialog } from '~/components/dialogs/envelope-download-dialog';
@@ -94,6 +94,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       isDocumentAccessValid: false,
       branding,
     } as const;
+  }
+
+  // DEV-15772: a finished signing link lands here with ?redirect=1 instead of
+  // going straight to the sender's redirectUrl, so the destination is only
+  // revealed once access auth has passed. Direct visits (e.g. the completed
+  // email's download link) still render this page.
+  const redirectUrl = document.documentMeta?.redirectUrl;
+
+  if (redirectUrl && new URL(request.url).searchParams.has('redirect')) {
+    throw redirect(redirectUrl);
   }
 
   const signatures = await getRecipientSignatures({ recipientId: recipient.id });
