@@ -1,5 +1,6 @@
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { i18n, type MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 
 export const appMetaTags = (title?: MessageDescriptor) => {
   const description = 'Reeve.Sign — fast, secure document signing.';
@@ -58,3 +59,16 @@ export const appMetaTags = (title?: MessageDescriptor) => {
     },
   ];
 };
+
+/**
+ * DEV-15770: meta for the recipient pages (`/sign/<token>` and its children,
+ * `/d/<token>`). Without OG tags a pasted signing link unfurled with no Reeve
+ * art. Only the generic site tags are reused: the link is a bearer token, so
+ * nothing recipient- or document-specific may appear here, and the pages
+ * stay noindex (appMetaTags' `index, follow` robots is dropped).
+ */
+export const recipientMetaTags = () => [
+  { title: i18n._(msg`Sign Document - Reeve.Sign`) },
+  ...appMetaTags().filter((tag) => !('title' in tag) && !('name' in tag && tag.name === 'robots')),
+  { name: 'robots', content: 'noindex, nofollow, noarchive, nosnippet, noimageindex' },
+];
