@@ -14,7 +14,6 @@ import { getRecipientById } from '@documenso/lib/server-only/recipient/get-recip
 import { mintHandoffCapability } from '@documenso/lib/server-only/recipient/handoff-capability';
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { setTemplateRecipients } from '@documenso/lib/server-only/recipient/set-template-recipients';
-import { buildSignerProofSetCookie } from '@documenso/lib/server-only/recipient/signer-proof-cookie';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
 import { formatSigningLink } from '@documenso/lib/utils/recipients';
 import { EnvelopeType } from '@prisma/client';
@@ -599,10 +598,6 @@ export const recipientRouter = router({
         userId: ctx.user?.id,
         requestMetadata: ctx.metadata.requestMetadata,
       });
-
-      // DEV-15772: mark this browser as the one that signed, so the completion
-      // page shows it the full view and redacts it for anyone the link is forwarded to.
-      ctx.res.headers.append('Set-Cookie', buildSignerProofSetCookie(token));
     }),
 
   /**

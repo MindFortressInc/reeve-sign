@@ -1,3 +1,5 @@
+import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
+import { canViewCompletedLinkByToken } from '@documenso/lib/server-only/recipient/completed-link-access';
 import { prisma } from '@documenso/prisma';
 import { sValidator } from '@hono/standard-validator';
 import type { Prisma } from '@prisma/client';
@@ -27,6 +29,14 @@ route.get(
     const { token, envelopeId, envelopeItemId, documentDataId, version } = c.req.valid('param');
 
     if (!token) {
+      return c.json({ error: 'Not found' }, 404);
+    }
+
+    // DEV-15772: same 7-day rule as /sign/<token>/complete. QR certificate tokens are unaffected.
+    if (
+      !token.startsWith('qr_') &&
+      !(await canViewCompletedLinkByToken({ token, sessionUser: (await getOptionalSession(c)).user }))
+    ) {
       return c.json({ error: 'Not found' }, 404);
     }
 

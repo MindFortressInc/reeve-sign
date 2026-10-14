@@ -6,9 +6,9 @@ import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/brandi
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
 import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-for-token';
+import { canViewCompletedLink } from '@documenso/lib/server-only/recipient/completed-link-access';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { getRecipientSignatures } from '@documenso/lib/server-only/recipient/get-recipient-signatures';
-import { isRecipientViewer } from '@documenso/lib/server-only/recipient/signer-proof-cookie';
 import { trpc } from '@documenso/trpc/react';
 import { DocumentShareButton } from '@documenso/ui/components/document/document-share-button';
 import { SigningCard3D } from '@documenso/ui/components/signing-card';
@@ -22,7 +22,7 @@ import { Link } from 'react-router';
 import { match } from 'ts-pattern';
 
 import { EnvelopeDownloadDialog } from '~/components/dialogs/envelope-download-dialog';
-import { DocumentRedactedPreview } from '~/components/general/document/document-redacted-preview';
+import { CompletedLinkExpired } from '~/components/general/document/completed-link-expired';
 import { DocumentSigningAuthPageView } from '~/components/general/document-signing/document-signing-auth-page';
 import { DocumentSigningHandoffPanel } from '~/components/general/document-signing/document-signing-handoff-panel';
 import { RecipientBranding } from '~/components/general/recipient-branding';
@@ -60,19 +60,21 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Not Found', { status: 404 });
   }
 
-  // DEV-15772: a signing link gets forwarded. Only the browser that signed, or a
-  // session logged in as the recipient, sees who signed and can download; anyone
-  // else gets a redacted view carrying nothing about the recipient or document.
+  // DEV-15772: anyone holding the link sees the completed page for the first
+  // COMPLETED_LINK_TTL_DAYS after the envelope completes; after that only the
+  // owner's or the recipient's session does. The expired state carries nothing
+  // about the recipient or the document.
   if (
-    !isRecipientViewer({
-      token,
-      headers: request.headers,
+    !canViewCompletedLink({
+      status: document.status,
+      completedAt: document.completedAt,
+      sessionUser: user,
       recipientEmail: recipient.email,
-      sessionEmail: user?.email,
+      ownerId: document.userId,
     })
   ) {
     return {
-      isRedacted: true,
+      isExpired: true,
       isSignedIn: !!user,
       signInPath: `/signin?returnTo=${encodeURIComponent(`/sign/${token}/complete`)}`,
       branding,
@@ -87,9 +89,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   });
 
   if (!isDocumentAccessValid) {
+    // DEV-15772: no recipient email here; the link may have been forwarded.
     return {
       isDocumentAccessValid: false,
-      recipientEmail: recipient.email,
       branding,
     } as const;
   }
@@ -106,7 +108,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   return {
     isDocumentAccessValid: true,
     recipientName,
-    recipientEmail: recipient.email,
     signatures,
     document,
     recipient,
@@ -118,13 +119,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 export default function CompletedSigningPage({ loaderData }: Route.ComponentProps) {
   const cspNonce = useCspNonce();
 
-  if (loaderData.isRedacted) {
+  if (loaderData.isExpired) {
     return (
       <>
         <RecipientBranding branding={loaderData.branding} cspNonce={cspNonce} />
-        <div className="flex flex-col items-center pt-8 lg:pt-16">
-          <DocumentRedactedPreview signInPath={loaderData.signInPath} isSignedIn={loaderData.isSignedIn} />
-        </div>
+        <CompletedLinkExpired signInPath={loaderData.signInPath} isSignedIn={loaderData.isSignedIn} />
       </>
     );
   }
@@ -133,7 +132,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
 }
 
 type CompletedSigningPageViewProps = {
-  loaderData: Exclude<Route.ComponentProps['loaderData'], { isRedacted: true }>;
+  loaderData: Exclude<Route.ComponentProps['loaderData'], { isExpired: true }>;
 };
 
 const CompletedSigningPageView = ({ loaderData }: CompletedSigningPageViewProps) => {
@@ -143,16 +142,8 @@ const CompletedSigningPageView = ({ loaderData }: CompletedSigningPageViewProps)
   const user = sessionData?.user;
   const cspNonce = useCspNonce();
 
-  const {
-    isDocumentAccessValid,
-    recipientName,
-    signatures,
-    document,
-    recipient,
-    recipientEmail,
-    returnToHomePath,
-    branding,
-  } = loaderData;
+  const { isDocumentAccessValid, recipientName, signatures, document, recipient, returnToHomePath, branding } =
+    loaderData;
 
   // Poll signing status every few seconds
   const { data: signingStatusData, error: signingStatusError } = trpc.envelope.signingStatus.useQuery(
@@ -182,7 +173,7 @@ const CompletedSigningPageView = ({ loaderData }: CompletedSigningPageViewProps)
     return (
       <>
         <RecipientBranding branding={branding} cspNonce={cspNonce} />
-        <DocumentSigningAuthPageView email={recipientEmail} />
+        <DocumentSigningAuthPageView />
       </>
     );
   }

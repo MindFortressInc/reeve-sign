@@ -8,7 +8,6 @@ import { createDocumentData } from '@documenso/lib/server-only/document-data/cre
 import { createEnvelope } from '@documenso/lib/server-only/envelope/create-envelope';
 import { duplicateEnvelope } from '@documenso/lib/server-only/envelope/duplicate-envelope';
 import { updateEnvelope } from '@documenso/lib/server-only/envelope/update-envelope';
-import { buildSignerProofSetCookie } from '@documenso/lib/server-only/recipient/signer-proof-cookie';
 import { resolveOnBehalfOfUserId } from '@documenso/lib/server-only/reeve-admin/resolve-on-behalf-of-user';
 import {
   createDocumentFromDirectTemplate,
@@ -670,7 +669,7 @@ export const templateRouter = router({
         },
       });
 
-      const result = await createDocumentFromDirectTemplate({
+      return await createDocumentFromDirectTemplate({
         directRecipientName,
         directRecipientEmail,
         directTemplateToken,
@@ -687,12 +686,6 @@ export const templateRouter = router({
         nextSigner,
         requestMetadata: ctx.metadata,
       });
-
-      // DEV-15772: the direct-link signer lands on /sign/<token>/complete next; mark
-      // this browser as the signer's so that page isn't redacted for them.
-      ctx.res.headers.append('Set-Cookie', buildSignerProofSetCookie(result.token));
-
-      return result;
     }),
 
   /**
