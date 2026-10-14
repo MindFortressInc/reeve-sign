@@ -1,4 +1,5 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
+import { canViewCompletedLinkByToken } from '@documenso/lib/server-only/recipient/completed-link-access';
 import { parseFileUploadCustomText } from '@documenso/lib/types/field-file-upload';
 import { getPresignGetUrl } from '@documenso/lib/universal/upload/server-actions';
 import { buildSafeAttachmentContentDisposition } from '@documenso/lib/utils/safe-content-disposition';
@@ -39,6 +40,11 @@ export const getEnvelopeFieldFileDownloadUrlByTokenRoute = procedure
     });
 
     if (!recipient) {
+      throw new AppError(AppErrorCode.NOT_FOUND);
+    }
+
+    // DEV-15772: same 7-day rule as /sign/<token>/complete.
+    if (!(await canViewCompletedLinkByToken({ token, sessionUser: ctx.user }))) {
       throw new AppError(AppErrorCode.NOT_FOUND);
     }
 

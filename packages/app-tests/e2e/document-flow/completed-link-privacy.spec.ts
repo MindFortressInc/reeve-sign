@@ -38,7 +38,12 @@ const seedExpiredCompletedDocument = async (recipient: User | string) => {
     select: { id: true, documentDataId: true },
   });
 
+  const itemsByTokenInput = encodeURIComponent(
+    JSON.stringify({ json: { envelopeId: document.id, access: { type: 'recipient', token } } }),
+  );
+
   const pdfUrls = [
+    `/api/trpc/envelope.item.getManyByToken?input=${itemsByTokenInput}`,
     `/api/files/token/${token}/envelopeItem/${item.id}`,
     `/api/files/token/${token}/envelopeItem/${item.id}/download/signed`,
     `/api/files/token/${token}/envelope/${document.id}/envelopeItem/${item.id}/dataId/${item.documentDataId}/current/item.pdf`,
