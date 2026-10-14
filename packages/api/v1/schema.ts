@@ -1,7 +1,7 @@
 import { extendZodWithOpenApi } from '@anatine/zod-openapi';
-import { DATE_FORMATS, DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
+import { DATE_FORMATS } from '@documenso/lib/constants/date-formats';
 import { SUPPORTED_LANGUAGE_CODES } from '@documenso/lib/constants/i18n';
-import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
+import { TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { ZUrlSchema } from '@documenso/lib/schemas/common';
 import {
   ZDocumentAccessAuthTypesSchema,
@@ -185,17 +185,18 @@ export const ZCreateDocumentMutationSchema = z.object({
     .object({
       subject: z.string(),
       message: z.string(),
-      timezone: z.string().default(DEFAULT_DOCUMENT_TIME_ZONE).openapi({
-        description: 'The timezone of the date. Must be one of the options listed in the list below.',
+      // DEV-15771: no zod default. `.partial()` below never applied one, and
+      // omitted values fall back to the team/org setting, not a fixed value.
+      timezone: z.string().openapi({
+        description:
+          'The timezone DATE fields are stamped in. Must be one of the options listed in the list below. Defaults to the team setting, else Etc/UTC.',
         enum: TIME_ZONES,
       }),
-      dateFormat: z
-        .string()
-        .default(DEFAULT_DOCUMENT_DATE_FORMAT)
-        .openapi({
-          description: 'The format of the date. Must be one of the options listed in the list below.',
-          enum: DATE_FORMATS.map((format) => format.value),
-        }),
+      dateFormat: z.string().openapi({
+        description:
+          'The format of the date. Must be one of the options listed in the list below. Defaults to the team setting.',
+        enum: DATE_FORMATS.map((format) => format.value),
+      }),
       redirectUrl: z.string(),
       signingOrder: z.nativeEnum(DocumentSigningOrder).optional(),
       allowDictateNextSigner: z.boolean().optional(),
