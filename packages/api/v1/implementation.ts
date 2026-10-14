@@ -1,13 +1,13 @@
 import { getServerLimits } from '@documenso/ee/server-only/limits/server';
 import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
-import { DATE_FORMATS, DEFAULT_DOCUMENT_DATE_FORMAT } from '@documenso/lib/constants/date-formats';
+import { DATE_FORMATS } from '@documenso/lib/constants/date-formats';
 import { DocumentDataType, EnvelopeType, SigningStatus } from '@prisma/client';
 import type { TsRestRequest } from '@ts-rest/serverless';
 import { tsr } from '@ts-rest/serverless/fetch';
 import type { Logger } from 'pino';
 import { match } from 'ts-pattern';
 import '@documenso/lib/constants/time-zones';
-import { DEFAULT_DOCUMENT_TIME_ZONE, TIME_ZONES } from '@documenso/lib/constants/time-zones';
+import { TIME_ZONES } from '@documenso/lib/constants/time-zones';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { deleteDocument } from '@documenso/lib/server-only/document/delete-document';
 import { findDocuments } from '@documenso/lib/server-only/document/find-documents';
@@ -394,9 +394,13 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
+      // DEV-15771: an omitted dateFormat/timezone stays undefined so
+      // createEnvelope's `meta || team/org settings || default` chain applies.
+      // Defaulting here pinned every API-created document to UTC and the
+      // default format, overriding any team setting.
       const dateFormat = body.meta.dateFormat
         ? DATE_FORMATS.find((format) => format.value === body.meta.dateFormat)
-        : DATE_FORMATS.find((format) => format.value === DEFAULT_DOCUMENT_DATE_FORMAT);
+        : undefined;
 
       if (body.meta.dateFormat && !dateFormat) {
         return {
@@ -407,9 +411,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      const timezone = body.meta.timezone
-        ? TIME_ZONES.find((tz) => tz === body.meta.timezone)
-        : DEFAULT_DOCUMENT_TIME_ZONE;
+      const timezone = body.meta.timezone ? TIME_ZONES.find((tz) => tz === body.meta.timezone) : undefined;
 
       const isTimeZoneValid = body.meta.timezone ? TIME_ZONES.includes(String(timezone)) : true;
 
@@ -535,9 +537,10 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
+      // Validation only: `meta` is passed through as-is below.
       const dateFormat = meta?.dateFormat
         ? DATE_FORMATS.find((format) => format.value === meta?.dateFormat)
-        : DATE_FORMATS.find((format) => format.value === DEFAULT_DOCUMENT_DATE_FORMAT);
+        : undefined;
 
       if (meta?.dateFormat && !dateFormat) {
         return {
@@ -548,7 +551,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         };
       }
 
-      const timezone = meta?.timezone ? TIME_ZONES.find((tz) => tz === meta?.timezone) : DEFAULT_DOCUMENT_TIME_ZONE;
+      const timezone = meta?.timezone ? TIME_ZONES.find((tz) => tz === meta?.timezone) : undefined;
 
       const isTimeZoneValid = meta?.timezone ? TIME_ZONES.includes(String(timezone)) : true;
 
