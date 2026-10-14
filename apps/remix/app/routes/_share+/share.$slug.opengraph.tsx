@@ -42,7 +42,7 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const isRecipient = 'Signature' in recipientOrSender;
+  const isRecipient = 'signatures' in recipientOrSender;
 
   const signatureImage = match(recipientOrSender)
     .with({ signatures: P.array(P._) }, (recipient) => {
