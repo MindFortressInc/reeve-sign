@@ -272,10 +272,17 @@ export async function loader(loaderArgs: Route.LoaderArgs) {
       token,
     },
     select: {
+      signingStatus: true,
       envelope: {
         select: {
           internalVersion: true,
           teamId: true,
+          status: true,
+          documentMeta: {
+            select: {
+              redirectUrl: true,
+            },
+          },
         },
       },
     },
@@ -283,6 +290,18 @@ export async function loader(loaderArgs: Route.LoaderArgs) {
 
   if (!foundRecipient) {
     throw new Response('Not Found', { status: 404 });
+  }
+
+  // DEV-15772: a finished link goes straight to the completion page, which decides
+  // who may see what. Checking access auth first would show "log in as <recipient
+  // email>" to anyone the link was forwarded to. A rejected envelope keeps its
+  // existing per-version routing below.
+  const isFinished =
+    foundRecipient.envelope.status === DocumentStatus.COMPLETED ||
+    foundRecipient.signingStatus === SigningStatus.SIGNED;
+
+  if (isFinished && foundRecipient.envelope.status !== DocumentStatus.REJECTED) {
+    throw redirect(foundRecipient.envelope.documentMeta?.redirectUrl || `/sign/${token}/complete`);
   }
 
   const branding = await loadRecipientBrandingByTeamId({

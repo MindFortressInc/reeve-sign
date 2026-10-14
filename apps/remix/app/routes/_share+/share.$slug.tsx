@@ -3,6 +3,7 @@ import { getDocumentByAccessToken } from '@documenso/lib/server-only/document/ge
 import { redirect, useLoaderData } from 'react-router';
 
 import { DocumentCertificateQRView } from '~/components/general/document/document-certificate-qr-view';
+import { DocumentRedactedPreview } from '~/components/general/document/document-redacted-preview';
 
 import type { Route } from './+types/share.$slug';
 
@@ -69,12 +70,19 @@ export const loader = async ({ request, params: { slug } }: Route.LoaderArgs) =>
     return {};
   }
 
-  // Is hardcoded because this whole meta is hardcoded anyway for Reeve.Sign.
-  throw redirect('https://meetreeve.com');
+  // DEV-15772: humans used to be bounced to the marketing site, which read as the
+  // link "just redirecting to the website". Show the private-document state instead.
+  return { isRedacted: true } as const;
 };
 
 export default function SharePage() {
-  const { document, token } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+
+  if ('isRedacted' in loaderData) {
+    return <DocumentRedactedPreview signInPath="/signin" />;
+  }
+
+  const { document, token } = loaderData;
 
   if (document) {
     return (

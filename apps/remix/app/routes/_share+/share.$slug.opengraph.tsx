@@ -2,7 +2,6 @@ import { NEXT_PUBLIC_WEBAPP_URL } from '@documenso/lib/constants/app';
 import { getRecipientOrSenderByShareLinkSlug } from '@documenso/lib/server-only/document/get-recipient-or-sender-by-share-link-slug';
 import { svgToPng } from '@documenso/lib/utils/images/svg-to-png';
 import satori from 'satori';
-import { match, P } from 'ts-pattern';
 
 import type { Route } from './+types/share.$slug.opengraph';
 
@@ -44,21 +43,9 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
 
   const isRecipient = 'Signature' in recipientOrSender;
 
-  const signatureImage = match(recipientOrSender)
-    .with({ signatures: P.array(P._) }, (recipient) => {
-      return recipient.signatures?.[0]?.signatureImageAsBase64 || null;
-    })
-    .otherwise((sender) => {
-      return sender.signature || null;
-    });
-
-  const signatureName = match(recipientOrSender)
-    .with({ signatures: P.array(P._) }, (recipient) => {
-      return recipient.name || recipient.email;
-    })
-    .otherwise((sender) => {
-      return sender.name || sender.email;
-    });
+  // DEV-15772: this image is public (every link preview fetches it), so it never
+  // carries the signer's or sender's name, email or signature.
+  const cardText = 'Reeve.Sign';
 
   // Generate SVG using Satori
   const svg = await satori(
@@ -82,53 +69,26 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
         }}
       />
 
-      {signatureImage ? (
-        <div
-          style={{
-            position: 'absolute',
-            padding: '24px 48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
-            top: CARD_OFFSET_TOP,
-            left: CARD_OFFSET_LEFT,
-            width: CARD_WIDTH,
-            height: CARD_HEIGHT,
-          }}
-        >
-          <img
-            src={signatureImage}
-            alt="signature"
-            style={{
-              opacity: 0.6,
-              height: '100%',
-              maxWidth: '100%',
-            }}
-          />
-        </div>
-      ) : (
-        <p
-          style={{
-            position: 'absolute',
-            padding: '24px 48px',
-            marginTop: '-8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
-            color: '#64748b',
-            fontFamily: 'Caveat',
-            fontSize: Math.max(Math.min((CARD_WIDTH * 1.5) / signatureName.length, 80), 36),
-            top: CARD_OFFSET_TOP,
-            left: CARD_OFFSET_LEFT,
-            width: CARD_WIDTH,
-            height: CARD_HEIGHT,
-          }}
-        >
-          {signatureName}
-        </p>
-      )}
+      <p
+        style={{
+          position: 'absolute',
+          padding: '24px 48px',
+          marginTop: '-8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          color: '#64748b',
+          fontFamily: 'Caveat',
+          fontSize: Math.max(Math.min((CARD_WIDTH * 1.5) / cardText.length, 80), 36),
+          top: CARD_OFFSET_TOP,
+          left: CARD_OFFSET_LEFT,
+          width: CARD_WIDTH,
+          height: CARD_HEIGHT,
+        }}
+      >
+        {cardText}
+      </p>
 
       <div
         style={{
