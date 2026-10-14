@@ -173,7 +173,7 @@ const CompletedSigningPageView = ({ loaderData }: CompletedSigningPageViewProps)
     return (
       <>
         <RecipientBranding branding={branding} cspNonce={cspNonce} />
-        <DocumentSigningAuthPageView />
+        <DocumentSigningAuthPageView emailHasAccount />
       </>
     );
   }
