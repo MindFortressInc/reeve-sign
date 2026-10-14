@@ -8,6 +8,7 @@
     "templates/",
     "transports/",
     "mailer.ts",
+    "ses-configuration-set.ts",
     "render.ts",
     "index.ts"
   ],
