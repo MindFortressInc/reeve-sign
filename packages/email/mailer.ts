@@ -3,6 +3,7 @@ import { ResendTransport } from '@documenso/nodemailer-resend';
 import type { Transporter } from 'nodemailer';
 import { createTransport } from 'nodemailer';
 
+import { getSesConfigurationSetDefaults } from './ses-configuration-set';
 import { MailChannelsTransport } from './transports/mailchannels';
 
 /**
@@ -56,6 +57,11 @@ const getSmtpAuthHost = (): string => {
  *   - `NEXT_PRIVATE_SMTP_SERVICE`: The SMTP service provider (e.g., "gmail"). This option is used
  *     when integrating with well-known services (like Gmail), enabling simplified configuration.
  *
+ * Both SMTP transports (`smtp-api`, `smtp-auth`) also honour:
+ * - `NEXT_PRIVATE_SES_CONFIGURATION_SET`: When set, every message carries an
+ *   `X-SES-CONFIGURATION-SET` header so an SES SMTP relay applies that configuration set
+ *   (bounce/complaint event routing). Unset or blank sends no header.
+ *
  * Example Usage:
  * ```env
  * NEXT_PRIVATE_SMTP_TRANSPORT='smtp-auth';
@@ -101,30 +107,36 @@ const getTransport = (): Transporter => {
       throw new Error('SMTP API transport requires NEXT_PRIVATE_SMTP_HOST and NEXT_PRIVATE_SMTP_APIKEY');
     }
 
-    return createTransport({
-      host: env('NEXT_PRIVATE_SMTP_HOST'),
-      port: Number(env('NEXT_PRIVATE_SMTP_PORT')) || 587,
-      secure: env('NEXT_PRIVATE_SMTP_SECURE') === 'true',
-      auth: {
-        user: env('NEXT_PRIVATE_SMTP_APIKEY_USER') ?? 'apikey',
-        pass: env('NEXT_PRIVATE_SMTP_APIKEY') ?? '',
+    return createTransport(
+      {
+        host: env('NEXT_PRIVATE_SMTP_HOST'),
+        port: Number(env('NEXT_PRIVATE_SMTP_PORT')) || 587,
+        secure: env('NEXT_PRIVATE_SMTP_SECURE') === 'true',
+        auth: {
+          user: env('NEXT_PRIVATE_SMTP_APIKEY_USER') ?? 'apikey',
+          pass: env('NEXT_PRIVATE_SMTP_APIKEY') ?? '',
+        },
       },
-    });
+      getSesConfigurationSetDefaults(env('NEXT_PRIVATE_SES_CONFIGURATION_SET')),
+    );
   }
 
-  return createTransport({
-    host: getSmtpAuthHost(),
-    port: Number(env('NEXT_PRIVATE_SMTP_PORT')) || 587,
-    secure: env('NEXT_PRIVATE_SMTP_SECURE') === 'true',
-    ignoreTLS: env('NEXT_PRIVATE_SMTP_UNSAFE_IGNORE_TLS') === 'true',
-    auth: env('NEXT_PRIVATE_SMTP_USERNAME')
-      ? {
-          user: env('NEXT_PRIVATE_SMTP_USERNAME'),
-          pass: env('NEXT_PRIVATE_SMTP_PASSWORD') ?? '',
-        }
-      : undefined,
-    ...(env('NEXT_PRIVATE_SMTP_SERVICE') ? { service: env('NEXT_PRIVATE_SMTP_SERVICE') } : {}),
-  });
+  return createTransport(
+    {
+      host: getSmtpAuthHost(),
+      port: Number(env('NEXT_PRIVATE_SMTP_PORT')) || 587,
+      secure: env('NEXT_PRIVATE_SMTP_SECURE') === 'true',
+      ignoreTLS: env('NEXT_PRIVATE_SMTP_UNSAFE_IGNORE_TLS') === 'true',
+      auth: env('NEXT_PRIVATE_SMTP_USERNAME')
+        ? {
+            user: env('NEXT_PRIVATE_SMTP_USERNAME'),
+            pass: env('NEXT_PRIVATE_SMTP_PASSWORD') ?? '',
+          }
+        : undefined,
+      ...(env('NEXT_PRIVATE_SMTP_SERVICE') ? { service: env('NEXT_PRIVATE_SMTP_SERVICE') } : {}),
+    },
+    getSesConfigurationSetDefaults(env('NEXT_PRIVATE_SES_CONFIGURATION_SET')),
+  );
 };
 
 export const mailer = getTransport();

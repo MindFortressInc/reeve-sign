@@ -8,11 +8,13 @@
     "templates/",
     "transports/",
     "mailer.ts",
+    "ses-configuration-set.ts",
     "render.ts",
     "index.ts"
   ],
   "scripts": {
     "dev": "email dev --port 3002 --dir templates",
+    "test": "vitest run",
     "clean": "rimraf node_modules"
   },
   "dependencies": {

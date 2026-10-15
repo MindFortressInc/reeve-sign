@@ -39,6 +39,9 @@ jobs:
       - name: Run tests
         run: npm run test --workspace=@documenso/remix
 
+      - name: Run email tests
+        run: npm run test --workspace=@documenso/email
+
   build_app:
     name: Build App
     runs-on: ubuntu-latest
