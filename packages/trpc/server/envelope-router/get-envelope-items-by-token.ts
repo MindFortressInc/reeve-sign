@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { getEnvelopeWhereInput } from '@documenso/lib/server-only/envelope/get-envelope-by-id';
+import { canViewCompletedLinkByToken } from '@documenso/lib/server-only/recipient/completed-link-access';
 import { getOrganisationTemplateWhereInput } from '@documenso/lib/server-only/template/get-organisation-template-by-id';
 import { prisma } from '@documenso/prisma';
 import { EnvelopeType } from '@prisma/client';
@@ -43,6 +44,13 @@ export const getEnvelopeItemsByTokenRoute = maybeAuthenticatedProcedure
       return {
         data,
       };
+    }
+
+    // DEV-15772: same 7-day rule as /sign/<token>/complete.
+    if (!(await canViewCompletedLinkByToken({ token: access.token, sessionUser: user }))) {
+      throw new AppError(AppErrorCode.NOT_FOUND, {
+        message: 'Envelope could not be found',
+      });
     }
 
     const { envelopeItems: data } = await handleGetEnvelopeItemsByToken({

@@ -1,30 +1,31 @@
 import signingCelebration from '@documenso/assets/images/signing-celebration.png';
 import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
-import { isSignupEnabledForProvider } from '@documenso/lib/constants/auth';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/branding/load-recipient-branding';
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
 import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-for-token';
+import {
+  canViewCompletedLink,
+  isCompletedLinkExpired,
+} from '@documenso/lib/server-only/recipient/completed-link-access';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { getRecipientSignatures } from '@documenso/lib/server-only/recipient/get-recipient-signatures';
-import { getUserByEmail } from '@documenso/lib/server-only/user/get-user-by-email';
 import { trpc } from '@documenso/trpc/react';
 import { DocumentShareButton } from '@documenso/ui/components/document/document-share-button';
 import { SigningCard3D } from '@documenso/ui/components/signing-card';
-import { cn } from '@documenso/ui/lib/utils';
 import { Badge } from '@documenso/ui/primitives/badge';
 import { Button } from '@documenso/ui/primitives/button';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
+import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { CheckCircle2, Clock8, DownloadIcon, Loader2 } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, redirect } from 'react-router';
 import { match } from 'ts-pattern';
 
 import { EnvelopeDownloadDialog } from '~/components/dialogs/envelope-download-dialog';
-import { ClaimAccount } from '~/components/general/claim-account';
+import { CompletedLinkExpired } from '~/components/general/document/completed-link-expired';
 import { DocumentSigningAuthPageView } from '~/components/general/document-signing/document-signing-auth-page';
 import { DocumentSigningHandoffPanel } from '~/components/general/document-signing/document-signing-handoff-panel';
 import { RecipientBranding } from '~/components/general/recipient-branding';
@@ -62,30 +63,81 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Not Found', { status: 404 });
   }
 
-  const isDocumentAccessValid = await isRecipientAuthorized({
-    type: 'ACCESS',
-    documentAuthOptions: document.authOptions,
-    recipient,
-    userId: user?.id,
-  });
+  // DEV-15772: a finished signing link lands here with ?redirect=1. The param is
+  // consumed by this loader: either the sender's redirectUrl is applied (below,
+  // once access auth passes and the recipient is done) or the viewer is sent to
+  // the clean completion URL, so it never sticks to a page that can be shared.
+  const completePath = `/sign/${token}/complete`;
+  const isRedirectRequest = new URL(request.url).searchParams.has('redirect');
 
-  if (!isDocumentAccessValid) {
-    return {
-      isDocumentAccessValid: false,
+  // DEV-15772: anyone holding the link sees the completed page for the first
+  // COMPLETED_LINK_TTL_DAYS after the envelope completes; after that only the
+  // owner's or the recipient's session does. The expired state carries nothing
+  // about the recipient or the document.
+  if (
+    !canViewCompletedLink({
+      status: document.status,
+      completedAt: document.completedAt,
+      sessionUser: user,
       recipientEmail: recipient.email,
+      ownerId: document.userId,
+    })
+  ) {
+    if (isRedirectRequest) {
+      throw redirect(completePath);
+    }
+
+    return {
+      isExpired: true,
+      isSignedIn: !!user,
+      signInPath: `/signin?returnTo=${encodeURIComponent(completePath)}`,
       branding,
     } as const;
   }
 
+  // Past the window canViewCompletedLink admits the owner's session, but the
+  // owner is not the recipient, so recipient access auth (e.g. ACCOUNT) would
+  // deny them. The owner bypass applies only there; every other request keeps
+  // the recipient access check.
+  const isOwnerPastWindow =
+    user?.id === document.userId &&
+    isCompletedLinkExpired({ status: document.status, completedAt: document.completedAt });
+
+  const isDocumentAccessValid =
+    isOwnerPastWindow ||
+    (await isRecipientAuthorized({
+      type: 'ACCESS',
+      documentAuthOptions: document.authOptions,
+      recipient,
+      userId: user?.id,
+    }));
+
+  if (!isDocumentAccessValid) {
+    if (isRedirectRequest) {
+      throw redirect(completePath);
+    }
+
+    // DEV-15772: no recipient email here; the link may have been forwarded.
+    return {
+      isDocumentAccessValid: false,
+      branding,
+    } as const;
+  }
+
+  // The sender's redirectUrl is only revealed once access auth has passed and the
+  // recipient has actually finished. Direct visits (e.g. the completed email's
+  // download link) still render this page.
+  if (isRedirectRequest) {
+    const redirectUrl = document.documentMeta?.redirectUrl;
+    const isFinished = document.status === DocumentStatus.COMPLETED || recipient.signingStatus === SigningStatus.SIGNED;
+
+    throw redirect(redirectUrl && isFinished ? redirectUrl : completePath);
+  }
+
   const signatures = await getRecipientSignatures({ recipientId: recipient.id });
-  const isExistingUser = await getUserByEmail({ email: recipient.email })
-    .then((u) => !!u)
-    .catch(() => false);
 
   const recipientName =
     recipient.name || fields.find((field) => field.type === FieldType.NAME)?.customText || recipient.email;
-
-  const canSignUp = !isExistingUser && isSignupEnabledForProvider('email');
 
   const canRedirectToFolder = user && document.userId === user.id && document.folderId && document.team?.url;
 
@@ -93,9 +145,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   return {
     isDocumentAccessValid: true,
-    canSignUp,
     recipientName,
-    recipientEmail: recipient.email,
     signatures,
     document,
     recipient,
@@ -105,23 +155,33 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 }
 
 export default function CompletedSigningPage({ loaderData }: Route.ComponentProps) {
+  const cspNonce = useCspNonce();
+
+  if (loaderData.isExpired) {
+    return (
+      <>
+        <RecipientBranding branding={loaderData.branding} cspNonce={cspNonce} />
+        <CompletedLinkExpired signInPath={loaderData.signInPath} isSignedIn={loaderData.isSignedIn} />
+      </>
+    );
+  }
+
+  return <CompletedSigningPageView loaderData={loaderData} />;
+}
+
+type CompletedSigningPageViewProps = {
+  loaderData: Exclude<Route.ComponentProps['loaderData'], { isExpired: true }>;
+};
+
+const CompletedSigningPageView = ({ loaderData }: CompletedSigningPageViewProps) => {
   const { _ } = useLingui();
 
   const { sessionData } = useOptionalSession();
   const user = sessionData?.user;
   const cspNonce = useCspNonce();
 
-  const {
-    isDocumentAccessValid,
-    canSignUp,
-    recipientName,
-    signatures,
-    document,
-    recipient,
-    recipientEmail,
-    returnToHomePath,
-    branding,
-  } = loaderData;
+  const { isDocumentAccessValid, recipientName, signatures, document, recipient, returnToHomePath, branding } =
+    loaderData;
 
   // Poll signing status every few seconds
   const { data: signingStatusData, error: signingStatusError } = trpc.envelope.signingStatus.useQuery(
@@ -151,7 +211,7 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
     return (
       <>
         <RecipientBranding branding={branding} cspNonce={cspNonce} />
-        <DocumentSigningAuthPageView email={recipientEmail} />
+        <DocumentSigningAuthPageView emailHasAccount />
       </>
     );
   }
@@ -159,23 +219,9 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
   return (
     <>
       <RecipientBranding branding={branding} cspNonce={cspNonce} />
-      <div
-        className={cn(
-          '-mx-4 flex flex-col items-center overflow-hidden px-4 pt-16 md:-mx-8 md:px-8 lg:pt-20 xl:pt-28',
-          { 'pt-0 lg:pt-0 xl:pt-0': canSignUp },
-        )}
-      >
-        <div
-          className={cn('relative mt-6 flex w-full flex-col items-center justify-center', {
-            'mt-0 flex-col divide-y overflow-hidden pt-6 md:pt-16 lg:flex-row lg:divide-x lg:divide-y-0 lg:pt-20 xl:pt-24':
-              canSignUp,
-          })}
-        >
-          <div
-            className={cn('flex flex-col items-center', {
-              'mb-8 p-4 md:mb-0 md:p-12': canSignUp,
-            })}
-          >
+      <div className="-mx-4 flex flex-col items-center overflow-hidden px-4 pt-16 md:-mx-8 md:px-8 lg:pt-20 xl:pt-28">
+        <div className="relative mt-6 flex w-full flex-col items-center justify-center">
+          <div className="flex flex-col items-center">
             <Badge variant="neutral" size="default" className="mb-6 rounded-xl border bg-transparent">
               <span className="block max-w-[10rem] truncate font-medium hover:underline md:max-w-[20rem]">
                 {document.title}
@@ -311,24 +357,8 @@ export default function CompletedSigningPage({ loaderData }: Route.ComponentProp
               <DocumentSigningHandoffPanel documentId={document.id} completedRecipientToken={recipient.token} />
             )}
           </div>
-
-          <div className="flex flex-col items-center">
-            {canSignUp && (
-              <div className="flex max-w-xl flex-col items-center justify-center p-4 md:p-12">
-                <h2 className="mt-8 text-center font-semibold text-xl md:mt-0">
-                  <Trans>Need to sign documents?</Trans>
-                </h2>
-
-                <p className="mt-4 max-w-[55ch] text-center text-muted-foreground/60 leading-normal">
-                  <Trans>Create your account and start using state-of-the-art document signing.</Trans>
-                </p>
-
-                <ClaimAccount defaultName={recipientName} defaultEmail={recipient.email} />
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </>
   );
-}
+};

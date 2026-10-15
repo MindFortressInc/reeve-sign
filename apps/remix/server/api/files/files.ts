@@ -2,6 +2,7 @@ import { getOptionalSession } from '@documenso/auth/server/lib/utils/get-session
 import { APP_DOCUMENT_UPLOAD_SIZE_LIMIT } from '@documenso/lib/constants/app';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { verifyEmbeddingPresignToken } from '@documenso/lib/server-only/embedding-presign/verify-embedding-presign-token';
+import { canViewCompletedLinkByToken } from '@documenso/lib/server-only/recipient/completed-link-access';
 import { putNormalizedPdfFileServerSide } from '@documenso/lib/universal/upload/put-file.server';
 import { getPresignPostUrl } from '@documenso/lib/universal/upload/server-actions';
 import { prisma } from '@documenso/prisma';
@@ -307,6 +308,14 @@ export const filesRoute = new Hono<HonoEnv>()
     async (c) => {
       const { token, envelopeItemId } = c.req.valid('param');
 
+      // DEV-15772: same 7-day rule as /sign/<token>/complete. QR certificate tokens are unaffected.
+      if (
+        !token.startsWith('qr_') &&
+        !(await canViewCompletedLinkByToken({ token, sessionUser: (await getOptionalSession(c)).user }))
+      ) {
+        return c.json({ error: 'Envelope item not found' }, 404);
+      }
+
       let envelopeWhereQuery: Prisma.EnvelopeItemWhereUniqueInput = {
         id: envelopeItemId,
         envelope: {
@@ -358,6 +367,14 @@ export const filesRoute = new Hono<HonoEnv>()
     sValidator('param', ZGetEnvelopeItemFileTokenDownloadRequestParamsSchema),
     async (c) => {
       const { token, envelopeItemId, version } = c.req.valid('param');
+
+      // DEV-15772: same 7-day rule as /sign/<token>/complete. QR certificate tokens are unaffected.
+      if (
+        !token.startsWith('qr_') &&
+        !(await canViewCompletedLinkByToken({ token, sessionUser: (await getOptionalSession(c)).user }))
+      ) {
+        return c.json({ error: 'Envelope item not found' }, 404);
+      }
 
       let envelopeWhereQuery: Prisma.EnvelopeItemWhereUniqueInput = {
         id: envelopeItemId,
