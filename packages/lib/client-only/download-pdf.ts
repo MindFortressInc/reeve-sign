@@ -1,5 +1,6 @@
 import type { EnvelopeItem } from '@prisma/client';
 
+import { AppError, AppErrorCode } from '../errors/app-error';
 import { getEnvelopeItemPdfUrl } from '../utils/envelope-download';
 import { downloadFile } from './download-file';
 
@@ -40,7 +41,17 @@ export const downloadPDF = async ({ envelopeItem, token, fileName, version = 'si
     version,
   });
 
-  const blob = await fetch(downloadUrl).then(async (res) => await res.blob());
+  const res = await fetch(downloadUrl);
+
+  // Without this, a 4xx/5xx JSON error body would be saved to disk as a ".pdf".
+  if (!res.ok) {
+    throw new AppError(res.status === 404 ? AppErrorCode.NOT_FOUND : AppErrorCode.UNKNOWN_ERROR, {
+      message: `Failed to download envelope item ${envelopeItem.id} (${version}): HTTP ${res.status}`,
+      statusCode: res.status,
+    });
+  }
+
+  const blob = await res.blob();
 
   const baseTitle = (fileName ?? 'document').replace(/\.pdf$/, '');
 
