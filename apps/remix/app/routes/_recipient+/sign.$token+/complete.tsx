@@ -6,7 +6,10 @@ import { loadRecipientBrandingByTeamId } from '@documenso/lib/server-only/brandi
 import { getDocumentAndSenderByToken } from '@documenso/lib/server-only/document/get-document-by-token';
 import { isRecipientAuthorized } from '@documenso/lib/server-only/document/is-recipient-authorized';
 import { getFieldsForToken } from '@documenso/lib/server-only/field/get-fields-for-token';
-import { canViewCompletedLink } from '@documenso/lib/server-only/recipient/completed-link-access';
+import {
+  canViewCompletedLink,
+  isCompletedLinkExpired,
+} from '@documenso/lib/server-only/recipient/completed-link-access';
 import { getRecipientByToken } from '@documenso/lib/server-only/recipient/get-recipient-by-token';
 import { getRecipientSignatures } from '@documenso/lib/server-only/recipient/get-recipient-signatures';
 import { trpc } from '@documenso/trpc/react';
@@ -92,12 +95,22 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     } as const;
   }
 
-  const isDocumentAccessValid = await isRecipientAuthorized({
-    type: 'ACCESS',
-    documentAuthOptions: document.authOptions,
-    recipient,
-    userId: user?.id,
-  });
+  // Past the window canViewCompletedLink admits the owner's session, but the
+  // owner is not the recipient, so recipient access auth (e.g. ACCOUNT) would
+  // deny them. The owner bypass applies only there; every other request keeps
+  // the recipient access check.
+  const isOwnerPastWindow =
+    user?.id === document.userId &&
+    isCompletedLinkExpired({ status: document.status, completedAt: document.completedAt });
+
+  const isDocumentAccessValid =
+    isOwnerPastWindow ||
+    (await isRecipientAuthorized({
+      type: 'ACCESS',
+      documentAuthOptions: document.authOptions,
+      recipient,
+      userId: user?.id,
+    }));
 
   if (!isDocumentAccessValid) {
     if (isRedirectRequest) {
