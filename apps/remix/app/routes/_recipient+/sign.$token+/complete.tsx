@@ -16,7 +16,7 @@ import { Badge } from '@documenso/ui/primitives/badge';
 import { Button } from '@documenso/ui/primitives/button';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { DocumentStatus, FieldType, RecipientRole } from '@prisma/client';
+import { DocumentStatus, FieldType, RecipientRole, SigningStatus } from '@prisma/client';
 import { CheckCircle2, Clock8, DownloadIcon, Loader2 } from 'lucide-react';
 import { Link, redirect } from 'react-router';
 import { match } from 'ts-pattern';
@@ -60,6 +60,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Not Found', { status: 404 });
   }
 
+  // DEV-15772: a finished signing link lands here with ?redirect=1. The param is
+  // consumed by this loader: either the sender's redirectUrl is applied (below,
+  // once access auth passes and the recipient is done) or the viewer is sent to
+  // the clean completion URL, so it never sticks to a page that can be shared.
+  const completePath = `/sign/${token}/complete`;
+  const isRedirectRequest = new URL(request.url).searchParams.has('redirect');
+
   // DEV-15772: anyone holding the link sees the completed page for the first
   // COMPLETED_LINK_TTL_DAYS after the envelope completes; after that only the
   // owner's or the recipient's session does. The expired state carries nothing
@@ -73,10 +80,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       ownerId: document.userId,
     })
   ) {
+    if (isRedirectRequest) {
+      throw redirect(completePath);
+    }
+
     return {
       isExpired: true,
       isSignedIn: !!user,
-      signInPath: `/signin?returnTo=${encodeURIComponent(`/sign/${token}/complete`)}`,
+      signInPath: `/signin?returnTo=${encodeURIComponent(completePath)}`,
       branding,
     } as const;
   }
@@ -89,6 +100,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   });
 
   if (!isDocumentAccessValid) {
+    if (isRedirectRequest) {
+      throw redirect(completePath);
+    }
+
     // DEV-15772: no recipient email here; the link may have been forwarded.
     return {
       isDocumentAccessValid: false,
@@ -96,14 +111,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     } as const;
   }
 
-  // DEV-15772: a finished signing link lands here with ?redirect=1 instead of
-  // going straight to the sender's redirectUrl, so the destination is only
-  // revealed once access auth has passed. Direct visits (e.g. the completed
-  // email's download link) still render this page.
-  const redirectUrl = document.documentMeta?.redirectUrl;
+  // The sender's redirectUrl is only revealed once access auth has passed and the
+  // recipient has actually finished. Direct visits (e.g. the completed email's
+  // download link) still render this page.
+  if (isRedirectRequest) {
+    const redirectUrl = document.documentMeta?.redirectUrl;
+    const isFinished = document.status === DocumentStatus.COMPLETED || recipient.signingStatus === SigningStatus.SIGNED;
 
-  if (redirectUrl && new URL(request.url).searchParams.has('redirect')) {
-    throw redirect(redirectUrl);
+    throw redirect(redirectUrl && isFinished ? redirectUrl : completePath);
   }
 
   const signatures = await getRecipientSignatures({ recipientId: recipient.id });
