@@ -41,7 +41,7 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const isRecipient = 'Signature' in recipientOrSender;
+  const isRecipient = 'signatures' in recipientOrSender;
 
   // DEV-15772: this image is public (every link preview fetches it), so it never
   // carries the signer's or sender's name, email or signature.
