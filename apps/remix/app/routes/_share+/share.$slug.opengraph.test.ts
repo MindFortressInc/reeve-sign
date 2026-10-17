@@ -90,4 +90,18 @@ describe('share.$slug.opengraph loader heading', () => {
 
     expect(heading).toBe('Document Sent!');
   });
+
+  // DEV-15850: an unknown/deleted slug used to throw out of the loader (500)
+  // because the helper threw while the loader guarded a dead `'error' in` shape.
+  it('returns 404 for an unknown share slug without rendering', async () => {
+    getRecipientOrSenderMock.mockResolvedValue(null);
+
+    const { loader } = await import('./share.$slug.opengraph');
+
+    const response = await loader({ params: { slug: 'missing' } } as Parameters<typeof loader>[0]);
+
+    expect(response.status).toBe(404);
+    expect(satoriMock).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

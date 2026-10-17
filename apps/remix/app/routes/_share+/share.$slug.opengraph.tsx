@@ -25,6 +25,14 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
     return new Response('Not found', { status: 404 });
   }
 
+  const recipientOrSender = await getRecipientOrSenderByShareLinkSlug({
+    slug,
+  });
+
+  if (!recipientOrSender) {
+    return new Response('Not found', { status: 404 });
+  }
+
   const baseUrl = NEXT_PUBLIC_WEBAPP_URL();
 
   const [interSemiBold, interRegular, caveatRegular] = await Promise.all([
@@ -32,14 +40,6 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
     fetch(new URL(`${baseUrl}/fonts/inter-regular.ttf`, import.meta.url)).then(async (res) => res.arrayBuffer()),
     fetch(new URL(`${baseUrl}/fonts/caveat-regular.ttf`, import.meta.url)).then(async (res) => res.arrayBuffer()),
   ]);
-
-  const recipientOrSender = await getRecipientOrSenderByShareLinkSlug({
-    slug,
-  });
-
-  if ('error' in recipientOrSender) {
-    return Response.json({ error: 'Not found' }, { status: 404 });
-  }
 
   const isRecipient = 'signatures' in recipientOrSender;
 

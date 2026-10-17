@@ -4,12 +4,20 @@ export type GetRecipientOrSenderByShareLinkSlugOptions = {
   slug: string;
 };
 
+// Returns null for an unknown/deleted slug or a share link whose sender and
+// recipient are gone, so callers can answer 404 instead of throwing (DEV-15850).
 export const getRecipientOrSenderByShareLinkSlug = async ({ slug }: GetRecipientOrSenderByShareLinkSlugOptions) => {
-  const { envelopeId, email } = await prisma.documentShareLink.findFirstOrThrow({
+  const shareLink = await prisma.documentShareLink.findFirst({
     where: {
       slug,
     },
   });
+
+  if (!shareLink) {
+    return null;
+  }
+
+  const { envelopeId, email } = shareLink;
 
   const sender = await prisma.user.findFirst({
     where: {
@@ -39,9 +47,5 @@ export const getRecipientOrSenderByShareLinkSlug = async ({ slug }: GetRecipient
     },
   });
 
-  if (recipient) {
-    return recipient;
-  }
-
-  throw new Error('Recipient or sender not found');
+  return recipient;
 };
