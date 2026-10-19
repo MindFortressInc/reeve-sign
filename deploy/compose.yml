@@ -2,7 +2,7 @@ name: reeve-sign
 
 services:
   documenso:
-    image: ghcr.io/mindfortressinc/reeve-sign:sha-e71fc03c
+    image: ghcr.io/mindfortressinc/reeve-sign:sha-4a0d42ee
     restart: unless-stopped
     dns:
       - 169.254.169.253  # AWS VPC resolver — ensures RDS hostname resolves to private VPC IP
