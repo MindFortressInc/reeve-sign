@@ -105,24 +105,26 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
   const recipientActionVerb = i18n._(RECIPIENT_ROLES_DESCRIPTION[recipient.role].actionVerb).toLowerCase();
 
   let emailMessage = customEmail?.message || '';
-  let emailSubject = i18n._(msg`Please ${recipientActionVerb} this document`);
+  let emailSubject = i18n._(msg`Please ${recipientActionVerb} the document "${envelope.title}"`);
 
   if (selfSigner) {
     emailMessage = i18n._(
       msg`You have initiated the document ${`"${envelope.title}"`} that requires you to ${recipientActionVerb} it.`,
     );
-    emailSubject = i18n._(msg`Please ${recipientActionVerb} your document`);
+    emailSubject = i18n._(msg`Please ${recipientActionVerb} your document "${envelope.title}"`);
   }
 
   if (isDirectTemplate) {
     emailMessage = i18n._(
       msg`A document was created by your direct template that requires you to ${recipientActionVerb} it.`,
     );
-    emailSubject = i18n._(msg`Please ${recipientActionVerb} this document created by your direct template`);
+    emailSubject = i18n._(
+      msg`Please ${recipientActionVerb} the document "${envelope.title}" created by your direct template`,
+    );
   }
 
   if (organisationType === OrganisationType.ORGANISATION) {
-    emailSubject = i18n._(msg`${team.name} invited you to ${recipientActionVerb} a document`);
+    emailSubject = i18n._(msg`${team.name} invited you to ${recipientActionVerb} the document "${envelope.title}"`);
     emailMessage = customEmail?.message ?? '';
 
     if (!emailMessage) {
@@ -179,7 +181,11 @@ export const run = async ({ payload, io }: { payload: TSendSigningEmailJobDefini
         },
         from: senderEmail,
         replyTo: replyToEmail,
-        subject: renderCustomEmailTemplate(documentMeta?.subject || emailSubject, customEmailTemplate),
+        // Render only a caller-supplied subject: the default embeds the title,
+        // whose braces must not be read as template placeholders.
+        subject: documentMeta?.subject
+          ? renderCustomEmailTemplate(documentMeta.subject, customEmailTemplate)
+          : emailSubject,
         html,
         text,
       });
