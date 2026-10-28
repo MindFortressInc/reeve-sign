@@ -116,7 +116,9 @@ export const run = async ({ payload, io }: { payload: TProcessSigningReminderJob
   let emailSubject = i18n._(msg`Reminder: Please ${recipientActionVerb} the document "${envelope.title}"`);
 
   if (organisationType === OrganisationType.ORGANISATION) {
-    emailSubject = i18n._(msg`Reminder: ${envelope.team.name} invited you to ${recipientActionVerb} a document`);
+    emailSubject = i18n._(
+      msg`Reminder: ${envelope.team.name} invited you to ${recipientActionVerb} the document "${envelope.title}"`,
+    );
   }
 
   const customEmailTemplate = {

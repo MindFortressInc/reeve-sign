@@ -276,9 +276,10 @@ msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
 msgstr "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
 
 #. placeholder {0}: team.name
+#. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "{0} invited you to {recipientActionVerb} a document"
-msgstr "{0} invited you to {recipientActionVerb} a document"
+msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "{0} invited you to {recipientActionVerb} the document \"{1}\""
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7768,17 +7769,20 @@ msgstr "Please {0} your document<0/>\"{documentName}\""
 msgid "Please {action} your document {documentName}"
 msgstr "Please {action} your document {documentName}"
 
+#. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document"
-msgstr "Please {recipientActionVerb} this document"
+msgid "Please {recipientActionVerb} the document \"{0}\""
+msgstr "Please {recipientActionVerb} the document \"{0}\""
 
+#. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document created by your direct template"
-msgstr "Please {recipientActionVerb} this document created by your direct template"
+msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
+msgstr "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
 
+#. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} your document"
-msgstr "Please {recipientActionVerb} your document"
+msgid "Please {recipientActionVerb} your document \"{0}\""
+msgstr "Please {recipientActionVerb} your document \"{0}\""
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8453,10 +8457,11 @@ msgid "Reminder: {0}"
 msgstr "Reminder: {0}"
 
 #. placeholder {0}: envelope.team.name
+#. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: {0} invited you to {recipientActionVerb} a document"
-msgstr "Reminder: {0} invited you to {recipientActionVerb} a document"
+msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8465,16 +8470,14 @@ msgstr "Reminder: Please {0} your document<0/>\"{documentName}\""
 
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
+#: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
 msgstr "Reminder: Please {recipientActionVerb} the document \"{0}\""
 
+#. placeholder {0}: envelope.title
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} this document"
-msgstr "Reminder: Please {recipientActionVerb} this document"
-
-#: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} your document"
-msgstr "Reminder: Please {recipientActionVerb} your document"
+msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
+msgstr "Reminder: Please {recipientActionVerb} your document \"{0}\""
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
