@@ -283,7 +283,7 @@ msgstr "{0} hat Sie eingeladen, das Dokument \"{1}\" {recipientActionVerb}."
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "{0} hat dich eingeladen, das Dokument \"{1}\" {recipientActionVerb}"
+msgstr "{0} hat dich eingeladen, das Dokument \"{1}\" zu {recipientActionVerb}"
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7775,15 +7775,15 @@ msgstr "Bitte {action} dein Dokument {documentName}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\""
-msgstr "Bitte {recipientActionVerb} das Dokument \"{0}\""
+msgstr "Bitte das Dokument \"{0}\" {recipientActionVerb}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
-msgstr "Bitte {recipientActionVerb} das Dokument \"{0}\", das von deiner direkten Vorlage erstellt wurde"
+msgstr "Bitte das von deiner direkten Vorlage erstellte Dokument \"{0}\" {recipientActionVerb}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} your document \"{0}\""
-msgstr "Bitte {recipientActionVerb} dein Dokument \"{0}\""
+msgstr "Bitte dein Dokument \"{0}\" {recipientActionVerb}"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8461,7 +8461,7 @@ msgstr "Erinnerung: {0}"
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "Erinnerung: {0} hat dich eingeladen, das Dokument \"{1}\" {recipientActionVerb}"
+msgstr "Erinnerung: {0} hat dich eingeladen, das Dokument \"{1}\" zu {recipientActionVerb}"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8475,7 +8475,7 @@ msgstr "Erinnerung: Bitte {recipientActionVerb} das Dokument \"{0}\""
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
-msgstr "Erinnerung: Bitte {recipientActionVerb} dein Dokument \"{0}\""
+msgstr "Erinnerung: Bitte dein Dokument \"{0}\" {recipientActionVerb}"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"

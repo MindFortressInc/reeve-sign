@@ -7775,15 +7775,15 @@ msgstr "{action} je document {documentName}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\""
-msgstr "{recipientActionVerb} het document \"{0}\""
+msgstr "Gelieve het document \"{0}\" te {recipientActionVerb}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
-msgstr "{recipientActionVerb} het document \"{0}\" dat is aangemaakt via je directe sjabloon"
+msgstr "Gelieve het via je directe sjabloon aangemaakte document \"{0}\" te {recipientActionVerb}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} your document \"{0}\""
-msgstr "{recipientActionVerb} je document \"{0}\""
+msgstr "Gelieve je document \"{0}\" te {recipientActionVerb}"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8475,7 +8475,7 @@ msgstr "Herinnering: Gelieve het document \"{0}\" te {recipientActionVerb}"
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
-msgstr "Herinnering: {recipientActionVerb} je document \"{0}\""
+msgstr "Herinnering: Gelieve je document \"{0}\" te {recipientActionVerb}"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
