@@ -282,8 +282,8 @@ msgstr "{0} hat Sie eingeladen, das Dokument \"{1}\" {recipientActionVerb}."
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "{0} invited you to {recipientActionVerb} a document"
-msgstr "{0} hat dich eingeladen, ein Dokument {recipientActionVerb}"
+msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "{0} hat dich zum Dokument \"{1}\" eingeladen – bitte {recipientActionVerb}"
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7774,16 +7774,16 @@ msgid "Please {action} your document {documentName}"
 msgstr "Bitte {action} dein Dokument {documentName}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document"
-msgstr "Bitte {recipientActionVerb} dieses Dokument"
+msgid "Please {recipientActionVerb} the document \"{0}\""
+msgstr "Dokument \"{0}\" – bitte {recipientActionVerb}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document created by your direct template"
-msgstr "Bitte {recipientActionVerb} dieses Dokument, das von deiner direkten Vorlage erstellt wurde"
+msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
+msgstr "Von deiner direkten Vorlage erstelltes Dokument \"{0}\" – bitte {recipientActionVerb}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} your document"
-msgstr "Bitte {recipientActionVerb} dein Dokument"
+msgid "Please {recipientActionVerb} your document \"{0}\""
+msgstr "Dein Dokument \"{0}\" – bitte {recipientActionVerb}"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8460,8 +8460,8 @@ msgstr "Erinnerung: {0}"
 #. placeholder {0}: envelope.team.name
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: {0} invited you to {recipientActionVerb} a document"
-msgstr "Erinnerung: {0} hat dich eingeladen, ein Dokument {recipientActionVerb}"
+msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "Erinnerung: {0} hat dich zum Dokument \"{1}\" eingeladen – bitte {recipientActionVerb}"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8471,15 +8471,11 @@ msgstr "Erinnerung: Bitte {0} dein Dokument<0/>\"{documentName}\""
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr "Erinnerung: Bitte {recipientActionVerb} das Dokument \"{0}\""
+msgstr "Erinnerung: Dokument \"{0}\" – bitte {recipientActionVerb}"
 
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} this document"
-msgstr "Erinnerung: Bitte {recipientActionVerb} dieses Dokument"
-
-#: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} your document"
-msgstr "Erinnerung: Bitte {recipientActionVerb} dein Dokument"
+msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
+msgstr "Erinnerung: Dein Dokument \"{0}\" – bitte {recipientActionVerb}"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"

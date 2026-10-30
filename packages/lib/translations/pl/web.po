@@ -282,8 +282,8 @@ msgstr "Sprawdź i {recipientActionVerb} dokument „{1}” utworzony przez zesp
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "{0} invited you to {recipientActionVerb} a document"
-msgstr "Sprawdź i {recipientActionVerb} dokument utworzony przez zespół {0}"
+msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "Sprawdź i {recipientActionVerb} dokument „{1}” utworzony przez zespół {0}"
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7774,16 +7774,16 @@ msgid "Please {action} your document {documentName}"
 msgstr "Sprawdź i {action} dokument „{documentName}”"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document"
-msgstr "Sprawdź i {recipientActionVerb} ten dokument"
+msgid "Please {recipientActionVerb} the document \"{0}\""
+msgstr "Sprawdź i {recipientActionVerb} dokument „{0}”"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document created by your direct template"
-msgstr "Sprawdź i {recipientActionVerb} dokument utworzony przez bezpośredni szablon"
+msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
+msgstr "Sprawdź i {recipientActionVerb} dokument „{0}” utworzony przez bezpośredni szablon"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} your document"
-msgstr "Sprawdź i {recipientActionVerb} dokument"
+msgid "Please {recipientActionVerb} your document \"{0}\""
+msgstr "Sprawdź i {recipientActionVerb} dokument „{0}”"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8460,8 +8460,8 @@ msgstr "Przypomnienie: {0}"
 #. placeholder {0}: envelope.team.name
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: {0} invited you to {recipientActionVerb} a document"
-msgstr "Przypomnienie: Sprawdź i {recipientActionVerb} dokument utworzony przez zespół {0}"
+msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "Przypomnienie: Sprawdź i {recipientActionVerb} dokument „{1}” utworzony przez zespół {0}"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8474,12 +8474,8 @@ msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
 msgstr "Przypomnienie: Sprawdź i {recipientActionVerb} dokument „{0}”"
 
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} this document"
-msgstr "Przypomnienie: Sprawdź i {recipientActionVerb} dokument"
-
-#: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} your document"
-msgstr "Przypomnienie: Sprawdź i {recipientActionVerb} dokument"
+msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
+msgstr "Przypomnienie: Sprawdź i {recipientActionVerb} dokument „{0}”"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
