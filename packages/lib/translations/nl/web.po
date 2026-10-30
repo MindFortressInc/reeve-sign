@@ -278,7 +278,7 @@ msgstr "{0}-veld"
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
-msgstr "{0} heeft je uitgenodigd om het document \"{1}\" te {recipientActionVerb}."
+msgstr "{0} heeft je uitgenodigd: {recipientActionVerb, select, assisteren {wil je helpen bij het document \"{1}\"?} other {wil je het document \"{1}\" {recipientActionVerb}?}}"
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
@@ -298,7 +298,7 @@ msgstr "{0} van {1} documenten resterend deze maand."
 #. placeholder {2}: envelope.title
 #: packages/lib/server-only/document/resend-document.ts
 msgid "{0} on behalf of \"{1}\" has invited you to {recipientActionVerb} the document \"{2}\"."
-msgstr "{0} heeft namens \"{1}\" je uitgenodigd om het document \"{2}\" te {recipientActionVerb}."
+msgstr "{0} heeft je namens \"{1}\" uitgenodigd: {recipientActionVerb, select, assisteren {wil je helpen bij het document \"{2}\"?} other {wil je het document \"{2}\" {recipientActionVerb}?}}"
 
 #. placeholder {0}: organisation.name
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl._index.tsx
@@ -381,7 +381,7 @@ msgstr "{inviterName} heeft je verwijderd uit het document<0/>\"{documentName}\"
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{inviterName} on behalf of \"{0}\" has invited you to {recipientActionVerb} the document \"{1}\"."
-msgstr "{inviterName} heeft namens \"{0}\" je uitgenodigd om het document \"{1}\" te {recipientActionVerb}."
+msgstr "{inviterName} heeft je namens \"{0}\" uitgenodigd: {recipientActionVerb, select, assisteren {wil je helpen bij het document \"{1}\"?} other {wil je het document \"{1}\" {recipientActionVerb}?}}"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-invite.tsx
@@ -8471,7 +8471,7 @@ msgstr "Herinnering: Gelieve {0} uw document<0/>\"{documentName}\""
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr "Herinnering: Gelieve het document \"{0}\" te {recipientActionVerb}"
+msgstr "Herinnering: {recipientActionVerb, select, assisteren {wil je helpen bij het document \"{0}\"?} other {wil je het document \"{0}\" {recipientActionVerb}?}}"
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} this document"

@@ -278,7 +278,7 @@ msgstr "Campo {0}"
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
-msgstr "{0} ti ha invitato a {recipientActionVerb} il documento \"{1}\"."
+msgstr "{0} ti ha invitato – {recipientActionVerb} il documento \"{1}\"."
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
@@ -298,7 +298,7 @@ msgstr "{0} di {1} documenti rimanenti questo mese."
 #. placeholder {2}: envelope.title
 #: packages/lib/server-only/document/resend-document.ts
 msgid "{0} on behalf of \"{1}\" has invited you to {recipientActionVerb} the document \"{2}\"."
-msgstr "{0} per conto di \"{1}\" ti ha invitato a {recipientActionVerb} il documento \"{2}\"."
+msgstr "{0} per conto di \"{1}\" ti ha invitato – {recipientActionVerb} il documento \"{2}\"."
 
 #. placeholder {0}: organisation.name
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl._index.tsx
@@ -381,7 +381,7 @@ msgstr "{inviterName} ti ha rimosso dal documento<0/>\"{documentName}\""
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{inviterName} on behalf of \"{0}\" has invited you to {recipientActionVerb} the document \"{1}\"."
-msgstr "{inviterName} a nome di \"{0}\" ti ha invitato a {recipientActionVerb} il documento \"{1}\"."
+msgstr "{inviterName} a nome di \"{0}\" ti ha invitato – {recipientActionVerb} il documento \"{1}\"."
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-invite.tsx
@@ -915,7 +915,7 @@ msgstr "Un dispositivo in grado di accedere, aprire e leggere documenti"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "A document was created by your direct template that requires you to {recipientActionVerb} it."
-msgstr "Un documento è stato creato dal tuo modello diretto che richiede di {recipientActionVerb}."
+msgstr "Un documento creato dal tuo modello diretto richiede la tua azione: {recipientActionVerb}."
 
 #: apps/remix/app/components/dialogs/template-use-dialog.tsx
 msgid "A draft document will be created"
@@ -13161,7 +13161,7 @@ msgstr "Hai rifiutato l'invito da <0>{0}</0> a unirti alla loro organizzazione."
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
 msgid "You have initiated the document {0} that requires you to {recipientActionVerb} it."
-msgstr "Hai avviato il documento {0} che richiede che tu lo {recipientActionVerb}."
+msgstr "Hai avviato il documento {0}, che richiede la tua azione: {recipientActionVerb}."
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.webhooks._index.tsx
 msgid "You have no webhooks yet. Your webhooks will be shown here once you create them."
