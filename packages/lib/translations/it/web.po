@@ -283,7 +283,7 @@ msgstr "{0} ti ha invitato a {recipientActionVerb} il documento \"{1}\"."
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "{0} ti ha invitato a {recipientActionVerb} il documento \"{1}\""
+msgstr "{0} ti ha invitato – {recipientActionVerb} il documento \"{1}\""
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -8461,7 +8461,7 @@ msgstr "Promemoria: {0}"
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "Promemoria: {0} ti ha invitato a {recipientActionVerb} il documento \"{1}\""
+msgstr "Promemoria: {0} ti ha invitato – {recipientActionVerb} il documento \"{1}\""
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8471,7 +8471,7 @@ msgstr "Promemoria: ti preghiamo di {0} il tuo documento<0/>\"{documentName}\""
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr "Promemoria: ti preghiamo di {recipientActionVerb} il documento \"{0}\""
+msgstr "Promemoria: per favore {recipientActionVerb} il documento \"{0}\""
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""

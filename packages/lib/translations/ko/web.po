@@ -283,7 +283,7 @@ msgstr "{0}에서 \"{1}\" 문서에 대해 귀하께 {recipientActionVerb}하도
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "{0}이(가) 귀하께 \"{1}\" 문서에 {recipientActionVerb}하도록 초대했습니다."
+msgstr "{0}에서 \"{1}\" 문서 {recipientActionVerb}을(를) 요청했습니다"
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7775,15 +7775,15 @@ msgstr "문서 {documentName}을(를) {action}해 주세요."
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\""
-msgstr "\"{0}\" 문서를 {recipientActionVerb}해 주세요."
+msgstr "\"{0}\" 문서 {recipientActionVerb} 요청"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
-msgstr "귀하의 다이렉트 템플릿에서 생성된 \"{0}\" 문서를 {recipientActionVerb}해 주세요."
+msgstr "귀하의 다이렉트 템플릿에서 생성된 \"{0}\" 문서 {recipientActionVerb} 요청"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} your document \"{0}\""
-msgstr "귀하의 문서 \"{0}\"을(를) {recipientActionVerb}해 주세요."
+msgstr "귀하의 문서 \"{0}\" {recipientActionVerb} 요청"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8461,7 +8461,7 @@ msgstr "알림: {0}"
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "알림: {0}에서 \"{1}\" 문서에 {recipientActionVerb}하도록 초대했습니다."
+msgstr "알림: {0}에서 \"{1}\" 문서 {recipientActionVerb}을(를) 요청했습니다"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8471,11 +8471,11 @@ msgstr "알림: 문서를 {0}하세요<0/>\"{documentName}\""
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr "알림: \"{0}\" 문서를 {recipientActionVerb}해 주세요"
+msgstr "알림: \"{0}\" 문서 {recipientActionVerb} 요청"
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
-msgstr "알림: 귀하의 문서 \"{0}\"을(를) {recipientActionVerb}해 주세요."
+msgstr "알림: 귀하의 문서 \"{0}\" {recipientActionVerb} 요청"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
