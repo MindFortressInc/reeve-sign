@@ -12044,7 +12044,7 @@ msgstr "보기"
 #: packages/lib/constants/recipient-roles.ts
 msgctxt "Recipient role action verb"
 msgid "View"
-msgstr "보기"
+msgstr "열람"
 
 #: apps/remix/app/routes/_authenticated+/settings+/security._index.tsx
 msgid "View activity"
