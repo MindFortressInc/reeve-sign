@@ -5306,6 +5306,11 @@ msgstr "Arsyeja e refuzimit: {reason}"
 msgid "Remembered your password? <0>Sign In</0>"
 msgstr "Kujtuat fjalëkalimin tuaj? <0>Regjistrohu</0>"
 
+#. placeholder {0}: envelope.title
+#: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
+msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
+msgstr "Kujtesë: Ju lutem {recipientActionVerb} dokumentin \"{0}\""
+
 #. placeholder {0}: customEmail.subject
 #: packages/lib/server-only/document/resend-document.tsx
 msgid "Reminder: {0}"

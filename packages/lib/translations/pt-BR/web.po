@@ -8466,7 +8466,7 @@ msgstr ""
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr ""
+msgstr "Lembrete: Por favor {recipientActionVerb} o documento \"{0}\""
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} this document"
