@@ -282,8 +282,8 @@ msgstr "{0} からドキュメント「{1}」への{recipientActionVerb}依頼�
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "{0} invited you to {recipientActionVerb} a document"
-msgstr "{0} からドキュメントへの{recipientActionVerb}依頼が届いています"
+msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "{0} からドキュメント「{1}」への{recipientActionVerb}依頼が届いています"
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7774,16 +7774,16 @@ msgid "Please {action} your document {documentName}"
 msgstr "ドキュメント {documentName} を {action} してください"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document"
-msgstr "このドキュメントを{recipientActionVerb}してください"
+msgid "Please {recipientActionVerb} the document \"{0}\""
+msgstr "ドキュメント「{0}」を{recipientActionVerb}してください"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document created by your direct template"
-msgstr "あなたのダイレクトテンプレートから作成されたこのドキュメントを{recipientActionVerb}してください"
+msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
+msgstr "あなたのダイレクトテンプレートから作成されたドキュメント「{0}」を{recipientActionVerb}してください"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} your document"
-msgstr "ドキュメントを{recipientActionVerb}してください"
+msgid "Please {recipientActionVerb} your document \"{0}\""
+msgstr "ドキュメント「{0}」を{recipientActionVerb}してください"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8460,8 +8460,8 @@ msgstr "リマインダー: {0}"
 #. placeholder {0}: envelope.team.name
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: {0} invited you to {recipientActionVerb} a document"
-msgstr "リマインダー: {0} からドキュメントの{recipientActionVerb}依頼が届いています"
+msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "リマインダー: {0} からドキュメント「{1}」の{recipientActionVerb}依頼が届いています"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8474,12 +8474,8 @@ msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
 msgstr "リマインダー: 書類 \\\"{0}\\\" を{recipientActionVerb}してください"
 
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} this document"
-msgstr "リマインダー: このドキュメントを{recipientActionVerb}してください"
-
-#: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} your document"
-msgstr "リマインダー: ドキュメントを{recipientActionVerb}してください"
+msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
+msgstr "リマインダー: ドキュメント「{0}」を{recipientActionVerb}してください"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"

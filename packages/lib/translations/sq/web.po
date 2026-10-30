@@ -138,8 +138,8 @@ msgstr "{0} ju ka ftuar të {recipientActionVerb} dokumentin \"{1}\"."
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "{0} invited you to {recipientActionVerb} a document"
-msgstr "{0} ju ftoi të {recipientActionVerb} një dokument"
+msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "{0} ju ftoi të {recipientActionVerb} dokumentin \"{1}\""
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -4926,16 +4926,16 @@ msgid "Please {action} your document {documentName}"
 msgstr "Ju lutem {action} dokumentin tuaj {documentName}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document"
-msgstr "Ju lutemi {recipientActionVerb} këtë dokument"
+msgid "Please {recipientActionVerb} the document \"{0}\""
+msgstr "Ju lutemi {recipientActionVerb} dokumentin \"{0}\""
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document created by your direct template"
-msgstr "Ju lutemi {recipientActionVerb} këtë dokument i krijuar nga shablloni juaj direkt"
+msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
+msgstr "Ju lutemi {recipientActionVerb} dokumentin \"{0}\" të krijuar nga shablloni juaj direkt"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} your document"
-msgstr "Ju lutem {recipientActionVerb} dokumentin tuaj"
+msgid "Please {recipientActionVerb} your document \"{0}\""
+msgstr "Ju lutem {recipientActionVerb} dokumentin tuaj \"{0}\""
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -5313,16 +5313,12 @@ msgstr "Kujtesë: {0}"
 
 #. placeholder {0}: document.team.name
 #: packages/lib/server-only/document/resend-document.tsx
-msgid "Reminder: {0} invited you to {recipientActionVerb} a document"
-msgstr "Kujtesë: {0} ju ftoi të {recipientActionVerb} një dokument"
+msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "Kujtesë: {0} ju ftoi të {recipientActionVerb} dokumentin \"{1}\""
 
 #: packages/lib/server-only/document/resend-document.tsx
-msgid "Reminder: Please {recipientActionVerb} this document"
-msgstr "Kujtesë: Ju lutem {recipientActionVerb} këtë dokument"
-
-#: packages/lib/server-only/document/resend-document.tsx
-msgid "Reminder: Please {recipientActionVerb} your document"
-msgstr "Kujtesë: Ju lutem {recipientActionVerb} dokumentin tuaj"
+msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
+msgstr "Kujtesë: Ju lutem {recipientActionVerb} dokumentin tuaj \"{0}\""
 
 #: apps/remix/app/components/tables/team-members-table.tsx
 #: apps/remix/app/components/tables/team-groups-table.tsx
