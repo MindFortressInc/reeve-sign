@@ -1309,6 +1309,11 @@ msgstr "Versioni e Aplikacionit"
 msgid "Approve"
 msgstr "Mirato"
 
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
+msgid "Approve"
+msgstr "Mirato"
+
 #: apps/remix/app/components/general/document-signing/document-signing-form.tsx
 #: packages/email/template-components/template-document-invite.tsx
 msgid "Approve Document"
@@ -1383,6 +1388,11 @@ msgid "Assigned Teams"
 msgstr "Ekipet e caktuara"
 
 #: packages/lib/constants/recipient-roles.ts
+msgid "Assist"
+msgstr "Asisto"
+
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
 msgid "Assist"
 msgstr "Asisto"
 
@@ -5845,6 +5855,11 @@ msgstr "Trego shabllonët në profilin tënd publik për audiencën tënde që t
 msgid "Sign"
 msgstr "Nënshkruaj"
 
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
+msgid "Sign"
+msgstr "Nënshkruaj"
+
 #. placeholder {0}: recipient.name
 #. placeholder {1}: recipient.email
 #: apps/remix/app/components/general/document-signing/document-signing-signature-field.tsx
@@ -7634,6 +7649,11 @@ msgstr "Historia e Versionit"
 #: apps/remix/app/components/forms/2fa/view-recovery-codes-dialog.tsx
 #: apps/remix/app/components/embed/multisign/multi-sign-document-list.tsx
 #: packages/lib/constants/recipient-roles.ts
+msgid "View"
+msgstr "Shiko"
+
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
 msgid "View"
 msgstr "Shiko"
 
