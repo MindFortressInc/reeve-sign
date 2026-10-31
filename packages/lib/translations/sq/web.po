@@ -1309,6 +1309,11 @@ msgstr "Versioni e Aplikacionit"
 msgid "Approve"
 msgstr "Mirato"
 
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
+msgid "Approve"
+msgstr "Mirato"
+
 #: apps/remix/app/components/general/document-signing/document-signing-form.tsx
 #: packages/email/template-components/template-document-invite.tsx
 msgid "Approve Document"
@@ -1383,6 +1388,11 @@ msgid "Assigned Teams"
 msgstr "Ekipet e caktuara"
 
 #: packages/lib/constants/recipient-roles.ts
+msgid "Assist"
+msgstr "Asisto"
+
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
 msgid "Assist"
 msgstr "Asisto"
 
@@ -5306,6 +5316,11 @@ msgstr "Arsyeja e refuzimit: {reason}"
 msgid "Remembered your password? <0>Sign In</0>"
 msgstr "Kujtuat fjalëkalimin tuaj? <0>Regjistrohu</0>"
 
+#. placeholder {0}: envelope.title
+#: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
+msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
+msgstr "Kujtesë: Ju lutem {recipientActionVerb} dokumentin \"{0}\""
+
 #. placeholder {0}: customEmail.subject
 #: packages/lib/server-only/document/resend-document.tsx
 msgid "Reminder: {0}"
@@ -5837,6 +5852,11 @@ msgstr "Trego shabllonët në profilin tënd publik për audiencën tënde që t
 #: apps/remix/app/components/general/document-signing/document-signing-auth-2fa.tsx
 #: apps/remix/app/components/general/document/document-page-view-button.tsx
 #: packages/lib/constants/recipient-roles.ts
+msgid "Sign"
+msgstr "Nënshkruaj"
+
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
 msgid "Sign"
 msgstr "Nënshkruaj"
 
@@ -7629,6 +7649,11 @@ msgstr "Historia e Versionit"
 #: apps/remix/app/components/forms/2fa/view-recovery-codes-dialog.tsx
 #: apps/remix/app/components/embed/multisign/multi-sign-document-list.tsx
 #: packages/lib/constants/recipient-roles.ts
+msgid "View"
+msgstr "Shiko"
+
+#: packages/lib/constants/recipient-roles.ts
+msgctxt "Recipient role action verb"
 msgid "View"
 msgstr "Shiko"
 

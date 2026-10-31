@@ -8471,7 +8471,7 @@ msgstr "リマインダー: 書類を{0}してください<0/>\\\"{documentName}
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr "リマインダー: 書類 \\\"{0}\\\" を{recipientActionVerb}してください"
+msgstr "リマインダー: ドキュメント「{0}」の{recipientActionVerb}をお願いします"
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} this document"
