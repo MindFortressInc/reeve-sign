@@ -11,9 +11,7 @@ type OpenApiTrpcServerHandlerOptions = {
   isBeta: boolean;
 };
 
-const ZAppErrorResponseBodySchema = z
-  .object({ data: z.object({ appError: ZAppErrorJsonSchema.passthrough() }).passthrough() })
-  .passthrough();
+const ZAppErrorResponseBodySchema = z.object({ data: z.object({ appError: ZAppErrorJsonSchema }) });
 
 /**
  * `trpc-to-openapi` sets the body's top-level `code` from the TRPCError wrapping
@@ -25,18 +23,18 @@ const withAppErrorCode = async (response: Response) => {
     return response;
   }
 
-  const body = ZAppErrorResponseBodySchema.safeParse(
-    await response
-      .clone()
-      .json()
-      .catch(() => null),
-  );
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => null);
 
-  if (!body.success) {
+  const parsedBody = ZAppErrorResponseBodySchema.safeParse(body);
+
+  if (!parsedBody.success) {
     return response;
   }
 
-  return new Response(JSON.stringify({ ...body.data, code: body.data.data.appError.code }), {
+  return new Response(JSON.stringify({ ...body, code: parsedBody.data.data.appError.code }), {
     status: response.status,
     headers: response.headers,
   });
