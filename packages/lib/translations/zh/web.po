@@ -282,8 +282,8 @@ msgstr "{0} 已邀请您 {recipientActionVerb} 文档“{1}”。"
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "{0} invited you to {recipientActionVerb} a document"
-msgstr "{0} 邀请您 {recipientActionVerb} 一个文档"
+msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "{0} 邀请您 {recipientActionVerb} 文档\"{1}\""
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -7774,16 +7774,16 @@ msgid "Please {action} your document {documentName}"
 msgstr "请 {action} 您的文档 {documentName}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document"
-msgstr "请 {recipientActionVerb} 此文档"
+msgid "Please {recipientActionVerb} the document \"{0}\""
+msgstr "请 {recipientActionVerb} 文档\"{0}\""
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} this document created by your direct template"
-msgstr "请 {recipientActionVerb} 由您的直链模板创建的此文档"
+msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
+msgstr "请 {recipientActionVerb} 由您的直链模板创建的文档\"{0}\""
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
-msgid "Please {recipientActionVerb} your document"
-msgstr "请 {recipientActionVerb} 您的文档"
+msgid "Please {recipientActionVerb} your document \"{0}\""
+msgstr "请 {recipientActionVerb} 您的文档\"{0}\""
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8460,8 +8460,8 @@ msgstr "提醒：{0}"
 #. placeholder {0}: envelope.team.name
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: {0} invited you to {recipientActionVerb} a document"
-msgstr "提醒：{0} 邀请您 {recipientActionVerb} 一个文档"
+msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
+msgstr "提醒：{0} 邀请您 {recipientActionVerb} 文档\"{1}\""
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8474,12 +8474,8 @@ msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
 msgstr "提醒：请{recipientActionVerb}文档\"{0}\""
 
 #: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} this document"
-msgstr "提醒：请 {recipientActionVerb} 此文档"
-
-#: packages/lib/server-only/document/resend-document.ts
-msgid "Reminder: Please {recipientActionVerb} your document"
-msgstr "提醒：请 {recipientActionVerb} 您的文档"
+msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
+msgstr "提醒：请 {recipientActionVerb} 您的文档\"{0}\""
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
