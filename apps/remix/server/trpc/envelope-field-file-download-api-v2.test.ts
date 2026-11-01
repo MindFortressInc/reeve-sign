@@ -142,6 +142,49 @@ describe('GET /api/v2/envelope/field/get-file-download-url', () => {
     expect(getPresignGetUrl).not.toHaveBeenCalled();
   });
 
+  // DEV-12786: integrators branch on the top-level `code`, which used to read
+  // INTERNAL_SERVER_ERROR for every AppError regardless of the HTTP status.
+  it('reports the AppError code as the top-level error code', async () => {
+    vi.mocked(prisma.field.findFirst).mockResolvedValue(null);
+
+    const res = await get(`/envelope/field/get-file-download-url?fieldId=${FIELD_ID}`, authHeaders);
+
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type')).toBe('application/json');
+    expect(await res.json()).toMatchObject({
+      code: 'NOT_FOUND',
+      message: `Field ${FIELD_ID} not found`,
+      data: { code: 'NOT_FOUND', httpStatus: 404, appError: { code: 'NOT_FOUND' } },
+    });
+  });
+
+  it('reports AppError codes that have no matching tRPC code', async () => {
+    vi.mocked(prisma.field.findFirst).mockResolvedValue(
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      {
+        id: FIELD_ID,
+        type: 'TEXT',
+        inserted: true,
+        envelope: { id: 'envelope_test', deletedAt: null },
+      } as unknown as Awaited<ReturnType<typeof prisma.field.findFirst>>,
+    );
+
+    const res = await get(`/envelope/field/get-file-download-url?fieldId=${FIELD_ID}`, authHeaders);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'INVALID_REQUEST', data: { code: 'INVALID_REQUEST' } });
+  });
+
+  it('keeps the tRPC error code and issues for input validation errors', async () => {
+    const res = await get('/envelope/field/get-file-download-url?fieldId=not-a-number', authHeaders);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body).toMatchObject({ code: 'BAD_REQUEST', message: 'Input validation failed' });
+    expect(body.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: ['fieldId'] })]));
+    expect(body.data.appError).toBeUndefined();
+  });
+
   it('401s without an API token and never touches the DB', async () => {
     const res = await get(`/envelope/field/get-file-download-url?fieldId=${FIELD_ID}`);
 
