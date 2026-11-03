@@ -1,3 +1,4 @@
+import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { getApiTokenByToken } from '@documenso/lib/server-only/public-api/get-api-token-by-token';
 import { toFileUploadCustomText } from '@documenso/lib/types/field-file-upload';
 import { getPresignGetUrl } from '@documenso/lib/universal/upload/server-actions';
@@ -173,6 +174,22 @@ describe('GET /api/v2/envelope/field/get-file-download-url', () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ code: 'INVALID_REQUEST', data: { code: 'INVALID_REQUEST' } });
+  });
+
+  // DEV-17425: the HTTP status used to ignore `statusCode`, so a transient outage
+  // answered 400 and integrators treated it as a permanent client error.
+  it.each([
+    { code: 'CONVERSION_SERVICE_UNAVAILABLE', statusCode: 503 },
+    { code: 'INSUFFICIENT_CREDITS', statusCode: 402 },
+    // In the code map at 400; `statusCode` still wins, matching `data.httpStatus`.
+    { code: AppErrorCode.EXPIRED_CODE, statusCode: 401 },
+  ])('answers $code with its statusCode $statusCode', async ({ code, statusCode }) => {
+    vi.mocked(prisma.field.findFirst).mockRejectedValue(new AppError(code, { message: 'down', statusCode }));
+
+    const res = await get(`/envelope/field/get-file-download-url?fieldId=${FIELD_ID}`, authHeaders);
+
+    expect(res.status).toBe(statusCode);
+    expect(await res.json()).toMatchObject({ code, data: { code, httpStatus: statusCode } });
   });
 
   it('keeps the tRPC error code and issues for input validation errors', async () => {
