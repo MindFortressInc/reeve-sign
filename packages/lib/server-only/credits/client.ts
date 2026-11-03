@@ -1,5 +1,6 @@
 import { REEVE_CREDITS_API_URL, REEVE_CREDITS_TIMEOUT_MS, REEVE_SIGN_HOST_KEY } from '../../constants/credits';
 import { AppError } from '../../errors/app-error';
+import { logger } from '../../utils/logger';
 
 /**
  * DEV-2838: thin client for reeve-services' host-key-routed credits surface
@@ -154,8 +155,18 @@ async function creditsFetch<T>({ method, path, body }: CreditsFetchOptions): Pro
     const truncatedBody =
       bodyText.length > MAX_ERROR_BODY_CHARS ? `${bodyText.slice(0, MAX_ERROR_BODY_CHARS)}...` : bodyText;
 
+    // DEV-17675: the upstream body stays in server logs only. AppError.message
+    // is returned to API callers, so it must never echo an internal service's
+    // response.
+    logger.error({
+      event: 'reeve_credits_request_failed',
+      path,
+      status: response.status,
+      body: truncatedBody,
+    });
+
     throw new AppError('CREDITS_SERVICE_UNAVAILABLE', {
-      message: `Credits service returned ${response.status}: ${truncatedBody}`,
+      message: UNAVAILABLE_USER_MESSAGE,
       userMessage: UNAVAILABLE_USER_MESSAGE,
       statusCode: 503,
     });

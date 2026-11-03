@@ -210,6 +210,38 @@ describe('DEV-2838 live outcome eval — real HTTP server, real (unmocked) clien
     expect(sendFn).not.toHaveBeenCalled();
   });
 
+  it('SCENARIO: reeve-services answers 500 with an internal body — FAILS CLOSED and the caller never sees that body (DEV-17675)', async () => {
+    const marker = 'UPSTREAM_INTERNAL_MARKER_sqlalchemy.exc.OperationalError';
+    const failing = http.createServer((_req, res) => {
+      res.writeHead(500, { 'content-type': 'text/plain' });
+      res.end(`Traceback (most recent call last): ${marker}`);
+    });
+    await new Promise<void>((resolve) => failing.listen(0, resolve));
+    vi.stubEnv('REEVE_CREDITS_API_URL', `http://127.0.0.1:${(failing.address() as AddressInfo).port}`);
+
+    const sendFn = vi.fn().mockResolvedValue({ id: 'envelope_5', status: 'PENDING' });
+
+    let caught: unknown;
+    try {
+      await meterDocumentSend({ userId: RICH_USER_ID, envelopeId: 'envelope_5' }, sendFn);
+      expect.unreachable('should have failed closed');
+    } catch (err) {
+      caught = err;
+    } finally {
+      await new Promise<void>((resolve) => failing.close(() => resolve()));
+    }
+
+    expect(caught).toBeInstanceOf(AppError);
+    const appError = caught as AppError;
+    // AppError.toJSON is what the tRPC/API v2 bridge serialises to integrators.
+    const wire = JSON.stringify({ message: appError.message, data: { appError: AppError.toJSON(appError) } });
+    console.log(`[outcome-eval] non-2xx caller-visible error: ${wire}`);
+    expect(wire).not.toContain(marker);
+    expect(appError.code).toBe('CREDITS_SERVICE_UNAVAILABLE');
+    expect(appError.statusCode).toBe(503);
+    expect(sendFn).not.toHaveBeenCalled();
+  });
+
   it('SCENARIO: a retried send of the SAME envelope does not double-charge — reserve replays the same reservation', async () => {
     const first = await reserveCredits({
       ownerId: String(RICH_USER_ID),
