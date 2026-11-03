@@ -206,14 +206,14 @@ export class AppError extends Error {
   }
 
   /**
-   * The HTTP status an AppError answers with: its own `statusCode` when `Response` would
-   * accept it (an integer from 200 through 599), then the default for its code, then 400.
+   * The HTTP status an AppError answers with: its own `statusCode` when it is an error
+   * status (an integer from 400 through 599), then the default for its code, then 400.
    *
    * @param appError The AppError to get the status of.
    * @returns The HTTP status code.
    */
   static toHttpStatus({ code, statusCode }: AppError): number {
-    return statusCode !== undefined && Number.isInteger(statusCode) && statusCode >= 200 && statusCode <= 599
+    return statusCode !== undefined && Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599
       ? statusCode
       : (genericErrorCodeToTrpcErrorCodeMap[code]?.status ?? 400);
   }

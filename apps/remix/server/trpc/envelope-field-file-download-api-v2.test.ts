@@ -192,10 +192,13 @@ describe('GET /api/v2/envelope/field/get-file-download-url', () => {
     expect(await res.json()).toMatchObject({ code, data: { code, httpStatus: statusCode } });
   });
 
-  // `Response` throws a RangeError outside 200-599, so an invalid `statusCode` must not reach it.
+  // `Response` throws a RangeError outside 200-599, and a 2xx/3xx would present the error as a
+  // non-failure, so only an error status (400-599) may reach it.
   it.each([
     { code: AppErrorCode.NOT_FOUND, statusCode: 1000, expected: 404 },
     { code: AppErrorCode.UNKNOWN_ERROR, statusCode: 199, expected: 500 },
+    { code: AppErrorCode.NOT_FOUND, statusCode: 200, expected: 404 },
+    { code: AppErrorCode.NOT_FOUND, statusCode: 302, expected: 404 },
     { code: 'CONVERSION_SERVICE_UNAVAILABLE', statusCode: 503.5, expected: 400 },
   ])('answers $code with $expected for invalid statusCode $statusCode', async ({ code, statusCode, expected }) => {
     vi.mocked(prisma.field.findFirst).mockRejectedValue(new AppError(code, { message: 'down', statusCode }));
