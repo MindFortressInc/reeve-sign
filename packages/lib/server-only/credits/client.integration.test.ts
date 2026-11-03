@@ -206,6 +206,9 @@ describe('DEV-2838 live outcome eval — real HTTP server, real (unmocked) clien
     expect(appError.userMessage).toBe(
       "We couldn't verify your credit balance right now. Please try sending again shortly.",
     );
+    // DEV-17675: the raw transport error ("fetch failed", ECONNREFUSED...) is
+    // logged, never returned to the caller.
+    expect(appError.message).toBe(appError.userMessage);
     expect(appError.statusCode).toBe(503);
     expect(sendFn).not.toHaveBeenCalled();
   });

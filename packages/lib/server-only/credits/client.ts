@@ -103,15 +103,20 @@ async function creditsFetch<T>({ method, path, body }: CreditsFetchOptions): Pro
   } catch (err) {
     const isAbortError = err instanceof Error && err.name === 'AbortError';
 
-    const message = isAbortError
-      ? 'Credits service timed out'
-      : `Credits service request failed: ${err instanceof Error ? err.message : String(err)}`;
+    // DEV-17675: the raw error text stays in server logs only (see non-2xx
+    // branch below).
+    logger.error({
+      event: 'reeve_credits_request_error',
+      path,
+      timedOut: isAbortError,
+      error: err instanceof Error ? err.message : String(err),
+    });
 
     // Network failure / timeout — FAIL CLOSED. Never swallow this as a
     // no-op; the gate must block the send when the metering service can't
     // be reached (see module docstring).
     throw new AppError('CREDITS_SERVICE_UNAVAILABLE', {
-      message,
+      message: UNAVAILABLE_USER_MESSAGE,
       userMessage: UNAVAILABLE_USER_MESSAGE,
       statusCode: 503,
     });
