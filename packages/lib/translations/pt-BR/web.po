@@ -273,12 +273,12 @@ msgstr ""
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} has invited you to {recipientActionVerb} the document \"{1}\"."
-msgstr "{0} convidou você para {recipientActionVerb} o documento \"{1}\"."
+msgstr "{0} convidou você para {recipientActionVerb, select, assistir {auxiliar com o documento \"{1}\"} other {{recipientActionVerb} o documento \"{1}\"}}."
 
 #. placeholder {0}: team.name
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "{0} convidou você para {recipientActionVerb} o documento \"{1}\""
+msgstr "{0} convidou você para {recipientActionVerb, select, assistir {auxiliar com o documento \"{1}\"} other {{recipientActionVerb} o documento \"{1}\"}}"
 
 #. placeholder {0}: remaining.documents
 #. placeholder {1}: quota.documents
@@ -293,7 +293,7 @@ msgstr "{0} de {1} documentos restantes este mês."
 #. placeholder {2}: envelope.title
 #: packages/lib/server-only/document/resend-document.ts
 msgid "{0} on behalf of \"{1}\" has invited you to {recipientActionVerb} the document \"{2}\"."
-msgstr "{0} em nome de \"{1}\" convidou você para {recipientActionVerb} o documento \"{2}\"."
+msgstr "{0} em nome de \"{1}\" convidou você para {recipientActionVerb, select, assistir {auxiliar com o documento \"{2}\"} other {{recipientActionVerb} o documento \"{2}\"}}."
 
 #. placeholder {0}: organisation.name
 #: apps/remix/app/routes/_authenticated+/o.$orgUrl._index.tsx
@@ -376,7 +376,7 @@ msgstr "{inviterName} removeu você do documento<0/>\"{documentName}\""
 #. placeholder {1}: envelope.title
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "{inviterName} on behalf of \"{0}\" has invited you to {recipientActionVerb} the document \"{1}\"."
-msgstr "{inviterName} em nome de \"{0}\" convidou você para {recipientActionVerb} o documento \"{1}\"."
+msgstr "{inviterName} em nome de \"{0}\" convidou você para {recipientActionVerb, select, assistir {auxiliar com o documento \"{1}\"} other {{recipientActionVerb} o documento \"{1}\"}}."
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-invite.tsx
@@ -7770,15 +7770,15 @@ msgstr "Por favor {action} seu documento {documentName}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\""
-msgstr "Por favor {recipientActionVerb} o documento \"{0}\""
+msgstr "Por favor {recipientActionVerb, select, assistir {auxiliar com o documento \"{0}\"} other {{recipientActionVerb} o documento \"{0}\"}}"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
-msgstr "Por favor {recipientActionVerb} o documento \"{0}\" criado pelo seu modelo direto"
+msgstr "Por favor {recipientActionVerb, select, assistir {auxiliar com o documento \"{0}\"} other {{recipientActionVerb} o documento \"{0}\"}} criado pelo seu modelo direto"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} your document \"{0}\""
-msgstr "Por favor {recipientActionVerb} seu documento \"{0}\""
+msgstr "Por favor {recipientActionVerb, select, assistir {auxiliar com seu documento \"{0}\"} other {{recipientActionVerb} seu documento \"{0}\"}}"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8456,7 +8456,7 @@ msgstr "Lembrete: {0}"
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: {0} invited you to {recipientActionVerb} the document \"{1}\""
-msgstr "Lembrete: {0} convidou você para {recipientActionVerb} o documento \"{1}\""
+msgstr "Lembrete: {0} convidou você para {recipientActionVerb, select, assistir {auxiliar com o documento \"{1}\"} other {{recipientActionVerb} o documento \"{1}\"}}"
 
 #. placeholder {0}: _(actionVerb).toLowerCase()
 #: packages/email/template-components/template-document-reminder.tsx
@@ -8466,11 +8466,11 @@ msgstr ""
 #. placeholder {0}: envelope.title
 #: packages/lib/jobs/definitions/internal/process-signing-reminder.handler.ts
 msgid "Reminder: Please {recipientActionVerb} the document \"{0}\""
-msgstr "Lembrete: Por favor {recipientActionVerb} o documento \"{0}\""
+msgstr "Lembrete: Por favor {recipientActionVerb, select, assistir {auxiliar com o documento \"{0}\"} other {{recipientActionVerb} o documento \"{0}\"}}"
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
-msgstr "Lembrete: Por favor {recipientActionVerb} seu documento \"{0}\""
+msgstr "Lembrete: Por favor {recipientActionVerb, select, assistir {auxiliar com seu documento \"{0}\"} other {{recipientActionVerb} seu documento \"{0}\"}}"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
