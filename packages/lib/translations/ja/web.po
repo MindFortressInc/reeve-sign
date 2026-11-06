@@ -7775,15 +7775,15 @@ msgstr "ドキュメント {documentName} を {action} してください"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\""
-msgstr "ドキュメント「{0}」を{recipientActionVerb}してください"
+msgstr "ドキュメント「{0}」の{recipientActionVerb}をお願いします"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} the document \"{0}\" created by your direct template"
-msgstr "あなたのダイレクトテンプレートから作成されたドキュメント「{0}」を{recipientActionVerb}してください"
+msgstr "あなたのダイレクトテンプレートから作成されたドキュメント「{0}」の{recipientActionVerb}をお願いします"
 
 #: packages/lib/jobs/definitions/emails/send-signing-email.handler.ts
 msgid "Please {recipientActionVerb} your document \"{0}\""
-msgstr "ドキュメント「{0}」を{recipientActionVerb}してください"
+msgstr "ドキュメント「{0}」の{recipientActionVerb}をお願いします"
 
 #: apps/remix/app/components/dialogs/organisation-member-invite-dialog.tsx
 msgid "Please check the CSV file and make sure it is according to our format"
@@ -8475,7 +8475,7 @@ msgstr "リマインダー: ドキュメント「{0}」の{recipientActionVerb}�
 
 #: packages/lib/server-only/document/resend-document.ts
 msgid "Reminder: Please {recipientActionVerb} your document \"{0}\""
-msgstr "リマインダー: ドキュメント「{0}」を{recipientActionVerb}してください"
+msgstr "リマインダー: ドキュメント「{0}」の{recipientActionVerb}をお願いします"
 
 #: apps/remix/app/components/general/envelope-editor/envelope-editor-settings-dialog.tsx
 msgid "Reminders"
