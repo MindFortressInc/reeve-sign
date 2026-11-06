@@ -1,4 +1,4 @@
-import { AppError, genericErrorCodeToTrpcErrorCodeMap } from '@documenso/lib/errors/app-error';
+import { AppError } from '@documenso/lib/errors/app-error';
 import { getApiTokenByToken } from '@documenso/lib/server-only/public-api/get-api-token-by-token';
 import type { TrpcApiLog } from '@documenso/lib/types/api-logs';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
@@ -55,7 +55,7 @@ const t = initTRPC
           ...data,
           appError: AppError.toJSON(originalError),
           code: originalError.code,
-          httpStatus: originalError.statusCode ?? genericErrorCodeToTrpcErrorCodeMap[originalError.code]?.status ?? 400,
+          httpStatus: AppError.toHttpStatus(originalError),
         };
       }
 

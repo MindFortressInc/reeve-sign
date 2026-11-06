@@ -1,5 +1,5 @@
 import { API_V2_BETA_URL, API_V2_URL } from '@documenso/lib/constants/app';
-import { AppError, genericErrorCodeToTrpcErrorCodeMap, ZAppErrorJsonSchema } from '@documenso/lib/errors/app-error';
+import { AppError, ZAppErrorJsonSchema } from '@documenso/lib/errors/app-error';
 import { createTrpcContext } from '@documenso/trpc/server/context';
 import { appRouter } from '@documenso/trpc/server/router';
 import { createOpenApiFetchHandler } from '@documenso/trpc/utils/openapi-fetch-handler';
@@ -52,10 +52,8 @@ export const openApiTrpcServerHandler = async (c: Context, { isBeta }: OpenApiTr
       if (opts.errors[0]?.cause instanceof AppError) {
         const appError = AppError.parseError(opts.errors[0].cause);
 
-        const httpStatus = genericErrorCodeToTrpcErrorCodeMap[appError.code]?.status ?? 400;
-
         return {
-          status: httpStatus,
+          status: AppError.toHttpStatus(appError),
         };
       }
 

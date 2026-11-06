@@ -205,6 +205,19 @@ export class AppError extends Error {
     return JSON.stringify(AppError.toJSON(appError));
   }
 
+  /**
+   * The HTTP status an AppError answers with: its own `statusCode` when it is an error
+   * status (an integer from 400 through 599), then the default for its code, then 400.
+   *
+   * @param appError The AppError to get the status of.
+   * @returns The HTTP status code.
+   */
+  static toHttpStatus({ code, statusCode }: AppError): number {
+    return statusCode !== undefined && Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599
+      ? statusCode
+      : (genericErrorCodeToTrpcErrorCodeMap[code]?.status ?? 400);
+  }
+
   static parseFromJSON(value: unknown): AppError | null {
     try {
       const parsed = ZAppErrorJsonSchema.safeParse(value);
