@@ -123,6 +123,27 @@ describe('reserveCredits', () => {
     ).rejects.toMatchObject({ code: 'CREDITS_SERVICE_UNAVAILABLE' });
   });
 
+  it('keeps the upstream response body out of the AppError message on a non-2xx response (DEV-17675)', async () => {
+    const marker = 'UPSTREAM_INTERNAL_MARKER_db-host-10.0.0.5';
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(500, { error: marker }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const err = await reserveCredits({
+      ownerId: '42',
+      amount: 500,
+      referenceId: 'ref_1',
+      reason: 'sign.envelope.send',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    const appError = err as AppError;
+    expect(appError.code).toBe('CREDITS_SERVICE_UNAVAILABLE');
+    expect(appError.statusCode).toBe(503);
+    expect(appError.message).not.toContain(marker);
+    expect(appError.userMessage).not.toContain(marker);
+    expect(JSON.stringify(AppError.toJSON(appError))).not.toContain(marker);
+  });
+
   it('throws CREDITS_SERVICE_NOT_CONFIGURED (fail closed, not a silent no-op) when called directly without env vars', async () => {
     vi.stubEnv('REEVE_CREDITS_API_URL', '');
     vi.stubEnv('REEVE_SIGN_HOST_KEY', '');
