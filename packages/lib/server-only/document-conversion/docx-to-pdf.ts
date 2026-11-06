@@ -84,8 +84,8 @@ export const convertDocxToPdf = async (
     };
 
     // A non-2xx from the conversion service surfaces as CONVERSION_FAILED.
-    // We log those at `error` level (status + truncated body live in the
-    // AppError message). All other failures stay at `info` to avoid noisy
+    // We log those at `error` level (gotenberg.ts logs the status + truncated
+    // body separately; DEV-17833). All other failures stay at `info` to avoid noisy
     // logs from transient network blips that the breaker already handles.
     if (errCode === 'CONVERSION_FAILED') {
       logger?.error(logData);

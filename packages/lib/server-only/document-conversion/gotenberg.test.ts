@@ -1,5 +1,5 @@
+import { AppError } from '@documenso/lib/errors/app-error';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import {
   DOCUMENT_CONVERSION_MIME_TYPE_DOC,
   DOCUMENT_CONVERSION_MIME_TYPE_DOCX,
@@ -101,5 +101,39 @@ describe('convertDocxToPdfViaGotenberg', () => {
 
     expect(endpoint).toBe('http://localhost:3005/forms/libreoffice/convert');
     expect(formData.get('exportFormFields')).toBe('false');
+  });
+
+  it('keeps the upstream response body out of the AppError on a non-2xx response (DEV-17833)', async () => {
+    const marker = 'UPSTREAM_INTERNAL_MARKER_libreoffice-stacktrace';
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => `Internal error: ${marker}` });
+
+    const err = await convertDocxToPdfViaGotenberg({
+      buffer: Buffer.from('docx-bytes'),
+      filename: 'agreement.docx',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    const appError = err as AppError;
+    expect(appError.code).toBe('CONVERSION_FAILED');
+    expect(appError.statusCode).toBe(400);
+    expect(appError.message).not.toContain(marker);
+    expect(JSON.stringify(AppError.toJSON(appError))).not.toContain(marker);
+  });
+
+  it('keeps the raw transport error out of the AppError on a network failure (DEV-17833)', async () => {
+    const marker = 'UPSTREAM_INTERNAL_MARKER_connect ECONNREFUSED 10.0.0.5:3000';
+    fetchMock.mockRejectedValue(new TypeError(marker));
+
+    const err = await convertDocxToPdfViaGotenberg({
+      buffer: Buffer.from('docx-bytes'),
+      filename: 'agreement.docx',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    const appError = err as AppError;
+    expect(appError.code).toBe('CONVERSION_SERVICE_UNAVAILABLE');
+    expect(appError.statusCode).toBe(503);
+    expect(appError.message).not.toContain(marker);
+    expect(JSON.stringify(AppError.toJSON(appError))).not.toContain(marker);
   });
 });

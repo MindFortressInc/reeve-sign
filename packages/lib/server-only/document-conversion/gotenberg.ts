@@ -6,6 +6,7 @@ import {
   DOCUMENT_CONVERSION_TIMEOUT_MS,
   DOCUMENT_CONVERSION_URL,
 } from '../../constants/document-conversion';
+import { logger } from '../../utils/logger';
 
 type ConvertDocxToPdfViaGotenbergOptions = {
   buffer: Buffer;
@@ -105,8 +106,17 @@ export const convertDocxToPdfViaGotenberg = async ({
 
       const truncatedBody = body.length > MAX_ERROR_BODY_CHARS ? `${body.slice(0, MAX_ERROR_BODY_CHARS)}...` : body;
 
+      // DEV-17833: the upstream body stays in server logs only. AppError.message
+      // is returned to API callers, so it must never echo the conversion
+      // service's response.
+      logger.error({
+        event: 'document_conversion_request_failed',
+        status: response.status,
+        body: truncatedBody,
+      });
+
       throw new AppError('CONVERSION_FAILED', {
-        message: `Conversion service returned ${response.status}: ${truncatedBody}`,
+        message: CONVERSION_FAILED_USER_MESSAGE,
         userMessage: CONVERSION_FAILED_USER_MESSAGE,
         statusCode: 400,
       });
@@ -130,10 +140,14 @@ export const convertDocxToPdfViaGotenberg = async ({
       });
     }
 
-    const errMessage = err instanceof Error ? err.message : String(err);
+    // DEV-17833: the raw transport error text stays in server logs only.
+    logger.error({
+      event: 'document_conversion_request_error',
+      error: err instanceof Error ? err.message : String(err),
+    });
 
     throw new AppError('CONVERSION_SERVICE_UNAVAILABLE', {
-      message: `Conversion service request failed: ${errMessage}`,
+      message: UNAVAILABLE_USER_MESSAGE,
       userMessage: UNAVAILABLE_USER_MESSAGE,
       statusCode: 503,
     });
