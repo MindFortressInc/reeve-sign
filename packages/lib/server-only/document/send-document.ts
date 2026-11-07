@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { resolveExpiresAt } from '@documenso/lib/constants/envelope-expiration';
 import { DOCUMENT_AUDIT_LOG_TYPE } from '@documenso/lib/types/document-audit-logs';
 import type { ApiRequestMetadata } from '@documenso/lib/universal/extract-request-metadata';
@@ -40,6 +41,7 @@ import { getRecipientsWithMissingFields, isRecipientEmailValidForSending } from 
 import { meterDocumentSend } from '../credits/meter-send';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
+import { admitSignSend } from '../sign-admission/admit-send';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
 export type SendDocumentOptions = {
@@ -66,6 +68,7 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
       },
       fields: true,
       documentMeta: true,
+      team: { select: { organisation: { select: { url: true, owner: { select: { email: true } } } } } },
       envelopeItems: {
         select: {
           id: true,
@@ -171,6 +174,20 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
   // normal transaction + notify + webhook path) reserve/commit/void credits
   // identically; see meterDocumentSend's docstring for the fail-closed /
   // no-op-when-unconfigured contract.
+  //
+  // DEV-18278: fair-use admission first, so a refused send (suspended, over
+  // its rate, or admission unreachable) is never metered or mailed. Throws
+  // for a Reeve-provisioned org; exempt for a fork-native one. Only the first
+  // distribute of a DRAFT is `send` (which replays the upstream door's
+  // admission); a later distribute of an envelope that already went out (new
+  // recipients) is its own send and spends its own slot.
+  await admitSignSend({
+    envelopeId: envelope.id,
+    legacyDocumentId,
+    organisation: envelope.team.organisation,
+    attempt: envelope.status === DocumentStatus.DRAFT ? 'send' : `send:${randomUUID()}`,
+  });
+
   return meterDocumentSend({ userId, envelopeId: envelope.id }, () => sendDocumentInner());
 
   async function sendDocumentInner() {

@@ -1,4 +1,5 @@
 import { getRecipientType } from '@documenso/lib/client-only/recipient-type';
+import { AppError } from '@documenso/lib/errors/app-error';
 import type { TEnvelope } from '@documenso/lib/types/envelope';
 import type { TEnvelopeRecipientLite } from '@documenso/lib/types/recipient';
 import { recipientAbbreviation } from '@documenso/lib/utils/recipient-formatter';
@@ -77,9 +78,12 @@ export const EnvelopeRedistributeDialog = ({ envelope, trigger }: EnvelopeRedist
 
       setIsOpen(false);
     } catch (err) {
+      // DEV-18278: a fair-use refusal (rate limit, suspension) carries a legible userMessage.
+      const { userMessage } = AppError.parseError(err);
+
       toast({
         title: t`Something went wrong`,
-        description: t`This envelope could not be resent at this time. Please try again.`,
+        description: userMessage || t`This envelope could not be resent at this time. Please try again.`,
         variant: 'destructive',
         duration: 7500,
       });

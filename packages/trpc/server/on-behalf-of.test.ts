@@ -70,6 +70,10 @@ vi.mock('@documenso/lib/server-only/template/create-document-from-template', () 
   createDocumentFromTemplate: createDocumentFromTemplateMock,
 }));
 vi.mock('@documenso/lib/jobs/client', () => ({ jobs: { triggerJob: triggerJobMock } }));
+// DEV-18278: a Reeve-provisioned org's send asks fair-use admission first.
+vi.mock('@documenso/lib/server-only/sign-admission/admit-send', () => ({
+  admitSignSend: vi.fn(async () => ({ enforced: true, account: 'org_1', consumed: false, replay: true })),
+}));
 vi.mock('@documenso/email/mailer', () => ({ mailer: { sendMail: sendMailMock } }));
 vi.mock('@documenso/lib/server-only/email/get-email-context', () => ({
   getEmailContext: vi.fn(async () => ({
@@ -144,6 +148,7 @@ const envelopeOwnedBy = (userId: number) => ({
   recipients: [RECIPIENT],
   fields: [{ id: 1, recipientId: RECIPIENT.id, type: FieldType.SIGNATURE }],
   envelopeItems: [{ id: 'item_1' }],
+  team: { organisation: { url: 'reeve-ext-0123abcd', owner: { email: 'system@reeve.test' } } },
   documentMeta: {
     signingOrder: DocumentSigningOrder.PARALLEL,
     emailSettings: null,

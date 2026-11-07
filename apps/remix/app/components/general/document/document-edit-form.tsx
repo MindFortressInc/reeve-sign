@@ -1,6 +1,7 @@
 import { DocumentSignatureType } from '@documenso/lib/constants/document';
 import { isValidLanguageCode } from '@documenso/lib/constants/i18n';
 import { DO_NOT_INVALIDATE_QUERY_ON_MUTATION, SKIP_QUERY_BATCH_META } from '@documenso/lib/constants/trpc';
+import { AppError } from '@documenso/lib/errors/app-error';
 import type { TDocument } from '@documenso/lib/types/document';
 import { ZDocumentAccessAuthTypesSchema } from '@documenso/lib/types/document-auth';
 import { getDocumentDataUrlForPdfViewer } from '@documenso/lib/utils/envelope-download';
@@ -387,9 +388,12 @@ export const DocumentEditForm = ({ className, initialDocument, documentRootPath 
     } catch (err) {
       console.error(err);
 
+      // DEV-18278: a fair-use refusal (rate limit, suspension) carries a legible userMessage.
+      const { userMessage } = AppError.parseError(err);
+
       toast({
         title: _(msg`Error`),
-        description: _(msg`An error occurred while sending the document.`),
+        description: userMessage || _(msg`An error occurred while sending the document.`),
         variant: 'destructive',
       });
     }

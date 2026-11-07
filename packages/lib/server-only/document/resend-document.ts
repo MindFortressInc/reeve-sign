@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mailer } from '@documenso/email/mailer';
 import { DocumentInviteEmailTemplate } from '@documenso/email/templates/document-invite';
 import { resolveExpiresAt } from '@documenso/lib/constants/envelope-expiration';
@@ -23,11 +24,12 @@ import { NEXT_PUBLIC_WEBAPP_URL } from '../../constants/app';
 import { extractDerivedDocumentEmailSettings } from '../../types/document-email';
 import { mapEnvelopeToWebhookDocumentPayload, ZWebhookDocumentSchema } from '../../types/webhook-payload';
 import { isDocumentCompleted } from '../../utils/document';
-import type { EnvelopeIdOptions } from '../../utils/envelope';
+import { type EnvelopeIdOptions, mapSecondaryIdToDocumentId } from '../../utils/envelope';
 import { isRecipientEmailValidForSending } from '../../utils/recipients';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 import { getEmailContext } from '../email/get-email-context';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
+import { admitSignSend } from '../sign-admission/admit-send';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
 export type ResendDocumentOptions = {
@@ -55,6 +57,7 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
         select: {
           teamEmail: true,
           name: true,
+          organisation: { select: { url: true, owner: { select: { email: true } } } },
         },
       },
       // The reminder names the envelope owner, not whoever called resend
@@ -96,6 +99,18 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
       recipient.signingStatus === SigningStatus.NOT_SIGNED &&
       recipient.role !== RecipientRole.CC,
   );
+
+  // DEV-18278: fair-use admission before any expiry change or reminder mail.
+  // Each resend is its own attempt, so it spends its own slot; there is no
+  // retry of the same resend in the fork, so the key is fresh per call.
+  if (recipientsToRemind.length > 0) {
+    await admitSignSend({
+      envelopeId: envelope.id,
+      legacyDocumentId: mapSecondaryIdToDocumentId(envelope.secondaryId),
+      organisation: envelope.team.organisation,
+      attempt: `resend:${randomUUID()}`,
+    });
+  }
 
   // Extend the expiration deadline for recipients being resent.
   if (expiresAt && recipientsToRemind.length > 0) {

@@ -52,6 +52,10 @@ vi.mock('../envelope/get-envelope-by-id', () => ({
 vi.mock('../credits/meter-send', () => ({
   meterDocumentSend: async (_opts: unknown, fn: () => Promise<unknown>) => await fn(),
 }));
+// DEV-18278: a Reeve-provisioned org's send asks fair-use admission first.
+vi.mock('../sign-admission/admit-send', () => ({
+  admitSignSend: vi.fn(async () => ({ enforced: true, account: 'org_1', consumed: false, replay: true })),
+}));
 vi.mock('../webhooks/trigger/trigger-webhook', () => ({ triggerWebhook: vi.fn() }));
 vi.mock('../../types/webhook-payload', () => ({
   mapEnvelopeToWebhookDocumentPayload: vi.fn(),
@@ -88,7 +92,11 @@ const RECIPIENT = {
   authOptions: null,
 };
 
-const TEAM = { name: 'MindFortress', teamEmail: null };
+const TEAM = {
+  name: 'MindFortress',
+  teamEmail: null,
+  organisation: { url: 'reeve-ext-0123abcd', owner: { email: 'system@reeve.test' } },
+};
 
 const ORG_EMAIL_CONTEXT = {
   branding: undefined,
@@ -114,6 +122,7 @@ const ENVELOPE = {
   recipients: [RECIPIENT],
   fields: [{ id: 1, recipientId: RECIPIENT.id, type: FieldType.SIGNATURE }],
   envelopeItems: [{ id: 'item_1' }],
+  team: TEAM,
   documentMeta: {
     signingOrder: DocumentSigningOrder.PARALLEL,
     emailSettings: null,

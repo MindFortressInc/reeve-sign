@@ -72,7 +72,7 @@ const RECIPIENT = {
   authOptions: null,
 };
 
-const TEAM = { name: 'Sulu', teamEmail: null };
+const TEAM = { name: 'Sulu', teamEmail: null, organisation: { url: 'sulu' } };
 
 const emailContext = (organisationType: OrganisationType) => ({
   branding: undefined,
