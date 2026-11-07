@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -300,4 +302,31 @@ describe('admitSignSend: Reeve-provisioned organisations, configured', () => {
       expect.objectContaining({ event: 'sign_admission_request_error', error: 'Request timed out after 20ms' }),
     );
   });
+});
+
+describe('admitSignSend: a real server that stalls mid-body', () => {
+  it('fails closed (503) within the deadline instead of hanging the send', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.write('{"decision":');
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    try {
+      vi.stubEnv('REEVE_SIGN_ADMISSION_API_URL', `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+      vi.stubEnv('REEVE_SHARED_HMAC_SECRET', SECRET);
+      vi.stubEnv('REEVE_SIGN_ADMISSION_TIMEOUT_MS', '100');
+
+      const started = Date.now();
+      const err = await expectRefusal(admitSignSend(SEND));
+
+      expect(err.code).toBe('SIGN_ADMISSION_UNAVAILABLE');
+      expect(err.statusCode).toBe(503);
+      expect(Date.now() - started).toBeLessThan(1_500);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 5_000);
 });
