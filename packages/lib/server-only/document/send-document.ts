@@ -68,7 +68,7 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
       },
       fields: true,
       documentMeta: true,
-      team: { select: { organisation: { select: { url: true } } } },
+      team: { select: { organisation: { select: { url: true, owner: { select: { email: true } } } } } },
       envelopeItems: {
         select: {
           id: true,
@@ -184,7 +184,7 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
   await admitSignSend({
     envelopeId: envelope.id,
     legacyDocumentId,
-    organisationUrl: envelope.team.organisation.url,
+    organisation: envelope.team.organisation,
     attempt: envelope.status === DocumentStatus.DRAFT ? 'send' : `send:${randomUUID()}`,
   });
 

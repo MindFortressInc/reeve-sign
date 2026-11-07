@@ -17,11 +17,13 @@ vi.mock('../../utils/logger', () => ({ logger: loggerMock }));
 const SECRET = 'test-shared-secret';
 const BASE_URL = 'https://services.example.test';
 const REEVE_ORG_URL = `${REEVE_PROVISIONED_ORGANISATION_URL_PREFIX}abc123`;
+const SYSTEM_USER_EMAIL = 'system@reeve.test';
+const FOREIGN_OWNER = { email: 'someone@example.com' };
 
 const SEND = {
   envelopeId: 'envelope_abc',
   legacyDocumentId: 42,
-  organisationUrl: REEVE_ORG_URL,
+  organisation: { url: REEVE_ORG_URL, owner: FOREIGN_OWNER },
   attempt: 'send',
 };
 
@@ -64,7 +66,7 @@ describe('admitSignSend: fork-native organisations', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await admitSignSend({ ...SEND, organisationUrl: 'personal-org-7' });
+    const result = await admitSignSend({ ...SEND, organisation: { url: 'personal-org-7', owner: FOREIGN_OWNER } });
 
     expect(result).toEqual({ enforced: false });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -80,7 +82,35 @@ describe('admitSignSend: fork-native organisations', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(admitSignSend({ ...SEND, organisationUrl: 'acme' })).resolves.toEqual({ enforced: false });
+    await expect(admitSignSend({ ...SEND, organisation: { url: 'acme', owner: FOREIGN_OWNER } })).resolves.toEqual({
+      enforced: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('admitSignSend: provisioning provenance', () => {
+  it('a provisioned org whose url a manager renamed is still admitted (system-user owner)', async () => {
+    vi.stubEnv('REEVE_SIGN_ADMISSION_API_URL', '');
+    vi.stubEnv('REEVE_SHARED_HMAC_SECRET', '');
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER_EMAIL);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const renamed = { url: 'renamed-acme', owner: { email: 'System@Reeve.test' } };
+    const err = await expectRefusal(admitSignSend({ ...SEND, organisation: renamed }));
+
+    expect(err.code).toBe('SIGN_ADMISSION_UNAVAILABLE');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a non-prefixed org owned by anyone else stays exempt', async () => {
+    vi.stubEnv('REEVE_SIGN_SYSTEM_USER_EMAIL', SYSTEM_USER_EMAIL);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const foreign = { url: 'renamed-acme', owner: FOREIGN_OWNER };
+    await expect(admitSignSend({ ...SEND, organisation: foreign })).resolves.toEqual({ enforced: false });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

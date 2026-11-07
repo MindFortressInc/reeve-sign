@@ -28,6 +28,7 @@ vi.mock('../../universal/upload/put-file.server', () => ({ putNormalizedPdfFileS
 const { sendDocument } = await import('./send-document');
 
 const ORG_URL = 'reeve-ext-0123abcd';
+const ORGANISATION = { url: ORG_URL, owner: { email: 'system@reeve.test' } };
 
 const ENVELOPE = {
   id: 'envelope_abc',
@@ -36,7 +37,7 @@ const ENVELOPE = {
   authOptions: null,
   formValues: null,
   documentMeta: null,
-  team: { organisation: { url: ORG_URL } },
+  team: { organisation: ORGANISATION },
   recipients: [
     {
       id: 1,
@@ -82,7 +83,7 @@ describe('sendDocument fair-use admission (DEV-18278)', () => {
     expect(admitSignSendMock).toHaveBeenCalledWith({
       envelopeId: 'envelope_abc',
       legacyDocumentId: 42,
-      organisationUrl: ORG_URL,
+      organisation: ORGANISATION,
       attempt: 'send',
     });
   });
@@ -100,12 +101,14 @@ describe('sendDocument fair-use admission (DEV-18278)', () => {
     expect(attempts[1]).not.toBe(attempts[0]);
   });
 
-  it('loads the envelope organisation url with the envelope', async () => {
+  it('loads the envelope organisation url and owner with the envelope', async () => {
     await sendDocument(OPTIONS);
 
     const [query] = prismaMock.envelope.findFirst.mock.calls[0] as [{ include: Record<string, unknown> }];
 
-    expect(query.include.team).toEqual({ select: { organisation: { select: { url: true } } } });
+    expect(query.include.team).toEqual({
+      select: { organisation: { select: { url: true, owner: { select: { email: true } } } } },
+    });
   });
 
   it('a refusal propagates and nothing is metered or sent', async () => {

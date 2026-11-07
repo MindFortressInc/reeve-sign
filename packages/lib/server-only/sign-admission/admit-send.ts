@@ -1,5 +1,6 @@
 import { REEVE_SIGN_ADMISSION_API_URL, REEVE_SIGN_ADMISSION_TIMEOUT_MS } from '../../constants/sign-admission';
 import { AppError } from '../../errors/app-error';
+import { env } from '../../utils/env';
 import { logger } from '../../utils/logger';
 import { fetchWithTimeout } from '../../utils/timeout';
 import { REEVE_SHARED_HMAC_SECRET } from '../compliance/constants';
@@ -8,7 +9,7 @@ import { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } from '../reeve-admin/derive
 
 /**
  * DEV-18278: the fork's authoritative fair-use backstop. Every send and
- * resend from a Reeve-provisioned organisation (`reeve-ext-*`) asks
+ * resend from a Reeve-provisioned organisation (`isReeveProvisionedOrganisation`) asks
  * reeve-services' admission (docs/SIGN_FAIR_USE_ADMISSION.md) before any
  * metering or mail. Upstream doors (api / embed / agents) consume the
  * admission before they distribute, so a first send normally replays it
@@ -80,10 +81,28 @@ export type AdmitSignSendOptions = {
   envelopeId: string;
   /** The numeric v1 document id: reeve-services' `/api/v2/sign` admits under it. */
   legacyDocumentId: number;
-  /** The envelope's organisation url; only `reeve-ext-*` is admitted. */
-  organisationUrl: string;
+  /** The envelope's organisation; only a Reeve-provisioned one is admitted. */
+  organisation: AdmissionOrganisation;
   /** `send` for a first distribute, `resend:<unique id>` for each resend. */
   attempt: string;
+};
+
+export type AdmissionOrganisation = { url: string; owner: { email: string } };
+
+/**
+ * System-user ownership is the trusted provenance: only admin provisioning
+ * flows set it and no manager route transfers ownership. The `reeve-ext-`
+ * url alone is not, since an org's managers can edit it, so a renamed
+ * provisioned org would otherwise skip admission. The url still counts so
+ * nothing enforced today becomes exempt.
+ */
+export const isReeveProvisionedOrganisation = ({ url, owner }: AdmissionOrganisation): boolean => {
+  const systemUserEmail = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
+
+  return (
+    url.startsWith(REEVE_PROVISIONED_ORGANISATION_URL_PREFIX) ||
+    (!!systemUserEmail && owner.email.trim().toLowerCase() === systemUserEmail)
+  );
 };
 
 export type SignAdmissionResult =
@@ -105,10 +124,10 @@ const toRetryAfter = (bodyValue: unknown, header: string | null): number | undef
 export const admitSignSend = async ({
   envelopeId,
   legacyDocumentId,
-  organisationUrl,
+  organisation,
   attempt,
 }: AdmitSignSendOptions): Promise<SignAdmissionResult> => {
-  if (!organisationUrl.startsWith(REEVE_PROVISIONED_ORGANISATION_URL_PREFIX)) {
+  if (!isReeveProvisionedOrganisation(organisation)) {
     logger.info({ event: 'sign_admission_exempt', reason: 'fork_native_org', envelopeId, attempt });
 
     return { enforced: false };

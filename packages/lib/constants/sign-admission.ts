@@ -4,7 +4,8 @@ import { env } from '../utils/env';
  * DEV-18278: Reeve.Sign fair-use send admission (reeve-services
  * `POST /api/sign/v1/internal/admission`, docs/SIGN_FAIR_USE_ADMISSION.md).
  *
- * Only Reeve-provisioned organisations (`reeve-ext-*`) are admitted. For them
+ * Only Reeve-provisioned organisations (system-user owned or `reeve-ext-*`,
+ * see `isReeveProvisionedOrganisation`) are admitted. For them
  * admission is NOT optional: when these are unset, their sends fail closed
  * (see `packages/lib/server-only/sign-admission/admit-send.ts`). Fork-native
  * organisations never call it, so self-host / local dev is unaffected.

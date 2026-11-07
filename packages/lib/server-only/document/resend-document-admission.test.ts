@@ -51,6 +51,7 @@ vi.mock('../../client-only/providers/i18n-server', () => ({
 const { resendDocument } = await import('./resend-document');
 
 const ORG_URL = 'reeve-ext-0123abcd';
+const ORGANISATION = { url: ORG_URL, owner: { email: 'system@reeve.test' } };
 
 const ENVELOPE = {
   id: 'envelope_abc',
@@ -60,7 +61,7 @@ const ENVELOPE = {
   title: 'NDA',
   status: DocumentStatus.PENDING,
   documentMeta: { envelopeExpirationPeriod: null, message: '', subject: '', emailSettings: null },
-  team: { teamEmail: null, name: 'Team', organisation: { url: ORG_URL } },
+  team: { teamEmail: null, name: 'Team', organisation: ORGANISATION },
   user: { id: 5, email: 'owner@example.com', name: 'Owner' },
   recipients: [
     {
@@ -113,21 +114,23 @@ describe('resendDocument fair-use admission (DEV-18278)', () => {
     expect(first).toEqual({
       envelopeId: 'envelope_abc',
       legacyDocumentId: 42,
-      organisationUrl: ORG_URL,
+      organisation: ORGANISATION,
       attempt: expect.stringMatching(ATTEMPT),
     });
     expect(second.attempt).toEqual(expect.stringMatching(ATTEMPT));
     expect(second.attempt).not.toBe(first.attempt);
   });
 
-  it('loads the envelope organisation url with the team', async () => {
+  it('loads the envelope organisation url and owner with the team', async () => {
     await resendDocument(OPTIONS);
 
     const [query] = prismaMock.envelope.findUnique.mock.calls[0] as [
       { include: { team: { select: Record<string, unknown> } } },
     ];
 
-    expect(query.include.team.select.organisation).toEqual({ select: { url: true } });
+    expect(query.include.team.select.organisation).toEqual({
+      select: { url: true, owner: { select: { email: true } } },
+    });
   });
 
   it('a refusal propagates: no expiry change, no mail', async () => {

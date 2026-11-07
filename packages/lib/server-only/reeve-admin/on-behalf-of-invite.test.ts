@@ -92,7 +92,11 @@ const RECIPIENT = {
   authOptions: null,
 };
 
-const TEAM = { name: 'MindFortress', teamEmail: null, organisation: { url: 'reeve-ext-0123abcd' } };
+const TEAM = {
+  name: 'MindFortress',
+  teamEmail: null,
+  organisation: { url: 'reeve-ext-0123abcd', owner: { email: 'system@reeve.test' } },
+};
 
 const ORG_EMAIL_CONTEXT = {
   branding: undefined,

@@ -57,7 +57,7 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
         select: {
           teamEmail: true,
           name: true,
-          organisation: { select: { url: true } },
+          organisation: { select: { url: true, owner: { select: { email: true } } } },
         },
       },
       // The reminder names the envelope owner, not whoever called resend
@@ -107,7 +107,7 @@ export const resendDocument = async ({ id, userId, recipients, teamId, requestMe
     await admitSignSend({
       envelopeId: envelope.id,
       legacyDocumentId: mapSecondaryIdToDocumentId(envelope.secondaryId),
-      organisationUrl: envelope.team.organisation.url,
+      organisation: envelope.team.organisation,
       attempt: `resend:${randomUUID()}`,
     });
   }

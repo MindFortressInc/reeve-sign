@@ -148,7 +148,7 @@ const envelopeOwnedBy = (userId: number) => ({
   recipients: [RECIPIENT],
   fields: [{ id: 1, recipientId: RECIPIENT.id, type: FieldType.SIGNATURE }],
   envelopeItems: [{ id: 'item_1' }],
-  team: { organisation: { url: 'reeve-ext-0123abcd' } },
+  team: { organisation: { url: 'reeve-ext-0123abcd', owner: { email: 'system@reeve.test' } } },
   documentMeta: {
     signingOrder: DocumentSigningOrder.PARALLEL,
     emailSettings: null,
