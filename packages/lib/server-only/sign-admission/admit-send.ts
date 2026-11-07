@@ -1,6 +1,7 @@
 import { REEVE_SIGN_ADMISSION_API_URL, REEVE_SIGN_ADMISSION_TIMEOUT_MS } from '../../constants/sign-admission';
 import { AppError } from '../../errors/app-error';
 import { logger } from '../../utils/logger';
+import { fetchWithTimeout } from '../../utils/timeout';
 import { REEVE_SHARED_HMAC_SECRET } from '../compliance/constants';
 import { buildSignedHeaders } from '../compliance/sign-request';
 import { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } from '../reeve-admin/derive-organisation-url';
@@ -91,11 +92,15 @@ export type SignAdmissionResult =
 
 type AdmissionErrorBody = { error?: { code?: unknown; message?: unknown; retry_after_seconds?: unknown } };
 
-const toRetryAfter = (bodyValue: unknown, header: string | null): number | undefined => {
-  const candidate = typeof bodyValue === 'number' ? bodyValue : Number(header);
+const toSeconds = (value: unknown): number | undefined => {
+  const seconds = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
 
-  return Number.isFinite(candidate) && candidate >= 0 ? Math.ceil(candidate) : undefined;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : undefined;
 };
+
+/** The body's retry_after_seconds, else the Retry-After header; never 0 or a guess. */
+const toRetryAfter = (bodyValue: unknown, header: string | null): number | undefined =>
+  toSeconds(bodyValue) ?? toSeconds(header);
 
 export const admitSignSend = async ({
   envelopeId,
@@ -125,17 +130,15 @@ export const admitSignSend = async ({
     attempt,
   });
 
-  const signal = AbortSignal.timeout(REEVE_SIGN_ADMISSION_TIMEOUT_MS());
-
   let response: Response;
   let payload: unknown;
 
   try {
-    response = await fetch(new URL(SIGN_ADMISSION_PATH, baseUrl).toString(), {
+    response = await fetchWithTimeout(new URL(SIGN_ADMISSION_PATH, baseUrl), {
       method: 'POST',
       headers: { ...buildSignedHeaders(secret, body), 'Content-Type': 'application/json' },
       body,
-      signal,
+      timeoutMs: REEVE_SIGN_ADMISSION_TIMEOUT_MS(),
     });
 
     payload = await response.json().catch(() => null);
@@ -144,7 +147,6 @@ export const admitSignSend = async ({
       event: 'sign_admission_request_error',
       envelopeId,
       attempt,
-      timedOut: signal.aborted,
       error: err instanceof Error ? err.message : String(err),
     });
 

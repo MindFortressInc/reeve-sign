@@ -25,7 +25,7 @@ import { getRecipientsForDocument } from '@documenso/lib/server-only/recipient/g
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
 import { resolveOnBehalfOfUserId } from '@documenso/lib/server-only/reeve-admin/resolve-on-behalf-of-user';
-import { isSignAdmissionError } from '@documenso/lib/server-only/sign-admission/admit-send';
+import { isSignAdmissionError, type SignAdmissionError } from '@documenso/lib/server-only/sign-admission/admit-send';
 import { createDocumentFromTemplate } from '@documenso/lib/server-only/template/create-document-from-template';
 import { deleteTemplate } from '@documenso/lib/server-only/template/delete-template';
 import { findTemplates } from '@documenso/lib/server-only/template/find-templates';
@@ -69,6 +69,18 @@ const resolveEnvelopeOwnerId = async (req: TsRestRequest, userId: number, teamId
 
     return { status: 500 as const, body: { message: 'Something went wrong' } };
   }
+};
+
+/**
+ * DEV-18278: a fair-use admission refusal keeps its status, the server's
+ * message and its Retry-After header instead of the generic 500.
+ */
+const toSignAdmissionResponse = (err: SignAdmissionError, responseHeaders: Headers) => {
+  for (const [name, value] of Object.entries(err.headers ?? {})) {
+    responseHeaders.set(name, value);
+  }
+
+  return { status: err.statusCode, body: { message: err.message } };
 };
 
 export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
@@ -979,7 +991,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
     };
   }),
 
-  sendDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
+  sendDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata, responseHeaders }) => {
     const { id: documentId } = args.params;
     const { sendEmail, sendCompletionEmails } = args.body;
 
@@ -1072,14 +1084,14 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     } catch (err) {
       if (isSignAdmissionError(err)) {
-        return { status: err.statusCode, body: { message: err.message } };
+        return toSignAdmissionResponse(err, responseHeaders);
       }
 
       return AppError.toRestAPIError(err);
     }
   }),
 
-  resendDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata }) => {
+  resendDocument: authenticatedMiddleware(async (args, user, team, { logger, metadata, responseHeaders }) => {
     const { id: documentId } = args.params;
     const { recipients } = args.body;
 
@@ -1109,7 +1121,7 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
       };
     } catch (err) {
       if (isSignAdmissionError(err)) {
-        return { status: err.statusCode, body: { message: err.message } };
+        return toSignAdmissionResponse(err, responseHeaders);
       }
 
       return {

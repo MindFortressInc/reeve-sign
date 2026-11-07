@@ -28,12 +28,12 @@ type RouteFn = (
   ctx: { request: Request; responseHeaders: Headers },
 ) => Promise<{ status: number; body: { message?: string } }>;
 
-const call = async (route: unknown, args: Record<string, unknown>) =>
+const call = async (route: unknown, args: Record<string, unknown>, responseHeaders = new Headers()) =>
   await (route as RouteFn)(
     { headers: { authorization: 'api_org_token' }, ...args },
     {
       request: new Request('http://localhost/api/v1/documents/42/send', { method: 'POST' }) as never,
-      responseHeaders: new Headers(),
+      responseHeaders,
     },
   );
 
@@ -55,9 +55,15 @@ describe('v1 send/resend: fair-use admission refusals (DEV-18278)', () => {
   it('send: 429 with the server message', async () => {
     sendDocumentMock.mockRejectedValue(createSignAdmissionError('SIGN_SEND_RATE_LIMITED', 429, RATE_LIMITED, 37));
 
-    const res = await call(ApiContractV1Implementation.sendDocument, { params: { id: '42' }, body: {} });
+    const responseHeaders = new Headers();
+    const res = await call(
+      ApiContractV1Implementation.sendDocument,
+      { params: { id: '42' }, body: {} },
+      responseHeaders,
+    );
 
     expect(res).toEqual({ status: 429, body: { message: RATE_LIMITED } });
+    expect(responseHeaders.get('Retry-After')).toBe('37');
   });
 
   it('send: 503 when admission is unavailable', async () => {

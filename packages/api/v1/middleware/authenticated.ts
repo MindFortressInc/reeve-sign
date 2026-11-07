@@ -30,10 +30,10 @@ export const authenticatedMiddleware = <
     args: T & { req: TsRestRequest },
     user: Pick<User, 'id' | 'email' | 'name' | 'disabled'>,
     team: Team,
-    options: { metadata: ApiRequestMetadata; logger: Logger },
+    options: { metadata: ApiRequestMetadata; logger: Logger; responseHeaders: Headers },
   ) => Promise<R>,
 ) => {
-  return async (args: T, { request }: B) => {
+  return async (args: T, { request, responseHeaders }: B) => {
     const requestMetadata = extractRequestMetadata(request);
 
     const apiLogger = logger.child({
@@ -92,7 +92,7 @@ export const authenticatedMiddleware = <
         },
         apiToken.user,
         apiToken.team,
-        { metadata, logger: apiLogger },
+        { metadata, logger: apiLogger, responseHeaders },
       );
     } catch (err) {
       console.log({ err });

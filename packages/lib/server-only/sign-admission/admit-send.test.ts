@@ -118,7 +118,7 @@ describe('admitSignSend: Reeve-provisioned organisations, configured', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 
-    expect(url).toBe(`${BASE_URL}${SIGN_ADMISSION_PATH}`);
+    expect(String(url)).toBe(`${BASE_URL}${SIGN_ADMISSION_PATH}`);
     expect(SIGN_ADMISSION_PATH).toBe('/api/sign/v1/internal/admission');
     expect(init.method).toBe('POST');
     expect(init.signal).toBeInstanceOf(AbortSignal);
@@ -191,6 +191,19 @@ describe('admitSignSend: Reeve-provisioned organisations, configured', () => {
 
     expect(err.retryAfterSeconds).toBe(12);
     expect(err.headers).toEqual({ 'Retry-After': '12' });
+  });
+
+  it('429 with no retry hint at all carries no Retry-After (never 0)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: { code: 'send_rate_limited', message: 'slow' } }, 429)),
+    );
+
+    const err = await expectRefusal(admitSignSend(SEND));
+
+    expect(err.code).toBe('SIGN_SEND_RATE_LIMITED');
+    expect(err.retryAfterSeconds).toBeUndefined();
+    expect(err.headers).toBeUndefined();
   });
 
   it.each([
@@ -274,7 +287,7 @@ describe('admitSignSend: Reeve-provisioned organisations, configured', () => {
         async (_url: string, init: RequestInit) =>
           await new Promise<Response>((_resolve, reject) => {
             init.signal?.addEventListener('abort', () => {
-              reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+              reject(new DOMException('This operation was aborted', 'AbortError'));
             });
           }),
       ),
@@ -283,6 +296,8 @@ describe('admitSignSend: Reeve-provisioned organisations, configured', () => {
     const err = await expectRefusal(admitSignSend(SEND));
 
     expect(err.code).toBe('SIGN_ADMISSION_UNAVAILABLE');
-    expect(loggerMock.error).toHaveBeenCalledWith(expect.objectContaining({ timedOut: true }));
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'sign_admission_request_error', error: 'Request timed out after 20ms' }),
+    );
   });
 });

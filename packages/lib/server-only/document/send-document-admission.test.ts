@@ -87,6 +87,19 @@ describe('sendDocument fair-use admission (DEV-18278)', () => {
     });
   });
 
+  it('a re-send of an envelope that already left DRAFT spends its own slot (fresh send:<uuid> attempt)', async () => {
+    prismaMock.envelope.findFirst.mockResolvedValue({ ...ENVELOPE, status: DocumentStatus.PENDING });
+
+    await sendDocument(OPTIONS);
+    await sendDocument(OPTIONS);
+
+    const attempts = admitSignSendMock.mock.calls.map(([arg]) => (arg as { attempt: string }).attempt);
+
+    expect(attempts[0]).toMatch(/^send:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(attempts[1]).toMatch(/^send:[0-9a-f-]{36}$/);
+    expect(attempts[1]).not.toBe(attempts[0]);
+  });
+
   it('loads the envelope organisation url with the envelope', async () => {
     await sendDocument(OPTIONS);
 
