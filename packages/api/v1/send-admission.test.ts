@@ -1,4 +1,4 @@
-import { SignAdmissionError } from '@documenso/lib/server-only/sign-admission/admit-send';
+import { createSignAdmissionError } from '@documenso/lib/server-only/sign-admission/admit-send';
 import { DocumentStatus } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,7 +53,7 @@ beforeEach(() => {
 
 describe('v1 send/resend: fair-use admission refusals (DEV-18278)', () => {
   it('send: 429 with the server message', async () => {
-    sendDocumentMock.mockRejectedValue(new SignAdmissionError('SIGN_SEND_RATE_LIMITED', 429, RATE_LIMITED, 37));
+    sendDocumentMock.mockRejectedValue(createSignAdmissionError('SIGN_SEND_RATE_LIMITED', 429, RATE_LIMITED, 37));
 
     const res = await call(ApiContractV1Implementation.sendDocument, { params: { id: '42' }, body: {} });
 
@@ -61,7 +61,7 @@ describe('v1 send/resend: fair-use admission refusals (DEV-18278)', () => {
   });
 
   it('send: 503 when admission is unavailable', async () => {
-    sendDocumentMock.mockRejectedValue(new SignAdmissionError('SIGN_ADMISSION_UNAVAILABLE', 503, 'nothing was sent'));
+    sendDocumentMock.mockRejectedValue(createSignAdmissionError('SIGN_ADMISSION_UNAVAILABLE', 503, 'nothing was sent'));
 
     const res = await call(ApiContractV1Implementation.sendDocument, { params: { id: '42' }, body: {} });
 
@@ -70,7 +70,7 @@ describe('v1 send/resend: fair-use admission refusals (DEV-18278)', () => {
 
   it('resend: 403 with the server message (not the generic 500)', async () => {
     resendDocumentMock.mockRejectedValue(
-      new SignAdmissionError('SIGN_ACCOUNT_SUSPENDED', 403, 'suspended pending review'),
+      createSignAdmissionError('SIGN_ACCOUNT_SUSPENDED', 403, 'suspended pending review'),
     );
 
     const res = await call(ApiContractV1Implementation.resendDocument, {

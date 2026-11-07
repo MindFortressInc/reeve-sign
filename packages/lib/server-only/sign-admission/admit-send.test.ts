@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError } from '../../errors/app-error';
 import { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } from '../reeve-admin/derive-organisation-url';
-import { admitSignSend, SIGN_ADMISSION_PATH, SignAdmissionError } from './admit-send';
+import { admitSignSend, isSignAdmissionError, SIGN_ADMISSION_PATH, type SignAdmissionError } from './admit-send';
 
 const { loggerMock } = vi.hoisted(() => ({
   loggerMock: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -37,8 +37,8 @@ const expectRefusal = async (promise: Promise<unknown>) => {
     (e: unknown) => e,
   );
 
-  expect(err).toBeInstanceOf(SignAdmissionError);
   expect(err).toBeInstanceOf(AppError);
+  expect(isSignAdmissionError(err)).toBe(true);
 
   return err as SignAdmissionError;
 };

@@ -14,7 +14,7 @@ import { REEVE_PROVISIONED_ORGANISATION_URL_PREFIX } from '../reeve-admin/derive
  * (`replay: true`); a resend spends a fresh slot under its own attempt key.
  *
  * Fail closed: anything but 200 `decision: "allow"` throws a
- * `SignAdmissionError`, including unset config, a timeout and a network
+ * `SignAdmissionError` (an AppError), including unset config, a timeout and a network
  * error. Fork-native organisations are exempt and logged.
  */
 
@@ -26,35 +26,53 @@ const REFUSED_MESSAGE = 'Reeve.Sign refused this send, so nothing was sent.';
 
 const MAX_SERVER_MESSAGE_CHARS = 500;
 
+export const SIGN_ADMISSION_ERROR_CODES = [
+  'SIGN_ACCOUNT_SUSPENDED',
+  'SIGN_SEND_RATE_LIMITED',
+  'SIGN_ACCOUNT_UNRESOLVED',
+  'SIGN_ADMISSION_UNAVAILABLE',
+] as const;
+
+export type SignAdmissionErrorCode = (typeof SIGN_ADMISSION_ERROR_CODES)[number];
+
+export type SignAdmissionStatus = 403 | 422 | 429 | 503;
+
+/** An AppError for a refused send; `retryAfterSeconds` is set only on a 429. */
+export type SignAdmissionError = AppError & {
+  code: SignAdmissionErrorCode;
+  statusCode: SignAdmissionStatus;
+  retryAfterSeconds?: number;
+};
+
 /** Server refusal codes the fork surfaces as they are; anything else is "unavailable". */
-const REFUSALS: Record<string, { code: string; status: 403 | 422 | 429 }> = {
+const REFUSALS: Record<string, { code: SignAdmissionErrorCode; status: 403 | 422 | 429 }> = {
   account_suspended: { code: 'SIGN_ACCOUNT_SUSPENDED', status: 403 },
   tenant_suspended: { code: 'SIGN_ACCOUNT_SUSPENDED', status: 403 },
   send_rate_limited: { code: 'SIGN_SEND_RATE_LIMITED', status: 429 },
   account_unresolved: { code: 'SIGN_ACCOUNT_UNRESOLVED', status: 422 },
 };
 
-export type SignAdmissionStatus = 403 | 422 | 429 | 503;
+export const createSignAdmissionError = (
+  code: SignAdmissionErrorCode,
+  status: SignAdmissionStatus,
+  message: string,
+  retryAfterSeconds?: number,
+): SignAdmissionError => {
+  const error = new AppError(code, {
+    message,
+    userMessage: message,
+    statusCode: status,
+    headers: retryAfterSeconds !== undefined ? { 'Retry-After': String(retryAfterSeconds) } : undefined,
+  });
 
-export class SignAdmissionError extends AppError {
-  declare statusCode: SignAdmissionStatus;
+  return Object.assign(error, { code, statusCode: status, retryAfterSeconds });
+};
 
-  /** Only on a 429: how long the account must wait before sending again. */
-  retryAfterSeconds?: number;
+export const isSignAdmissionError = (error: unknown): error is SignAdmissionError => {
+  return error instanceof AppError && (SIGN_ADMISSION_ERROR_CODES as readonly string[]).includes(error.code);
+};
 
-  constructor(code: string, status: SignAdmissionStatus, message: string, retryAfterSeconds?: number) {
-    super(code, {
-      message,
-      userMessage: message,
-      statusCode: status,
-      headers: retryAfterSeconds !== undefined ? { 'Retry-After': String(retryAfterSeconds) } : undefined,
-    });
-
-    this.retryAfterSeconds = retryAfterSeconds;
-  }
-}
-
-const unavailable = () => new SignAdmissionError('SIGN_ADMISSION_UNAVAILABLE', 503, UNAVAILABLE_MESSAGE);
+const unavailable = () => createSignAdmissionError('SIGN_ADMISSION_UNAVAILABLE', 503, UNAVAILABLE_MESSAGE);
 
 export type AdmitSignSendOptions = {
   /** The v2 envelope id (`envelope_...`). */
@@ -172,5 +190,5 @@ export const admitSignSend = async ({
   const retryAfterSeconds =
     refusal.status === 429 ? toRetryAfter(error?.retry_after_seconds, response.headers.get('Retry-After')) : undefined;
 
-  throw new SignAdmissionError(refusal.code, refusal.status, message, retryAfterSeconds);
+  throw createSignAdmissionError(refusal.code, refusal.status, message, retryAfterSeconds);
 };
