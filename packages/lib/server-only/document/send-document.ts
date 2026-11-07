@@ -40,6 +40,7 @@ import { getRecipientsWithMissingFields, isRecipientEmailValidForSending } from 
 import { meterDocumentSend } from '../credits/meter-send';
 import { getEnvelopeWhereInput } from '../envelope/get-envelope-by-id';
 import { insertFormValuesInPdf } from '../pdf/insert-form-values-in-pdf';
+import { admitSignSend } from '../sign-admission/admit-send';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
 export type SendDocumentOptions = {
@@ -66,6 +67,7 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
       },
       fields: true,
       documentMeta: true,
+      team: { select: { organisation: { select: { url: true } } } },
       envelopeItems: {
         select: {
           id: true,
@@ -171,6 +173,17 @@ export const sendDocument = async ({ id, userId, teamId, sendEmail, requestMetad
   // normal transaction + notify + webhook path) reserve/commit/void credits
   // identically; see meterDocumentSend's docstring for the fail-closed /
   // no-op-when-unconfigured contract.
+  //
+  // DEV-18278: fair-use admission first, so a refused send (suspended, over
+  // its rate, or admission unreachable) is never metered or mailed. Throws
+  // for a Reeve-provisioned org; exempt for a fork-native one.
+  await admitSignSend({
+    envelopeId: envelope.id,
+    legacyDocumentId,
+    organisationUrl: envelope.team.organisation.url,
+    attempt: 'send',
+  });
+
   return meterDocumentSend({ userId, envelopeId: envelope.id }, () => sendDocumentInner());
 
   async function sendDocumentInner() {

@@ -203,3 +203,22 @@ reaches    = ["documenso"]
 name       = "REEVE_SIGN_SYSTEM_USER_EMAIL"
 on_missing = "degrade"
 reaches    = ["documenso"]
+
+[[runtime_env]]
+# packages/lib/server-only/sign-admission/admit-send.ts (DEV-18278) — base
+# URL of reeve-services' fair-use send admission. Absent: every send and
+# resend from a Reeve-provisioned (reeve-ext-*) org fails closed with 503
+# SIGN_ADMISSION_UNAVAILABLE ("nothing was sent"); fork-native orgs never
+# call it. No crash: degrade. Passed through in deploy/compose.yml.
+name       = "REEVE_SIGN_ADMISSION_API_URL"
+on_missing = "degrade"
+reaches    = ["documenso"]
+
+[[runtime_env]]
+# Same reader: signs the admission request (compliance/sign-request.ts
+# buildSignedHeaders). Must equal reeve-services' REEVE_SHARED_HMAC_SECRET.
+# Absent: the same fail-closed 503 for Reeve-provisioned orgs; a wrong value
+# answers 401 upstream, which also fails closed.
+name       = "REEVE_SHARED_HMAC_SECRET"
+on_missing = "degrade"
+reaches    = ["documenso"]

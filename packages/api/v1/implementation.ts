@@ -25,6 +25,7 @@ import { getRecipientsForDocument } from '@documenso/lib/server-only/recipient/g
 import { setDocumentRecipients } from '@documenso/lib/server-only/recipient/set-document-recipients';
 import { updateEnvelopeRecipients } from '@documenso/lib/server-only/recipient/update-envelope-recipients';
 import { resolveOnBehalfOfUserId } from '@documenso/lib/server-only/reeve-admin/resolve-on-behalf-of-user';
+import { SignAdmissionError } from '@documenso/lib/server-only/sign-admission/admit-send';
 import { createDocumentFromTemplate } from '@documenso/lib/server-only/template/create-document-from-template';
 import { deleteTemplate } from '@documenso/lib/server-only/template/delete-template';
 import { findTemplates } from '@documenso/lib/server-only/template/find-templates';
@@ -1070,6 +1071,10 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
+      if (err instanceof SignAdmissionError) {
+        return { status: err.statusCode, body: { message: err.message } };
+      }
+
       return AppError.toRestAPIError(err);
     }
   }),
@@ -1103,6 +1108,10 @@ export const ApiContractV1Implementation = tsr.router(ApiContractV1, {
         },
       };
     } catch (err) {
+      if (err instanceof SignAdmissionError) {
+        return { status: err.statusCode, body: { message: err.message } };
+      }
+
       return {
         status: 500,
         body: {

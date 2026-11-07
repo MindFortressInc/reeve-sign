@@ -1,5 +1,6 @@
 import { useSession } from '@documenso/lib/client-only/providers/session';
 import { getRecipientType } from '@documenso/lib/client-only/recipient-type';
+import { AppError } from '@documenso/lib/errors/app-error';
 import type { TRecipientLite } from '@documenso/lib/types/recipient';
 import { recipientAbbreviation } from '@documenso/lib/utils/recipient-formatter';
 import type { Document } from '@documenso/prisma/types/document-legacy-schema';
@@ -99,9 +100,12 @@ export const DocumentResendDialog = ({ document, recipients }: DocumentResendDia
 
       setIsOpen(false);
     } catch (err) {
+      // DEV-18278: a fair-use refusal (rate limit, suspension) carries a legible userMessage.
+      const { userMessage } = AppError.parseError(err);
+
       toast({
         title: _(msg`Something went wrong`),
-        description: _(msg`This document could not be re-sent at this time. Please try again.`),
+        description: userMessage || _(msg`This document could not be re-sent at this time. Please try again.`),
         variant: 'destructive',
         duration: 7500,
       });

@@ -286,6 +286,13 @@ describe('deploy/compose.yml (repatriated from the box, DEV-5838)', () => {
     expect(compose).toMatch(/-\s*REEVE_SIGN_SYSTEM_USER_EMAIL=\$\{REEVE_SIGN_SYSTEM_USER_EMAIL\}/);
   });
 
+  it('passes the fair-use send admission env through to documenso (DEV-18278)', () => {
+    // Same DEV-2900 gotcha: without these lines every send from a
+    // Reeve-provisioned org fails closed in prod (admission unconfigured).
+    expect(compose).toMatch(/-\s*REEVE_SIGN_ADMISSION_API_URL=\$\{REEVE_SIGN_ADMISSION_API_URL\}/);
+    expect(compose).toMatch(/-\s*REEVE_SHARED_HMAC_SECRET=\$\{REEVE_SHARED_HMAC_SECRET\}/);
+  });
+
   it('runs documenso with NODE_ENV=production (DEV-12257)', () => {
     // Unset NODE_ENV made tRPC include `stack` in every API error body and
     // Sentry report `environment: development`; deploy.toml declares it
