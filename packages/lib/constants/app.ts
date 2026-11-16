@@ -16,10 +16,12 @@ export const NEXT_PUBLIC_WEBAPP_URL = () => {
   return LOCAL_WEBAPP_URL;
 };
 
+// A blank value (e.g. `NAME=` copied from .env.example) counts as unset: libpdf
+// drops an empty /Reason or /ContactInfo from the signature instead of using it.
 export const NEXT_PUBLIC_SIGNING_CONTACT_INFO = () =>
-  env('NEXT_PUBLIC_SIGNING_CONTACT_INFO') ?? NEXT_PUBLIC_WEBAPP_URL();
+  env('NEXT_PUBLIC_SIGNING_CONTACT_INFO')?.trim() || NEXT_PUBLIC_WEBAPP_URL();
 
-export const NEXT_PUBLIC_SIGNING_REASON = () => env('NEXT_PUBLIC_SIGNING_REASON') ?? 'Signed with Reeve.Sign';
+export const NEXT_PUBLIC_SIGNING_REASON = () => env('NEXT_PUBLIC_SIGNING_REASON')?.trim() || 'Signed with Reeve.Sign';
 
 export const NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER = () =>
   env('NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER') === 'true';
