@@ -127,6 +127,8 @@ services:
         sync: false
       - key: NEXT_PUBLIC_SIGNING_CONTACT_INFO
         sync: false
+      - key: NEXT_PUBLIC_SIGNING_REASON
+        sync: false
       - key: NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER
         sync: false
 
