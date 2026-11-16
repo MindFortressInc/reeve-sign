@@ -16,6 +16,7 @@ const sealAndRead = async (key: 'Reason' | 'ContactInfo' = 'Reason') => {
   vi.stubEnv('NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS', undefined);
   vi.stubEnv('NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH', undefined);
   vi.stubEnv('NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY', undefined);
+  vi.stubEnv('NEXT_PRIVATE_SIGNING_PASSPHRASE', undefined);
 
   const { signPdf } = await import('@documenso/signing');
 
