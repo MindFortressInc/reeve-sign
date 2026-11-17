@@ -16,7 +16,7 @@ jobs:
     # Upstream Documenso used a Warp.dev runner (warp-ubuntu-2204-x64-8x). We have
     # no runner registered with that label, so the job queued forever and left every
     # PR stuck UNSTABLE on a check that never started. See DEV-4933.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
