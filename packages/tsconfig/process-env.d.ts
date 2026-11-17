@@ -47,6 +47,7 @@ declare namespace NodeJS {
     NEXT_PRIVATE_SIGNING_GCLOUD_HSM_SECRET_MANAGER_CERT_PATH?: string;
     NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY?: string;
     NEXT_PUBLIC_SIGNING_CONTACT_INFO?: string;
+    NEXT_PUBLIC_SIGNING_REASON?: string;
     NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER?: string;
 
     NEXT_PRIVATE_SMTP_TRANSPORT?: 'mailchannels' | 'resend' | 'smtp-auth' | 'smtp-api';
