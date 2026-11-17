@@ -18,7 +18,7 @@ rather than left to review discipline.
 This is deliberately narrow and literal-only, matching how this repo actually
 sets `runs-on:` today: every `pull_request`-triggered job (ci.yml,
 codeql-analysis.yml, e2e-tests.yml, and the rest) is
-a single literal string, `ubuntu-latest`. A list of literal strings is also
+a single literal string, `ubuntu-24.04` (pinned, DEV-19649). A list of literal strings is also
 accepted (GitHub allows `runs-on:` to be a label list), since that shape is
 just as statically resolvable. Anything this script cannot resolve to a
 known-safe literal (an expression like `${{ matrix.os }}`, a variable
