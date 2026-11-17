@@ -43,7 +43,7 @@ env:
 jobs:
   check:
     name: Compare the deployed image against main
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout (full history, needed to resolve image shas)

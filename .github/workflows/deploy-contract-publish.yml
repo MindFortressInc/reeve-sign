@@ -53,7 +53,7 @@ jobs:
   # rather than letting it fail red on something a fork contributor cannot fix
   # (and rather than passing it, which would be a lie).
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       has_token: ${{ steps.probe.outputs.has_token }}
     steps:
@@ -81,7 +81,7 @@ jobs:
     # fork PR without GH_REPO_TOKEN FAILS this required check instead of
     # having GitHub report a conditionally-skipped required job as passing.
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Reject unavailable token
         if: needs.preflight.outputs.has_token != 'true'
