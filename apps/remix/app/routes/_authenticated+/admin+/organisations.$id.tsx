@@ -790,14 +790,7 @@ const OrganisationAdminForm = ({ organisation, licenseFlags }: OrganisationAdmin
             <Alert variant="neutral" className="mt-4">
               <AlertDescription>
                 <span>¹&nbsp;</span>
-                <Trans>Your current license does not include these features.</Trans>{' '}
-                <Link
-                  to="https://docs.documenso.com/users/licenses/enterprise-edition"
-                  target="_blank"
-                  className="text-foreground underline hover:opacity-80"
-                >
-                  <Trans>Learn more</Trans>
-                </Link>
+                <Trans>Your current license does not include these features.</Trans>
               </AlertDescription>
             </Alert>
           )}

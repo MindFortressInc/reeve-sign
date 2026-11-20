@@ -487,7 +487,7 @@ export const AddTemplateSettingsFormPartial = ({
                                       </SelectItem>
                                     ))}
 
-                                    <SelectItem value={'-1'}>Documenso</SelectItem>
+                                    <SelectItem value={'-1'}>Reeve.Sign</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </FormControl>

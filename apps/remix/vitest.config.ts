@@ -10,6 +10,9 @@ export default defineConfig({
   // function under plain Node/Vitest and throws on import -- the same two
   // plugins app/vite.config.ts and packages/lib/vitest.config.ts already use.
   plugins: [macrosPlugin(), lingui(), tsconfigPaths()],
+  // @documenso/email's tsconfig says `jsx: preserve`, so its templates would
+  // compile to classic React.createElement; same fix as packages/trpc's config.
+  esbuild: { jsx: 'automatic' },
   test: {
     include: ['server/**/*.test.ts', 'app/**/*.test.ts'],
   },

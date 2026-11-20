@@ -17,7 +17,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { SubscriptionClaim } from '@prisma/client';
 import { useForm } from 'react-hook-form';
-import { Link } from 'react-router';
 import type { z } from 'zod';
 
 export type SubscriptionClaimFormValues = z.infer<typeof ZCreateSubscriptionClaimRequestSchema>;
@@ -190,14 +189,7 @@ export const SubscriptionClaimForm = ({
               <Alert variant="neutral" className="mt-4">
                 <AlertDescription>
                   <span>¹&nbsp;</span>
-                  <Trans>Your current license does not include these features.</Trans>{' '}
-                  <Link
-                    to="https://docs.documenso.com/users/licenses/enterprise-edition"
-                    target="_blank"
-                    className="text-foreground underline hover:opacity-80"
-                  >
-                    <Trans>Learn more</Trans>
-                  </Link>
+                  <Trans>Your current license does not include these features.</Trans>
                 </AlertDescription>
               </Alert>
             )}

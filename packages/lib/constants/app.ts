@@ -23,6 +23,18 @@ export const NEXT_PUBLIC_SIGNING_CONTACT_INFO = () =>
 
 export const NEXT_PUBLIC_SIGNING_REASON = () => env('NEXT_PUBLIC_SIGNING_REASON')?.trim() || 'Signed with Reeve.Sign';
 
+// Product identity for developer- and admin-facing surfaces (OpenAPI titles,
+// download filenames, help links). DEV-19567.
+export const APP_DISPLAY_NAME = 'Reeve.Sign';
+
+export const APP_FILENAME_PREFIX = 'reeve-sign';
+
+export const APP_DOCS_URL = 'https://docs.meetreeve.com/docs';
+
+export const APP_TERMS_URL = 'https://meetreeve.com/terms';
+
+export const APP_PRIVACY_URL = 'https://meetreeve.com/privacy';
+
 export const NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER = () =>
   env('NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER') === 'true';
 

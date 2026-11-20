@@ -4566,8 +4566,8 @@ msgid "On this page, you can create a new webhook."
 msgstr "Në këtë faqe, mund të krijoni një webhook të ri."
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.tokens.tsx
-msgid "On this page, you can create and manage API tokens. See our <0>Documentation</0> for more information."
-msgstr "Në këtë faqe, mund të krijoni dhe menaxhoni token-të API. Shikoni <0>Dokumentacionin</0> tonë për më shumë informacion."
+msgid "On this page, you can create and manage API tokens."
+msgstr "Në këtë faqe, mund të krijoni dhe menaxhoni token-të API."
 
 #: apps/remix/app/routes/_authenticated+/t.$teamUrl+/settings.webhooks._index.tsx
 msgid "On this page, you can create new Webhooks and manage the existing ones."

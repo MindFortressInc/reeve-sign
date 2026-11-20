@@ -1,6 +1,7 @@
 import communityCardsImage from '@documenso/assets/images/community-cards.png';
 import { authClient } from '@documenso/auth/client';
 import { useAnalytics } from '@documenso/lib/client-only/hooks/use-analytics';
+import { APP_PRIVACY_URL, APP_TERMS_URL } from '@documenso/lib/constants/app';
 import { ZNameSchema } from '@documenso/lib/constants/auth';
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { env } from '@documenso/lib/utils/env';
@@ -213,7 +214,7 @@ export const SignUpForm = ({
             type="button"
             size="lg"
             loading={isSubmitting}
-            className="bg-brand mt-6 w-full hover:opacity-90"
+            className="mt-6 w-full bg-brand hover:opacity-90"
             onClick={onSignUpWithOIDCClick}
           >
             <FaIdCardClip className="mr-2 h-5 w-5" />
@@ -430,19 +431,11 @@ export const SignUpForm = ({
         <p className="mt-6 text-muted-foreground text-xs">
           <Trans>
             By proceeding, you agree to our{' '}
-            <Link
-              to="https://documen.so/terms"
-              target="_blank"
-              className="text-brand-700 duration-200 hover:opacity-70"
-            >
+            <Link to={APP_TERMS_URL} target="_blank" className="text-brand-700 duration-200 hover:opacity-70">
               Terms of Service
             </Link>{' '}
             and{' '}
-            <Link
-              to="https://documen.so/privacy"
-              target="_blank"
-              className="text-brand-700 duration-200 hover:opacity-70"
-            >
+            <Link to={APP_PRIVACY_URL} target="_blank" className="text-brand-700 duration-200 hover:opacity-70">
               Privacy Policy
             </Link>
             .

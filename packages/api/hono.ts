@@ -15,7 +15,7 @@ import { Hono } from 'hono';
 export const tsRestHonoApp = new Hono<HonoEnv>();
 
 tsRestHonoApp
-  .get('/openapi', (c) => c.redirect('https://openapi-v1.documenso.com'))
+  .get('/openapi', (c) => c.redirect('/api/v1/openapi.json'))
   .get('/openapi.json', (c) => c.json(OpenAPIV1))
   .get('/me', async (c) => testCredentialsHandler(c.req.raw));
 
