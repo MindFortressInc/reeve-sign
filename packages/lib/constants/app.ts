@@ -23,6 +23,18 @@ export const NEXT_PUBLIC_SIGNING_CONTACT_INFO = () =>
 
 export const NEXT_PUBLIC_SIGNING_REASON = () => env('NEXT_PUBLIC_SIGNING_REASON')?.trim() || 'Signed with Reeve.Sign';
 
+// Product identity for developer- and admin-facing surfaces (OpenAPI titles,
+// download filenames, help links). DEV-19567.
+export const APP_DISPLAY_NAME = 'Reeve.Sign';
+
+export const APP_FILENAME_PREFIX = 'reeve-sign';
+
+export const APP_DOCS_URL = 'https://docs.meetreeve.com/docs';
+
+export const APP_TERMS_URL = 'https://meetreeve.com/terms';
+
+export const APP_PRIVACY_URL = 'https://meetreeve.com/privacy';
+
 export const NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER = () =>
   env('NEXT_PRIVATE_USE_LEGACY_SIGNING_SUBFILTER') === 'true';
 
@@ -34,7 +46,8 @@ export const IS_BILLING_ENABLED = () => env('NEXT_PUBLIC_FEATURE_BILLING_ENABLED
 export const API_V2_BETA_URL = '/api/v2-beta';
 export const API_V2_URL = '/api/v2';
 
-export const SUPPORT_EMAIL = env('NEXT_PUBLIC_SUPPORT_EMAIL') ?? 'support@meetreeve.com';
+// Blank counts as unset, like NEXT_PUBLIC_SIGNING_REASON: `NAME=` would otherwise render `mailto:`.
+export const SUPPORT_EMAIL = env('NEXT_PUBLIC_SUPPORT_EMAIL')?.trim() || 'support@meetreeve.com';
 
 export const USE_INTERNAL_URL_BROWSERLESS = () => env('NEXT_PUBLIC_USE_INTERNAL_URL_BROWSERLESS') === 'true';
 

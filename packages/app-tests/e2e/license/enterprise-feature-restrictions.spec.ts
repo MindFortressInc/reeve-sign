@@ -152,7 +152,7 @@ test.describe
 
       // Check that the alert is visible
       await expect(page.getByText('Your current license does not include these features.')).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Learn more' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Learn more' })).toHaveCount(0);
 
       // Check that enterprise feature checkboxes are disabled
       const emailDomainsCheckbox = page.locator('#flag-emailDomains');

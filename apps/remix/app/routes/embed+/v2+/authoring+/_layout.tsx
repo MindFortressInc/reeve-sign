@@ -184,7 +184,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
               <li>
                 <Trans>
                   If you are using staging, ensure that you have set the host prop on the embedding component to the
-                  staging domain (https://stg-app.documenso.com)
+                  staging domain
                 </Trans>
               </li>
             </ul>

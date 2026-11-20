@@ -1,6 +1,7 @@
 import { authClient } from '@documenso/auth/client';
 import { downloadFile } from '@documenso/lib/client-only/download-file';
 import { useSession } from '@documenso/lib/client-only/providers/session';
+import { APP_FILENAME_PREFIX } from '@documenso/lib/constants/app';
 import { Button } from '@documenso/ui/primitives/button';
 import {
   Dialog,
@@ -111,7 +112,7 @@ export const EnableAuthenticatorAppDialog = ({ onSuccess }: EnableAuthenticatorA
       });
 
       downloadFile({
-        filename: 'documenso-2FA-recovery-codes.txt',
+        filename: `${APP_FILENAME_PREFIX}-2FA-recovery-codes.txt`,
         data: blob,
       });
     }
