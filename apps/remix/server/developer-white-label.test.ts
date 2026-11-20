@@ -76,6 +76,17 @@ describe('reset-password email', () => {
     expect(html).toContain(`mailto:${SUPPORT_EMAIL}`);
     expect(html).not.toMatch(VENDOR);
   });
+
+  it('a blank NEXT_PUBLIC_SUPPORT_EMAIL falls back instead of rendering a bare mailto:', async () => {
+    vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_SUPPORT_EMAIL', '  ');
+
+    const { SUPPORT_EMAIL } = await import('@documenso/lib/constants/app');
+
+    expect(SUPPORT_EMAIL).toBe('support@meetreeve.com');
+
+    vi.unstubAllEnvs();
+  });
 });
 
 // Source ratchet: vendor hosts and `documenso-` download prefixes must not come
@@ -102,6 +113,8 @@ const BANNED = [
   /stg-app\.documenso\.com/,
   /mailto:[^'"`\s]*@documenso\.com/,
   /filename:\s*['"`]documenso-/,
+  // A rendered JSX label such as the default email sender `<SelectItem>Documenso</SelectItem>`.
+  />\s*Documenso\s*</,
 ];
 
 const listSources = (dir: string): string[] =>

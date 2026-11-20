@@ -1,5 +1,6 @@
 import { useAutoSave } from '@documenso/lib/client-only/hooks/use-autosave';
 import { useCurrentOrganisation } from '@documenso/lib/client-only/providers/organisation';
+import { APP_DISPLAY_NAME } from '@documenso/lib/constants/app';
 import { RECIPIENT_ROLES_DESCRIPTION } from '@documenso/lib/constants/recipient-roles';
 import type { TDocument } from '@documenso/lib/types/document';
 import { ZDocumentEmailSettingsSchema } from '@documenso/lib/types/document-email';
@@ -216,7 +217,7 @@ export const AddSubjectFormPartial = ({
                                     </SelectItem>
                                   ))}
 
-                                  <SelectItem value={'-1'}>Reeve.Sign</SelectItem>
+                                  <SelectItem value={'-1'}>{APP_DISPLAY_NAME}</SelectItem>
                                 </SelectContent>
                               </Select>
                             </FormControl>
