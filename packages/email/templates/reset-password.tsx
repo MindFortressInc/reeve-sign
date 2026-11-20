@@ -13,7 +13,7 @@ export type ResetPasswordTemplateProps = Partial<TemplateResetPasswordProps>;
 
 export const ResetPasswordTemplate = ({
   userName = 'Lucas Smith',
-  userEmail = 'lucas@documenso.com',
+  userEmail = 'lucas@example.com',
   assetBaseUrl = 'http://localhost:3002',
 }: ResetPasswordTemplateProps) => {
   const { _ } = useLingui();
