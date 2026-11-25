@@ -141,8 +141,10 @@ export default function EmbedPlaygroundPage() {
   /**
    * If the token starts with "api_", exchange it for a presign token
    * via the embedding presign endpoint. Otherwise return as-is.
+   *
+   * Edit embeds only accept a token scoped to the envelope (DEV-20496).
    */
-  const resolveToken = async (inputToken: string): Promise<string> => {
+  const resolveToken = async (inputToken: string, scope?: string): Promise<string> => {
     if (!inputToken.startsWith('api_')) {
       return inputToken;
     }
@@ -153,7 +155,7 @@ export default function EmbedPlaygroundPage() {
         Authorization: `Bearer ${inputToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify(scope ? { scope } : {}),
     });
 
     if (!response.ok) {
@@ -256,7 +258,7 @@ export default function EmbedPlaygroundPage() {
     let presignToken: string;
 
     try {
-      presignToken = await resolveToken(inputToken);
+      presignToken = await resolveToken(inputToken, mode === 'edit' ? `envelopeId:${envelopeId}` : undefined);
     } catch (err) {
       setTokenError(err instanceof Error ? err.message : String(err));
       setIsResolvingToken(false);

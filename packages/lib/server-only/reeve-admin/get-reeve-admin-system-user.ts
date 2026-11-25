@@ -1,6 +1,44 @@
+import { prisma } from '@documenso/prisma';
+
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import { env } from '../../utils/env';
 import { getUserByEmail } from '../user/get-user-by-email';
+
+let memoizedSystemUser: { email: string; id: number } | null = null;
+
+/**
+ * Whether `userId` is the Reeve system user (DEV-20496). Every
+ * Reeve-provisioned organisation and its API tokens belong to this one user,
+ * so access checks that trust "the caller owns it" or "the caller is a member
+ * of the envelope's team" must also bind it to the token's team.
+ *
+ * Unlike `getReeveAdminSystemUser` this never throws for configuration: an
+ * unset email, or one that matches no user, means no user is the system user.
+ * A database error still throws, so a caller fails closed. The resolved id is
+ * memoized per configured email; a miss is not memoized.
+ */
+export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean> => {
+  const email = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
+
+  if (!email) {
+    return false;
+  }
+
+  if (memoizedSystemUser?.email !== email) {
+    const user = await prisma.user.findFirst({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return false;
+    }
+
+    memoizedSystemUser = { email, id: user.id };
+  }
+
+  return memoizedSystemUser.id === userId;
+};
 
 /**
  * Resolves the system user that owns every organisation provisioned via

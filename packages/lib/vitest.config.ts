@@ -36,6 +36,7 @@ export default defineConfig({
       '**/server-only/field/sweep-field-file-upload-tmp.integration.test.ts',
       '**/server-only/envelope/duplicate-envelope.integration.test.ts',
       '**/server-only/recipient/get-handoff-eligibility.integration.test.ts',
+      '**/server-only/envelope/system-user-team-binding.integration.test.ts',
     ],
   },
 });

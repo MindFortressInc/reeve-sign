@@ -49,7 +49,11 @@ export const loader = async ({ request, params }: Route.LoaderArgs) => {
   }
 
   // We also know that the token is valid, but we need the userId + teamId
-  const result = await verifyEmbeddingPresignToken({ token, scope: `envelopeId:${id}` }).catch(() => null);
+  const result = await verifyEmbeddingPresignToken({
+    token,
+    scope: `envelopeId:${id}`,
+    requireScope: true,
+  }).catch(() => null);
 
   if (!result) {
     throw new Error('Invalid token');

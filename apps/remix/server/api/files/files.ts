@@ -137,6 +137,7 @@ export const filesRoute = new Hono<HonoEnv>()
       const session = await getOptionalSession(c);
 
       let userId = session.user?.id;
+      let presignTokenTeamId: number | undefined;
 
       if (token) {
         const presignToken = await verifyEmbeddingPresignToken({
@@ -144,6 +145,7 @@ export const filesRoute = new Hono<HonoEnv>()
         }).catch(() => undefined);
 
         userId = presignToken?.userId;
+        presignTokenTeamId = presignToken?.teamId;
       }
 
       if (!userId) {
@@ -181,6 +183,7 @@ export const filesRoute = new Hono<HonoEnv>()
         teamId: envelope.teamId,
         envelopeType: envelope.type,
         templateType: envelope.templateType,
+        presignTokenTeamId,
       });
 
       if (!hasAccess) {

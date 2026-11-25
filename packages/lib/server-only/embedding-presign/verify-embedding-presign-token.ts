@@ -7,9 +7,20 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 export type VerifyEmbeddingPresignTokenOptions = {
   token: string;
   scope?: string;
+
+  /**
+   * Reject a token minted without a scope (DEV-20496). The edit loaders and
+   * the embed update mutations set this, so only a token minted for that exact
+   * resource opens it. Create flows leave it unset.
+   */
+  requireScope?: boolean;
 };
 
-export const verifyEmbeddingPresignToken = async ({ token, scope }: VerifyEmbeddingPresignTokenOptions) => {
+export const verifyEmbeddingPresignToken = async ({
+  token,
+  scope,
+  requireScope = false,
+}: VerifyEmbeddingPresignTokenOptions) => {
   // First decode the JWT to get the claims without verification
   let decodedToken: JWTPayload;
 
@@ -85,6 +96,12 @@ export const verifyEmbeddingPresignToken = async ({ token, scope }: VerifyEmbedd
   if (audienceId !== apiToken.teamId && audienceId !== apiToken.userId) {
     throw new AppError(AppErrorCode.UNAUTHORIZED, {
       message: 'Invalid presign token: API token does not match audience',
+    });
+  }
+
+  if (requireScope && (!scope || !decodedToken.scope)) {
+    throw new AppError(AppErrorCode.UNAUTHORIZED, {
+      message: 'Presign token scope required',
     });
   }
 
