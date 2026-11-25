@@ -1,3 +1,4 @@
+import { SUPPORT_EMAIL } from '@documenso/lib/constants/app';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
@@ -12,7 +13,7 @@ export type ResetPasswordTemplateProps = Partial<TemplateResetPasswordProps>;
 
 export const ResetPasswordTemplate = ({
   userName = 'Lucas Smith',
-  userEmail = 'lucas@documenso.com',
+  userEmail = 'lucas@example.com',
   assetBaseUrl = 'http://localhost:3002',
 }: ResetPasswordTemplateProps) => {
   const { _ } = useLingui();
@@ -60,7 +61,7 @@ export const ResetPasswordTemplate = ({
               <Text className="mt-2 text-base text-slate-400">
                 <Trans>
                   Didn't request a password change? We are here to help you secure your account, just{' '}
-                  <Link className="font-normal text-brand-700" href="mailto:hi@documenso.com">
+                  <Link className="font-normal text-brand-700" href={`mailto:${SUPPORT_EMAIL}`}>
                     contact us
                   </Link>
                   .

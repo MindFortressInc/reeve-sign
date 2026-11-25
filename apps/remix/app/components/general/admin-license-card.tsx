@@ -7,7 +7,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@docum
 import { useToast } from '@documenso/ui/primitives/use-toast';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
-  ArrowRightIcon,
   CheckCircle2Icon,
   EyeIcon,
   EyeOffIcon,
@@ -18,7 +17,7 @@ import {
 } from 'lucide-react';
 import { DateTime } from 'luxon';
 import { useState } from 'react';
-import { Link, useRevalidator } from 'react-router';
+import { useRevalidator } from 'react-router';
 import { match } from 'ts-pattern';
 
 import { CardMetric } from './metric-card';
@@ -59,14 +58,6 @@ export const AdminLicenseCard = ({ licenseData }: AdminLicenseCardProps) => {
                   <Trans>No License Configured</Trans>
                 </p>
               )}
-
-              <Link
-                to="https://docs.documenso.com/users/licenses/enterprise-edition"
-                target="_blank"
-                className="flex flex-row items-center text-muted-foreground text-xs hover:text-muted-foreground/80"
-              >
-                <Trans>Learn more</Trans> <ArrowRightIcon className="h-3 w-3" />
-              </Link>
             </div>
           </div>
         </CardMetric>

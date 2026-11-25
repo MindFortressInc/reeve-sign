@@ -26,6 +26,9 @@ const config = {
       noEmitOnError: true,
       moduleResolution: 'bundler',
       include: ['server/**/*', '../../packages/**/*', '../../packages/lib/translations/**/*'],
+      // Tests are not part of the server bundle (`npm run typecheck` still covers them).
+      // Type-checking server/developer-white-label.test.ts in this program spun forever.
+      exclude: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts'],
       jsx: 'preserve',
     }),
     resolve({

@@ -217,8 +217,8 @@ test.describe
       await expect(page.getByText('License payment overdue')).toBeVisible();
       await expect(page.getByText('Please update your payment to avoid service disruptions.')).toBeVisible();
 
-      // Should have the "See Documentation" link
-      await expect(page.getByRole('link', { name: 'See Documentation' })).toBeVisible();
+      // DEV-19567: no vendor docs link on the banner
+      await expect(page.getByRole('link', { name: 'See Documentation' })).toHaveCount(0);
     });
 
     test('[ADMIN]: admin banner shows EXPIRED error', async ({ page }) => {
@@ -246,8 +246,8 @@ test.describe
       await expect(page.getByText('License expired')).toBeVisible();
       await expect(page.getByText('Please renew your license to continue using enterprise features.')).toBeVisible();
 
-      // Should have the "See Documentation" link
-      await expect(page.getByRole('link', { name: 'See Documentation' })).toBeVisible();
+      // DEV-19567: no vendor docs link on the banner
+      await expect(page.getByRole('link', { name: 'See Documentation' })).toHaveCount(0);
     });
 
     test.skip('[ADMIN]: global banner shows when EXPIRED with unauthorized usage', async ({ page }) => {
@@ -305,8 +305,8 @@ test.describe
         page.getByText('Your Reeve.Sign instance is using features that are not part of your license.'),
       ).toBeVisible();
 
-      // Should have the "See Documentation" link
-      await expect(page.getByRole('link', { name: 'See Documentation' })).toBeVisible();
+      // DEV-19567: no vendor docs link on the banner
+      await expect(page.getByRole('link', { name: 'See Documentation' })).toHaveCount(0);
     });
 
     test('[ADMIN]: admin banner shows Invalid License Type when unauthorized without license data', async ({
@@ -341,8 +341,8 @@ test.describe
         page.getByText('Your Reeve.Sign instance is using features that are not part of your license.'),
       ).toBeVisible();
 
-      // Should have the "See Documentation" link
-      await expect(page.getByRole('link', { name: 'See Documentation' })).toBeVisible();
+      // DEV-19567: no vendor docs link on the banner
+      await expect(page.getByRole('link', { name: 'See Documentation' })).toHaveCount(0);
     });
 
     test.skip('[ADMIN]: global banner visible on non-admin pages when EXPIRED with unauthorized', async ({ page }) => {
