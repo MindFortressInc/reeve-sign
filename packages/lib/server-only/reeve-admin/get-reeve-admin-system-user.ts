@@ -13,8 +13,9 @@ let memoizedSystemUser: { email: string; id: number } | null = null;
  * of the envelope's team" must also bind it to the token's team.
  *
  * Unlike `getReeveAdminSystemUser` this never throws for configuration: an
- * unset email, or one that matches no user, means no user is the system user.
- * A database error still throws, so a caller fails closed. The resolved id is
+ * unset email, or one that matches no user (logged), means no user is the
+ * system user, and without that user no Reeve organisation can exist. A
+ * database error still throws, so a caller fails closed. The resolved id is
  * memoized per configured email; a miss is not memoized.
  */
 export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean> => {
@@ -25,12 +26,19 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
   }
 
   if (memoizedSystemUser?.email !== email) {
+    // Case-insensitive, like resolveOnBehalfOfUserId: an exact-match miss on a
+    // differently-cased stored email would silently unbind the system user.
     const user = await prisma.user.findFirst({
-      where: { email },
+      where: { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { id: 'asc' },
       select: { id: true },
     });
 
     if (!user) {
+      console.error(
+        `[reeve-admin] REEVE_SIGN_SYSTEM_USER_EMAIL is set to "${email}" but no matching user exists; system-user team binding is inactive`,
+      );
+
       return false;
     }
 

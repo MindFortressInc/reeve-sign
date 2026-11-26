@@ -102,7 +102,11 @@ describe('isReeveAdminSystemUserId', () => {
     expect(await isReeveAdminSystemUserId(42)).toBe(true);
     expect(await isReeveAdminSystemUserId(7)).toBe(false);
     expect(userFindFirstMock).toHaveBeenCalledTimes(1);
-    expect(userFindFirstMock).toHaveBeenCalledWith({ where: { email: 'system@reeve.test' }, select: { id: true } });
+    expect(userFindFirstMock).toHaveBeenCalledWith({
+      where: { email: { equals: 'system@reeve.test', mode: 'insensitive' } },
+      orderBy: { id: 'asc' },
+      select: { id: true },
+    });
   });
 
   it('re-resolves when the configured email changes', async () => {

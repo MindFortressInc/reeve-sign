@@ -52,152 +52,157 @@ let human: User;
 let orgATeam: Team;
 let orgBTeam: Team;
 
-describe.skipIf(!RUN_INTEGRATION)(
-  "Reeve system user's by-id access is bound to the token's team (real Postgres)",
-  () => {
-    const originalValue = process.env[ENV_KEY];
+describe("Reeve system user's by-id access is bound to the token's team (real Postgres)", () => {
+  const originalValue = process.env[ENV_KEY];
 
-    beforeAll(async () => {
-      const orgA = await seedUser({ name: 'Reeve System' });
-      const orgB = await seedUser({ name: 'Org B owner' });
+  beforeAll(async () => {
+    // Fail loudly, not a silent skip, when the dedicated config runs without
+    // the flag (same gate as get-handoff-eligibility.integration.test.ts).
+    if (!RUN_INTEGRATION) {
+      throw new Error(
+        'RUN_DB_INTEGRATION_TESTS=true environment variable must be set to run database integration tests',
+      );
+    }
 
-      systemUser = orgA.user;
-      orgATeam = orgA.team;
-      orgBTeam = orgB.team;
+    const orgA = await seedUser({ name: 'Reeve System' });
+    const orgB = await seedUser({ name: 'Org B owner' });
 
-      // Production shape: the system user is in every Reeve-provisioned org.
-      await seedOrganisationMembers({
-        members: [{ email: systemUser.email, organisationRole: OrganisationMemberRole.ADMIN }],
-        organisationId: orgB.organisation.id,
-      });
+    systemUser = orgA.user;
+    orgATeam = orgA.team;
+    orgBTeam = orgB.team;
 
-      // A human who belongs to both orgs, for the unchanged-upstream case.
-      const [seededHuman] = await seedOrganisationMembers({
-        members: [{ organisationRole: OrganisationMemberRole.MEMBER }],
-        organisationId: orgA.organisation.id,
-      });
-
-      human = seededHuman;
-
-      await seedOrganisationMembers({
-        members: [{ email: human.email, organisationRole: OrganisationMemberRole.MEMBER }],
-        organisationId: orgB.organisation.id,
-      });
-
-      process.env[ENV_KEY] = systemUser.email;
+    // Production shape: the system user is in every Reeve-provisioned org.
+    await seedOrganisationMembers({
+      members: [{ email: systemUser.email, organisationRole: OrganisationMemberRole.ADMIN }],
+      organisationId: orgB.organisation.id,
     });
 
-    afterAll(async () => {
-      if (originalValue === undefined) {
-        delete process.env[ENV_KEY];
-      } else {
-        process.env[ENV_KEY] = originalValue;
-      }
-
-      await prisma.$disconnect();
+    // A human who belongs to both orgs, for the unchanged-upstream case.
+    const [seededHuman] = await seedOrganisationMembers({
+      members: [{ organisationRole: OrganisationMemberRole.MEMBER }],
+      organisationId: orgA.organisation.id,
     });
 
-    it("get-many with org A's system-user token returns no row for an org B envelope", async () => {
-      const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+    human = seededHuman;
 
-      const rows = await getEnvelopesByIds({
-        ids: { type: 'envelopeId', ids: [orgBEnvelope.id] },
-        userId: systemUser.id,
-        teamId: orgATeam.id,
-        type: EnvelopeType.DOCUMENT,
-      });
-
-      expect(rows).toEqual([]);
+    await seedOrganisationMembers({
+      members: [{ email: human.email, organisationRole: OrganisationMemberRole.MEMBER }],
+      organisationId: orgB.organisation.id,
     });
 
-    it("by-id read with org A's system-user token is NOT_FOUND for an org B envelope", async () => {
-      const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+    process.env[ENV_KEY] = systemUser.email;
+  });
 
-      await expect(
-        getEnvelopeById({
-          id: { type: 'envelopeId', id: orgBEnvelope.id },
-          userId: systemUser.id,
-          teamId: orgATeam.id,
-          type: EnvelopeType.DOCUMENT,
-        }),
-      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+  afterAll(async () => {
+    if (originalValue === undefined) {
+      delete process.env[ENV_KEY];
+    } else {
+      process.env[ENV_KEY] = originalValue;
+    }
+
+    await prisma.$disconnect();
+  });
+
+  it("get-many with org A's system-user token returns no row for an org B envelope", async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    const rows = await getEnvelopesByIds({
+      ids: { type: 'envelopeId', ids: [orgBEnvelope.id] },
+      userId: systemUser.id,
+      teamId: orgATeam.id,
+      type: EnvelopeType.DOCUMENT,
     });
 
-    it("org B's own system-user token still reads it, by id and via get-many", async () => {
-      const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+    expect(rows).toEqual([]);
+  });
 
-      const envelope = await getEnvelopeById({
+  it("by-id read with org A's system-user token is NOT_FOUND for an org B envelope", async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    await expect(
+      getEnvelopeById({
         id: { type: 'envelopeId', id: orgBEnvelope.id },
         userId: systemUser.id,
-        teamId: orgBTeam.id,
-        type: EnvelopeType.DOCUMENT,
-      });
-
-      expect(envelope.id).toBe(orgBEnvelope.id);
-
-      const rows = await getEnvelopesByIds({
-        ids: { type: 'envelopeId', ids: [orgBEnvelope.id] },
-        userId: systemUser.id,
-        teamId: orgBTeam.id,
-        type: EnvelopeType.DOCUMENT,
-      });
-
-      expect(rows.map((row) => row.id)).toEqual([orgBEnvelope.id]);
-    });
-
-    it("a human's cross-team owner access is unchanged (upstream semantics)", async () => {
-      const humanOrgBEnvelope = await seedBlankDocument(human, orgBTeam.id);
-
-      const rows = await getEnvelopesByIds({
-        ids: { type: 'envelopeId', ids: [humanOrgBEnvelope.id] },
-        userId: human.id,
         teamId: orgATeam.id,
         type: EnvelopeType.DOCUMENT,
-      });
+      }),
+    ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+  });
 
-      expect(rows.map((row) => row.id)).toEqual([humanOrgBEnvelope.id]);
+  it("org B's own system-user token still reads it, by id and via get-many", async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
 
-      const envelope = await getEnvelopeById({
-        id: { type: 'envelopeId', id: humanOrgBEnvelope.id },
-        userId: human.id,
-        teamId: orgATeam.id,
-        type: EnvelopeType.DOCUMENT,
-      });
-
-      expect(envelope.id).toBe(humanOrgBEnvelope.id);
+    const envelope = await getEnvelopeById({
+      id: { type: 'envelopeId', id: orgBEnvelope.id },
+      userId: systemUser.id,
+      teamId: orgBTeam.id,
+      type: EnvelopeType.DOCUMENT,
     });
 
-    it("deleteDocument with org A's system-user token refuses an org B envelope and leaves it in place", async () => {
-      const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+    expect(envelope.id).toBe(orgBEnvelope.id);
 
-      await expect(
-        deleteDocument({
-          id: { type: 'envelopeId', id: orgBEnvelope.id },
-          userId: systemUser.id,
-          teamId: orgATeam.id,
-          requestMetadata: { requestMetadata: {}, source: 'apiV2', auth: 'api' },
-        }),
-      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
-
-      const row = await prisma.envelope.findUnique({ where: { id: orgBEnvelope.id } });
-
-      expect(row).not.toBeNull();
-      expect(row?.deletedAt).toBeNull();
+    const rows = await getEnvelopesByIds({
+      ids: { type: 'envelopeId', ids: [orgBEnvelope.id] },
+      userId: systemUser.id,
+      teamId: orgBTeam.id,
+      type: EnvelopeType.DOCUMENT,
     });
 
-    it("deleteDocument with org B's own system-user token still deletes it", async () => {
-      const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+    expect(rows.map((row) => row.id)).toEqual([orgBEnvelope.id]);
+  });
 
-      await deleteDocument({
+  it("a human's cross-team owner access is unchanged (upstream semantics)", async () => {
+    const humanOrgBEnvelope = await seedBlankDocument(human, orgBTeam.id);
+
+    const rows = await getEnvelopesByIds({
+      ids: { type: 'envelopeId', ids: [humanOrgBEnvelope.id] },
+      userId: human.id,
+      teamId: orgATeam.id,
+      type: EnvelopeType.DOCUMENT,
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([humanOrgBEnvelope.id]);
+
+    const envelope = await getEnvelopeById({
+      id: { type: 'envelopeId', id: humanOrgBEnvelope.id },
+      userId: human.id,
+      teamId: orgATeam.id,
+      type: EnvelopeType.DOCUMENT,
+    });
+
+    expect(envelope.id).toBe(humanOrgBEnvelope.id);
+  });
+
+  it("deleteDocument with org A's system-user token refuses an org B envelope and leaves it in place", async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    await expect(
+      deleteDocument({
         id: { type: 'envelopeId', id: orgBEnvelope.id },
         userId: systemUser.id,
-        teamId: orgBTeam.id,
+        teamId: orgATeam.id,
         requestMetadata: { requestMetadata: {}, source: 'apiV2', auth: 'api' },
-      });
+      }),
+    ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
 
-      const row = await prisma.envelope.findUnique({ where: { id: orgBEnvelope.id } });
+    const row = await prisma.envelope.findUnique({ where: { id: orgBEnvelope.id } });
 
-      expect(row === null || row.deletedAt !== null).toBe(true);
+    expect(row).not.toBeNull();
+    expect(row?.deletedAt).toBeNull();
+  });
+
+  it("deleteDocument with org B's own system-user token still deletes it", async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    await deleteDocument({
+      id: { type: 'envelopeId', id: orgBEnvelope.id },
+      userId: systemUser.id,
+      teamId: orgBTeam.id,
+      requestMetadata: { requestMetadata: {}, source: 'apiV2', auth: 'api' },
     });
-  },
-);
+
+    const row = await prisma.envelope.findUnique({ where: { id: orgBEnvelope.id } });
+
+    expect(row === null || row.deletedAt !== null).toBe(true);
+  });
+});
