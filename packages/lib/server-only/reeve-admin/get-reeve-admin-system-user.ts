@@ -12,16 +12,23 @@ const SYSTEM_USER_MEMO_TTL_MS = 60_000;
 
 let memoizedSystemUser: { email: string; id: number; expiresAt: number } | null = null;
 
+let hasWarnedUnset = false;
+
 /**
  * Whether `userId` is the Reeve system user (DEV-20496). Every
  * Reeve-provisioned organisation and its API tokens belong to this one user,
  * so access checks that trust "the caller owns it" or "the caller is a member
  * of the envelope's team" must also bind it to the token's team.
  *
+ * It resolves the same account as `getReeveAdminSystemUser` (the one
+ * provisioning assigns organisations to): the lowercased email, matched
+ * exactly, as `getUserByEmail` does.
+ *
  * Unlike `getReeveAdminSystemUser` this never throws for configuration: an
- * unset email, or one that matches no user (logged), means no user is the
- * system user, and without that user no Reeve organisation can exist. A
- * database error still throws, so a caller fails closed. The resolved id is
+ * unset email, or one that matches no user, means no user is treated as the
+ * system user, so upstream Documenso deployments are unchanged. Both cases are
+ * logged, because a Reeve deployment that drops the setting loses the binding.
+ * A database error still throws, so a caller fails closed. The resolved id is
  * memoized per configured email for `SYSTEM_USER_MEMO_TTL_MS`; a miss is not
  * memoized.
  */
@@ -29,15 +36,17 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
   const email = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
 
   if (!email) {
+    if (!hasWarnedUnset) {
+      hasWarnedUnset = true;
+      console.warn('[reeve-admin] REEVE_SIGN_SYSTEM_USER_EMAIL is unset; system-user team binding is inactive');
+    }
+
     return false;
   }
 
   if (memoizedSystemUser?.email !== email || memoizedSystemUser.expiresAt <= Date.now()) {
-    // Case-insensitive, like resolveOnBehalfOfUserId: an exact-match miss on a
-    // differently-cased stored email would silently unbind the system user.
     const user = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-      orderBy: { id: 'asc' },
+      where: { email },
       select: { id: true },
     });
 

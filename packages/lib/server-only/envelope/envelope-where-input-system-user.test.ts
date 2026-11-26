@@ -69,7 +69,7 @@ describe.each([
     expect(envelopeWhereInput.OR?.[0]).toEqual({ userId: SYSTEM_USER_ID, teamId: ORG_A_TEAM_ID });
   });
 
-  it('every arm the system user gets is scoped to the token team', async () => {
+  it('with no team email, every arm the system user gets is scoped to the token team', async () => {
     const { envelopeWhereInput } = await build(SYSTEM_USER_ID);
 
     expect(envelopeWhereInput.OR).toHaveLength(2);
