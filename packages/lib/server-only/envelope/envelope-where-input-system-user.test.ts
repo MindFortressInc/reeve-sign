@@ -55,7 +55,9 @@ describe.each([
       teamEmail: null,
     });
     userFindFirstMock.mockReset();
-    userFindFirstMock.mockResolvedValue({ id: SYSTEM_USER_ID });
+    userFindFirstMock.mockImplementation(async ({ where }: { where: { email: string } }) =>
+      where.email === 'reeve-system@reeve.test' ? { id: SYSTEM_USER_ID } : null,
+    );
     apiTokenFindFirstMock.mockReset();
     apiTokenFindFirstMock.mockResolvedValue(null);
   });
@@ -100,7 +102,9 @@ describe.each([
 
   it('keeps a previous system user bound after the email moves, while it holds a provisioning token', async () => {
     process.env[ENV_KEY] = 'next-system@reeve.test';
-    userFindFirstMock.mockResolvedValue({ id: 901 });
+    userFindFirstMock.mockImplementation(async ({ where }: { where: { email: string } }) =>
+      where.email === 'next-system@reeve.test' ? { id: 901 } : null,
+    );
     apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
       where.userId === SYSTEM_USER_ID ? { id: 77 } : null,
     );
@@ -121,5 +125,43 @@ describe.each([
 
     expect(envelopeWhereInput.OR).toHaveLength(3);
     expect(envelopeWhereInput.OR?.[2]).toEqual({ user: { email: 'team@org-a.test' } });
+  });
+
+  it("binds a team email that is the system user's address to the token's team", async () => {
+    getTeamByIdMock.mockResolvedValue({
+      id: ORG_A_TEAM_ID,
+      currentTeamRole: TeamMemberRole.ADMIN,
+      teamEmail: { email: 'reeve-system@reeve.test' },
+    });
+
+    const { envelopeWhereInput } = await build(HUMAN_USER_ID);
+
+    expect(envelopeWhereInput.OR).toHaveLength(3);
+    expect(envelopeWhereInput.OR?.[2]).toEqual({ user: { email: 'reeve-system@reeve.test' }, teamId: ORG_A_TEAM_ID });
+  });
+
+  it("binds a team email that is a previous system user's address while it holds a provisioning token", async () => {
+    userFindFirstMock.mockImplementation(async ({ where }: { where: { email: string } }) => {
+      if (where.email === 'reeve-system@reeve.test') {
+        return { id: SYSTEM_USER_ID };
+      }
+
+      return where.email === 'previous-system@reeve.test' ? { id: 902 } : null;
+    });
+    apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
+      where.userId === 902 ? { id: 78 } : null,
+    );
+    getTeamByIdMock.mockResolvedValue({
+      id: ORG_A_TEAM_ID,
+      currentTeamRole: TeamMemberRole.ADMIN,
+      teamEmail: { email: 'previous-system@reeve.test' },
+    });
+
+    const { envelopeWhereInput } = await build(HUMAN_USER_ID);
+
+    expect(envelopeWhereInput.OR?.[2]).toEqual({
+      user: { email: 'previous-system@reeve.test' },
+      teamId: ORG_A_TEAM_ID,
+    });
   });
 });

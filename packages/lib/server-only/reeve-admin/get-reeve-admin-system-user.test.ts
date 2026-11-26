@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import {
   getReeveAdminSystemUser,
+  isReeveAdminSystemUserEmail,
   isReeveAdminSystemUserId,
   REEVE_PROVISIONING_TOKEN_NAME,
 } from './get-reeve-admin-system-user';
@@ -88,12 +89,23 @@ describe('isReeveAdminSystemUserId', () => {
     }
   });
 
-  it('is false for everyone, with no lookup, when the email is unset', async () => {
-    apiTokenFindFirstMock.mockResolvedValue({ id: 5 });
-
+  it('is false for a user with no provisioning token, with no email lookup, when the email is unset', async () => {
     expect(await isReeveAdminSystemUserId(42)).toBe(false);
     expect(userFindFirstMock).not.toHaveBeenCalled();
-    expect(apiTokenFindFirstMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a provisioning-token holder bound when the email is unset', async () => {
+    apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
+      where.userId === 42 ? { id: 5 } : null,
+    );
+
+    expect(await isReeveAdminSystemUserId(42)).toBe(true);
+    expect(await isReeveAdminSystemUserId(7)).toBe(false);
+    expect(userFindFirstMock).not.toHaveBeenCalled();
+    expect(apiTokenFindFirstMock).toHaveBeenCalledWith({
+      where: { userId: 42, name: REEVE_PROVISIONING_TOKEN_NAME },
+      select: { id: true },
+    });
   });
 
   it('fails closed (NOT_SETUP) when the configured email matches no user, and does not memoize the miss', async () => {
@@ -192,5 +204,48 @@ describe('isReeveAdminSystemUserId', () => {
     userFindFirstMock.mockRejectedValue(new Error('connection refused'));
 
     await expect(isReeveAdminSystemUserId(42)).rejects.toThrow('connection refused');
+  });
+});
+
+describe('isReeveAdminSystemUserEmail', () => {
+  const originalValue = process.env[ENV_KEY];
+
+  beforeEach(() => {
+    process.env[ENV_KEY] = 'email-check-system@reeve.test';
+    userFindFirstMock.mockReset();
+    userFindFirstMock.mockImplementation(async ({ where }: { where: { email: string } }) => {
+      if (where.email === 'email-check-system@reeve.test') {
+        return { id: 50 };
+      }
+
+      return where.email === 'human@org-a.test' ? { id: 51 } : null;
+    });
+    apiTokenFindFirstMock.mockReset();
+    apiTokenFindFirstMock.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    if (originalValue === undefined) {
+      delete process.env[ENV_KEY];
+    } else {
+      process.env[ENV_KEY] = originalValue;
+    }
+  });
+
+  it("is true for the system user's address", async () => {
+    expect(await isReeveAdminSystemUserEmail('email-check-system@reeve.test')).toBe(true);
+  });
+
+  it("is false for a human's address and for an address no user has", async () => {
+    expect(await isReeveAdminSystemUserEmail('human@org-a.test')).toBe(false);
+    expect(await isReeveAdminSystemUserEmail('nobody@org-a.test')).toBe(false);
+  });
+
+  it("is true for a previous system user's address while it holds a provisioning token", async () => {
+    apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
+      where.userId === 51 ? { id: 77 } : null,
+    );
+
+    expect(await isReeveAdminSystemUserEmail('human@org-a.test')).toBe(true);
   });
 });

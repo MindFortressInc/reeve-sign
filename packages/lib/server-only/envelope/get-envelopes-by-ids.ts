@@ -5,7 +5,7 @@ import { TEAM_DOCUMENT_VISIBILITY_MAP } from '../../constants/teams';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdsOptions } from '../../utils/envelope';
 import { unsafeBuildEnvelopeIdsQuery } from '../../utils/envelope';
-import { isReeveAdminSystemUserId } from '../reeve-admin/get-reeve-admin-system-user';
+import { isReeveAdminSystemUserEmail, isReeveAdminSystemUserId } from '../reeve-admin/get-reeve-admin-system-user';
 import { getTeamById } from '../team/get-team';
 
 export type GetEnvelopesByIdsOptions = {
@@ -180,11 +180,24 @@ export const getMultipleEnvelopeWhereInput = async ({
 
   // Allow access to documents sent from the team email.
   if (team.teamEmail) {
-    envelopeOrInput.push({
-      user: {
-        email: team.teamEmail.email,
-      },
-    });
+    // DEV-20496: a team email that is the system user's address must not reach
+    // the system user's envelopes in other teams.
+    const isTeamEmailReeveSystemUser = await isReeveAdminSystemUserEmail(team.teamEmail.email);
+
+    envelopeOrInput.push(
+      isTeamEmailReeveSystemUser
+        ? {
+            user: {
+              email: team.teamEmail.email,
+            },
+            teamId: team.id,
+          }
+        : {
+            user: {
+              email: team.teamEmail.email,
+            },
+          },
+    );
   }
 
   // @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@

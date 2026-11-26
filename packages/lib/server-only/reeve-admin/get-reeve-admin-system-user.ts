@@ -34,9 +34,10 @@ export const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
  * email to another account leaves the previous system user's tokens valid,
  * and its envelopes owned by it, so those tokens must stay bound to their team.
  *
- * An unset email means no user is treated as the system user, so upstream
- * Documenso deployments are unchanged; it is logged once, because a Reeve
- * deployment that drops the setting loses the binding. A configured email
+ * An unset email leaves only the persistent identity: a user holding a
+ * provisioning token stays bound, so a Reeve deployment that drops the setting
+ * keeps its tokens team-bound, and upstream Documenso deployments (which mint
+ * no such token) are unchanged. The unset setting is logged once. A configured email
  * that matches no user throws NOT_SETUP, like `getReeveAdminSystemUser`, so
  * the caller fails closed instead of treating a renamed system user (whose
  * tokens still carry its id) as a human. A database error also throws. The
@@ -49,10 +50,12 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
   if (!email) {
     if (!hasWarnedUnset) {
       hasWarnedUnset = true;
-      console.warn('[reeve-admin] REEVE_SIGN_SYSTEM_USER_EMAIL is unset; system-user team binding is inactive');
+      console.warn(
+        '[reeve-admin] REEVE_SIGN_SYSTEM_USER_EMAIL is unset; only provisioning-token holders stay team-bound',
+      );
     }
 
-    return false;
+    return await holdsProvisioningToken(userId);
   }
 
   if (memoizedSystemUser?.email !== email || memoizedSystemUser.expiresAt <= Date.now()) {
@@ -74,12 +77,31 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
     return true;
   }
 
+  return await holdsProvisioningToken(userId);
+};
+
+const holdsProvisioningToken = async (userId: number) => {
   const provisioningToken = await prisma.apiToken.findFirst({
     where: { userId, name: REEVE_PROVISIONING_TOKEN_NAME },
     select: { id: true },
   });
 
   return Boolean(provisioningToken);
+};
+
+/**
+ * Whether the user whose address is exactly `email` is the Reeve system user
+ * (DEV-20496). The where-input builders' team-email arm matches envelopes by
+ * their owner's address, so a team whose verified team email is the system
+ * user's address must only reach that user's envelopes in its own team.
+ */
+export const isReeveAdminSystemUserEmail = async (email: string): Promise<boolean> => {
+  const user = await prisma.user.findFirst({
+    where: { email },
+    select: { id: true },
+  });
+
+  return user ? await isReeveAdminSystemUserId(user.id) : false;
 };
 
 /**
