@@ -4,7 +4,13 @@ import { AppError, AppErrorCode } from '../../errors/app-error';
 import { env } from '../../utils/env';
 import { getUserByEmail } from '../user/get-user-by-email';
 
-let memoizedSystemUser: { email: string; id: number } | null = null;
+/**
+ * How long a resolved system-user id is trusted before it is looked up again,
+ * so moving the email to another account takes effect without a restart.
+ */
+const SYSTEM_USER_MEMO_TTL_MS = 60_000;
+
+let memoizedSystemUser: { email: string; id: number; expiresAt: number } | null = null;
 
 /**
  * Whether `userId` is the Reeve system user (DEV-20496). Every
@@ -16,7 +22,8 @@ let memoizedSystemUser: { email: string; id: number } | null = null;
  * unset email, or one that matches no user (logged), means no user is the
  * system user, and without that user no Reeve organisation can exist. A
  * database error still throws, so a caller fails closed. The resolved id is
- * memoized per configured email; a miss is not memoized.
+ * memoized per configured email for `SYSTEM_USER_MEMO_TTL_MS`; a miss is not
+ * memoized.
  */
 export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean> => {
   const email = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
@@ -25,7 +32,7 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
     return false;
   }
 
-  if (memoizedSystemUser?.email !== email) {
+  if (memoizedSystemUser?.email !== email || memoizedSystemUser.expiresAt <= Date.now()) {
     // Case-insensitive, like resolveOnBehalfOfUserId: an exact-match miss on a
     // differently-cased stored email would silently unbind the system user.
     const user = await prisma.user.findFirst({
@@ -42,7 +49,7 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
       return false;
     }
 
-    memoizedSystemUser = { email, id: user.id };
+    memoizedSystemUser = { email, id: user.id, expiresAt: Date.now() + SYSTEM_USER_MEMO_TTL_MS };
   }
 
   return memoizedSystemUser.id === userId;

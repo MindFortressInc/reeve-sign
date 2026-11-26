@@ -120,6 +120,28 @@ describe('isReeveAdminSystemUserId', () => {
     expect(await isReeveAdminSystemUserId(2)).toBe(true);
   });
 
+  it('looks the id up again once the memo expires, so a moved email takes effect', async () => {
+    vi.useFakeTimers();
+
+    try {
+      process.env[ENV_KEY] = 'moved-system@reeve.test';
+      userFindFirstMock.mockResolvedValueOnce({ id: 1 });
+      expect(await isReeveAdminSystemUserId(1)).toBe(true);
+
+      // The operator moves the address to another account.
+      userFindFirstMock.mockResolvedValueOnce({ id: 2 });
+      vi.advanceTimersByTime(59_000);
+      expect(await isReeveAdminSystemUserId(1)).toBe(true);
+
+      vi.advanceTimersByTime(2_000);
+      expect(await isReeveAdminSystemUserId(1)).toBe(false);
+      expect(await isReeveAdminSystemUserId(2)).toBe(true);
+      expect(userFindFirstMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('throws when the lookup itself fails, so callers fail closed', async () => {
     process.env[ENV_KEY] = 'db-down-system@reeve.test';
     userFindFirstMock.mockRejectedValue(new Error('connection refused'));
