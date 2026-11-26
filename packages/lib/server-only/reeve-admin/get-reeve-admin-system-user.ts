@@ -24,13 +24,14 @@ let hasWarnedUnset = false;
  * provisioning assigns organisations to): the lowercased email, matched
  * exactly, as `getUserByEmail` does.
  *
- * Unlike `getReeveAdminSystemUser` this never throws for configuration: an
- * unset email, or one that matches no user, means no user is treated as the
- * system user, so upstream Documenso deployments are unchanged. Both cases are
- * logged, because a Reeve deployment that drops the setting loses the binding.
- * A database error still throws, so a caller fails closed. The resolved id is
- * memoized per configured email for `SYSTEM_USER_MEMO_TTL_MS`; a miss is not
- * memoized.
+ * An unset email means no user is treated as the system user, so upstream
+ * Documenso deployments are unchanged; it is logged once, because a Reeve
+ * deployment that drops the setting loses the binding. A configured email
+ * that matches no user throws NOT_SETUP, like `getReeveAdminSystemUser`, so
+ * the caller fails closed instead of treating a renamed system user (whose
+ * tokens still carry its id) as a human. A database error also throws. The
+ * resolved id is memoized per configured email for `SYSTEM_USER_MEMO_TTL_MS`;
+ * a miss is not memoized.
  */
 export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean> => {
   const email = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
@@ -51,11 +52,9 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
     });
 
     if (!user) {
-      console.error(
-        `[reeve-admin] REEVE_SIGN_SYSTEM_USER_EMAIL is set to "${email}" but no matching user exists; system-user team binding is inactive`,
-      );
-
-      return false;
+      throw new AppError(AppErrorCode.NOT_SETUP, {
+        message: `REEVE_SIGN_SYSTEM_USER_EMAIL is set to "${email}" but no matching Documenso user exists.`,
+      });
     }
 
     memoizedSystemUser = { email, id: user.id, expiresAt: Date.now() + SYSTEM_USER_MEMO_TTL_MS };

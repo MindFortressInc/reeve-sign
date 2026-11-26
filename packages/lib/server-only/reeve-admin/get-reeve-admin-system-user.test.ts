@@ -86,13 +86,29 @@ describe('isReeveAdminSystemUserId', () => {
     expect(userFindFirstMock).not.toHaveBeenCalled();
   });
 
-  it('is false when the configured email matches no user, and does not memoize the miss', async () => {
+  it('fails closed (NOT_SETUP) when the configured email matches no user, and does not memoize the miss', async () => {
     process.env[ENV_KEY] = 'missing-system@reeve.test';
     userFindFirstMock.mockResolvedValue(null);
 
-    expect(await isReeveAdminSystemUserId(42)).toBe(false);
-    expect(await isReeveAdminSystemUserId(42)).toBe(false);
+    await expect(isReeveAdminSystemUserId(42)).rejects.toMatchObject({ code: AppErrorCode.NOT_SETUP });
+    await expect(isReeveAdminSystemUserId(42)).rejects.toMatchObject({ code: AppErrorCode.NOT_SETUP });
     expect(userFindFirstMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a renamed system user fails closed once the memo expires', async () => {
+    vi.useFakeTimers();
+
+    try {
+      process.env[ENV_KEY] = 'renamed-system@reeve.test';
+      userFindFirstMock.mockResolvedValueOnce({ id: 3 });
+      expect(await isReeveAdminSystemUserId(3)).toBe(true);
+
+      userFindFirstMock.mockResolvedValueOnce(null);
+      vi.advanceTimersByTime(61_000);
+      await expect(isReeveAdminSystemUserId(3)).rejects.toMatchObject({ code: AppErrorCode.NOT_SETUP });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('matches only the system user id, looking it up once per email', async () => {
