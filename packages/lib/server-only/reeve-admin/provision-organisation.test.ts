@@ -88,6 +88,7 @@ vi.mock('../public-api/create-api-token', () => ({
 
 vi.mock('./get-reeve-admin-system-user', () => ({
   getReeveAdminSystemUser: getReeveAdminSystemUserMock,
+  REEVE_PROVISIONING_TOKEN_NAME: 'Reeve provisioning token',
 }));
 
 // Imported after the mocks above so the module under test picks them up.

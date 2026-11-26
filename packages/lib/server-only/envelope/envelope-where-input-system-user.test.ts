@@ -8,13 +8,16 @@ import { getMultipleEnvelopeWhereInput } from './get-envelopes-by-ids';
 // one system user, so its owner arm must be bound to the token's team. Human
 // users keep upstream semantics exactly.
 
-const { getTeamByIdMock, userFindFirstMock } = vi.hoisted(() => ({
+const { apiTokenFindFirstMock, getTeamByIdMock, userFindFirstMock } = vi.hoisted(() => ({
+  apiTokenFindFirstMock: vi.fn(),
   getTeamByIdMock: vi.fn(),
   userFindFirstMock: vi.fn(),
 }));
 
 vi.mock('../team/get-team', () => ({ getTeamById: getTeamByIdMock }));
-vi.mock('@documenso/prisma', () => ({ prisma: { user: { findFirst: userFindFirstMock } } }));
+vi.mock('@documenso/prisma', () => ({
+  prisma: { user: { findFirst: userFindFirstMock }, apiToken: { findFirst: apiTokenFindFirstMock } },
+}));
 
 const ENV_KEY = 'REEVE_SIGN_SYSTEM_USER_EMAIL';
 const SYSTEM_USER_ID = 900;
@@ -53,6 +56,8 @@ describe.each([
     });
     userFindFirstMock.mockReset();
     userFindFirstMock.mockResolvedValue({ id: SYSTEM_USER_ID });
+    apiTokenFindFirstMock.mockReset();
+    apiTokenFindFirstMock.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -91,6 +96,18 @@ describe.each([
     const { envelopeWhereInput } = await build(SYSTEM_USER_ID);
 
     expect(envelopeWhereInput.OR?.[0]).toEqual({ userId: SYSTEM_USER_ID });
+  });
+
+  it('keeps a previous system user bound after the email moves, while it holds a provisioning token', async () => {
+    process.env[ENV_KEY] = 'next-system@reeve.test';
+    userFindFirstMock.mockResolvedValue({ id: 901 });
+    apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
+      where.userId === SYSTEM_USER_ID ? { id: 77 } : null,
+    );
+
+    const { envelopeWhereInput } = await build(SYSTEM_USER_ID);
+
+    expect(envelopeWhereInput.OR?.[0]).toEqual({ userId: SYSTEM_USER_ID, teamId: ORG_A_TEAM_ID });
   });
 
   it('keeps the team email arm', async () => {

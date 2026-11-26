@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
-import { getReeveAdminSystemUser, isReeveAdminSystemUserId } from './get-reeve-admin-system-user';
+import {
+  getReeveAdminSystemUser,
+  isReeveAdminSystemUserId,
+  REEVE_PROVISIONING_TOKEN_NAME,
+} from './get-reeve-admin-system-user';
 
-const { getUserByEmailMock, userFindFirstMock } = vi.hoisted(() => ({
+const { apiTokenFindFirstMock, getUserByEmailMock, userFindFirstMock } = vi.hoisted(() => ({
+  apiTokenFindFirstMock: vi.fn(),
   getUserByEmailMock: vi.fn(),
   userFindFirstMock: vi.fn(),
 }));
@@ -13,7 +18,7 @@ vi.mock('../user/get-user-by-email', () => ({
 }));
 
 vi.mock('@documenso/prisma', () => ({
-  prisma: { user: { findFirst: userFindFirstMock } },
+  prisma: { user: { findFirst: userFindFirstMock }, apiToken: { findFirst: apiTokenFindFirstMock } },
 }));
 
 const ENV_KEY = 'REEVE_SIGN_SYSTEM_USER_EMAIL';
@@ -71,6 +76,8 @@ describe('isReeveAdminSystemUserId', () => {
   beforeEach(() => {
     delete process.env[ENV_KEY];
     userFindFirstMock.mockReset();
+    apiTokenFindFirstMock.mockReset();
+    apiTokenFindFirstMock.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -82,8 +89,11 @@ describe('isReeveAdminSystemUserId', () => {
   });
 
   it('is false for everyone, with no lookup, when the email is unset', async () => {
+    apiTokenFindFirstMock.mockResolvedValue({ id: 5 });
+
     expect(await isReeveAdminSystemUserId(42)).toBe(false);
     expect(userFindFirstMock).not.toHaveBeenCalled();
+    expect(apiTokenFindFirstMock).not.toHaveBeenCalled();
   });
 
   it('fails closed (NOT_SETUP) when the configured email matches no user, and does not memoize the miss', async () => {
@@ -131,6 +141,28 @@ describe('isReeveAdminSystemUserId', () => {
     userFindFirstMock.mockResolvedValueOnce({ id: 2 });
     expect(await isReeveAdminSystemUserId(1)).toBe(false);
     expect(await isReeveAdminSystemUserId(2)).toBe(true);
+  });
+
+  it('keeps the previous system user bound while it still holds a provisioning token', async () => {
+    process.env[ENV_KEY] = 'previous-system@reeve.test';
+    userFindFirstMock.mockResolvedValueOnce({ id: 1 });
+    expect(await isReeveAdminSystemUserId(1)).toBe(true);
+
+    // The operator moves the setting to another account; user 1's org-scoped
+    // tokens are still valid.
+    process.env[ENV_KEY] = 'next-system@reeve.test';
+    userFindFirstMock.mockResolvedValueOnce({ id: 2 });
+    apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
+      where.userId === 1 ? { id: 77 } : null,
+    );
+
+    expect(await isReeveAdminSystemUserId(1)).toBe(true);
+    expect(await isReeveAdminSystemUserId(2)).toBe(true);
+    expect(await isReeveAdminSystemUserId(7)).toBe(false);
+    expect(apiTokenFindFirstMock).toHaveBeenCalledWith({
+      where: { userId: 1, name: REEVE_PROVISIONING_TOKEN_NAME },
+      select: { id: true },
+    });
   });
 
   it('looks the id up again once the memo expires, so a moved email takes effect', async () => {

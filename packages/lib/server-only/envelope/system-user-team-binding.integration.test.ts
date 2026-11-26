@@ -30,6 +30,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AppErrorCode } from '../../errors/app-error';
 import { deleteDocument } from '../document/delete-document';
+import { REEVE_PROVISIONING_TOKEN_NAME } from '../reeve-admin/get-reeve-admin-system-user';
 import { getEnvelopeById } from './get-envelope-by-id';
 import { getEnvelopesByIds } from './get-envelopes-by-ids';
 
@@ -48,6 +49,7 @@ vi.mock('../../client-only/providers/i18n-server', () => ({
 const ENV_KEY = 'REEVE_SIGN_SYSTEM_USER_EMAIL';
 
 let systemUser: User;
+let orgBOwner: User;
 let human: User;
 let orgATeam: Team;
 let orgBTeam: Team;
@@ -68,6 +70,7 @@ describe("Reeve system user's by-id access is bound to the token's team (real Po
     const orgB = await seedUser({ name: 'Org B owner' });
 
     systemUser = orgA.user;
+    orgBOwner = orgB.user;
     orgATeam = orgA.team;
     orgBTeam = orgB.team;
 
@@ -204,5 +207,51 @@ describe("Reeve system user's by-id access is bound to the token's team (real Po
     const row = await prisma.envelope.findUnique({ where: { id: orgBEnvelope.id } });
 
     expect(row === null || row.deletedAt !== null).toBe(true);
+  });
+
+  it('a previous system user that still holds a provisioning token stays bound after the email moves', async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    await prisma.apiToken.create({
+      data: {
+        name: REEVE_PROVISIONING_TOKEN_NAME,
+        token: `integration-${systemUser.id}-${Date.now()}`,
+        userId: systemUser.id,
+        teamId: orgATeam.id,
+      },
+    });
+
+    process.env[ENV_KEY] = orgBOwner.email;
+
+    try {
+      const rows = await getEnvelopesByIds({
+        ids: { type: 'envelopeId', ids: [orgBEnvelope.id] },
+        userId: systemUser.id,
+        teamId: orgATeam.id,
+        type: EnvelopeType.DOCUMENT,
+      });
+
+      expect(rows).toEqual([]);
+
+      await expect(
+        getEnvelopeById({
+          id: { type: 'envelopeId', id: orgBEnvelope.id },
+          userId: systemUser.id,
+          teamId: orgATeam.id,
+          type: EnvelopeType.DOCUMENT,
+        }),
+      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+
+      await expect(
+        deleteDocument({
+          id: { type: 'envelopeId', id: orgBEnvelope.id },
+          userId: systemUser.id,
+          teamId: orgATeam.id,
+          requestMetadata: { requestMetadata: {}, source: 'apiV2', auth: 'api' },
+        }),
+      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+    } finally {
+      process.env[ENV_KEY] = systemUser.email;
+    }
   });
 });

@@ -15,14 +15,24 @@ let memoizedSystemUser: { email: string; id: number; expiresAt: number } | null 
 let hasWarnedUnset = false;
 
 /**
+ * The name provisioning gives the org-scoped API token it mints for the system
+ * user. `isReeveAdminSystemUserId` keys the system user's persistent identity
+ * on it, so renaming it would unbind every token already minted.
+ */
+export const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
+
+/**
  * Whether `userId` is the Reeve system user (DEV-20496). Every
  * Reeve-provisioned organisation and its API tokens belong to this one user,
  * so access checks that trust "the caller owns it" or "the caller is a member
  * of the envelope's team" must also bind it to the token's team.
  *
- * It resolves the same account as `getReeveAdminSystemUser` (the one
- * provisioning assigns organisations to): the lowercased email, matched
- * exactly, as `getUserByEmail` does.
+ * That is the account `REEVE_SIGN_SYSTEM_USER_EMAIL` names now (the one
+ * `getReeveAdminSystemUser` resolves for provisioning: the lowercased email,
+ * matched exactly, as `getUserByEmail` does), or any user that holds a token
+ * provisioning minted. The second half is the persistent identity: moving the
+ * email to another account leaves the previous system user's tokens valid,
+ * and its envelopes owned by it, so those tokens must stay bound to their team.
  *
  * An unset email means no user is treated as the system user, so upstream
  * Documenso deployments are unchanged; it is logged once, because a Reeve
@@ -60,7 +70,16 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
     memoizedSystemUser = { email, id: user.id, expiresAt: Date.now() + SYSTEM_USER_MEMO_TTL_MS };
   }
 
-  return memoizedSystemUser.id === userId;
+  if (memoizedSystemUser.id === userId) {
+    return true;
+  }
+
+  const provisioningToken = await prisma.apiToken.findFirst({
+    where: { userId, name: REEVE_PROVISIONING_TOKEN_NAME },
+    select: { id: true },
+  });
+
+  return Boolean(provisioningToken);
 };
 
 /**

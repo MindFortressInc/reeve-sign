@@ -38,6 +38,7 @@ vi.mock('@documenso/lib/universal/upload/get-file.server', () => ({ getFileServe
 vi.mock('@documenso/prisma', () => ({
   prisma: {
     user: { findFirst: vi.fn() },
+    apiToken: { findFirst: vi.fn() },
     envelope: { findFirst: vi.fn() },
     envelopeItem: { findFirst: vi.fn() },
   },
@@ -103,6 +104,7 @@ describe.each(routes)('%s', (_name, path) => {
     vi.mocked(getOptionalSession).mockResolvedValue({ isAuthenticated: false, session: null, user: null });
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: SYSTEM_USER_ID } as never);
+    vi.mocked(prisma.apiToken.findFirst).mockResolvedValue(null);
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     vi.mocked(getTeamById).mockResolvedValue({ id: ORG_B_TEAM_ID } as never);
     vi.mocked(getFileServerSide).mockResolvedValue(new Uint8Array([0x25, 0x50, 0x44, 0x46]));
@@ -133,6 +135,21 @@ describe.each(routes)('%s', (_name, path) => {
     const res = await app.request(`http://localhost${path()}`);
 
     expect(res.status).toBe(200);
+  });
+
+  it("refuses a previous system user's org A token on an org B envelope after the email moves", async () => {
+    process.env[ENV_KEY] = 'next-system@reeve.test';
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: 901 } as never);
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    vi.mocked(prisma.apiToken.findFirst).mockResolvedValue({ id: 77 } as never);
+    presignFor(SYSTEM_USER_ID, ORG_A_TEAM_ID);
+    envelopeLives(ORG_B_TEAM_ID);
+
+    const res = await app.request(`http://localhost${path()}`);
+
+    expect([403, 404]).toContain(res.status);
+    expect(getFileServerSide).not.toHaveBeenCalled();
   });
 
   it("keeps a human member's cross-team access (upstream semantics)", async () => {
