@@ -107,7 +107,7 @@ export const DocumentSigningMobileWidget = () => {
           {/* Expandable Content */}
           {isExpanded && (
             <div className="slide-in-from-bottom-2 animate-in border-border border-t p-4 duration-200">
-              <EnvelopeSignerForm />
+              <EnvelopeSignerForm insertAdoptedSignature />
 
               {!hidePoweredBy && (
                 <div className="mt-2 inline-block rounded bg-primary px-2 py-1 font-medium text-primary-foreground text-xs opacity-60 hover:opacity-100 lg:hidden">

@@ -1,17 +1,33 @@
+import { isBase64Image } from '@documenso/lib/constants/signatures';
+import { DocumentAuth, type TRecipientActionAuth } from '@documenso/lib/types/document-auth';
 import { isSignatureFieldType } from '@documenso/prisma/guards/is-signature-field';
 import { Input } from '@documenso/ui/primitives/input';
 import { Label } from '@documenso/ui/primitives/label';
 import { RadioGroup, RadioGroupItem } from '@documenso/ui/primitives/radio-group';
 import { SignaturePadDialog } from '@documenso/ui/primitives/signature-pad/signature-pad-dialog';
-import { Plural, Trans } from '@lingui/react/macro';
-import { RecipientRole } from '@prisma/client';
+import { useToast } from '@documenso/ui/primitives/use-toast';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
+import { FieldType, RecipientRole } from '@prisma/client';
 import { useMemo } from 'react';
 
 import { useEmbedSigningContext } from '~/components/embed/embed-signing-context';
+import { getFieldsToSignWithAdoptedSignature } from '~/utils/field-signing/adopted-signature-fields';
 
+import { useRequiredDocumentSigningAuthContext } from '../document-signing/document-signing-auth-provider';
 import { useRequiredEnvelopeSigningContext } from '../document-signing/envelope-signing-provider';
 
-export default function EnvelopeSignerForm() {
+export type EnvelopeSignerFormProps = {
+  /**
+   * Insert a signature adopted in the Signature box into the signer's unsigned
+   * signature fields. Set by the mobile "Sign Document" bar, where signers
+   * expect that box to sign the document. The desktop sidebar keeps the
+   * upstream behaviour: the signature is a default applied when a field is
+   * tapped.
+   */
+  insertAdoptedSignature?: boolean;
+};
+
+export default function EnvelopeSignerForm({ insertAdoptedSignature = false }: EnvelopeSignerFormProps) {
   const {
     fullName,
     signature,
@@ -24,15 +40,61 @@ export default function EnvelopeSignerForm() {
     assistantRecipients,
     selectedAssistantRecipient,
     setSelectedAssistantRecipientId,
+    signField,
   } = useRequiredEnvelopeSigningContext();
 
-  const { isNameLocked, isEmailLocked } = useEmbedSigningContext() || {};
+  const { executeActionAuthProcedure } = useRequiredDocumentSigningAuthContext();
+
+  const { isNameLocked, onFieldSigned } = useEmbedSigningContext() || {};
+
+  const { t } = useLingui();
+  const { toast } = useToast();
 
   const hasSignatureField = useMemo(() => {
     return recipientFields.some((field) => isSignatureFieldType(field.type));
   }, [recipientFields]);
 
   const isSubmitting = false;
+
+  // DEV-20648: see `insertAdoptedSignature`.
+  const onSignatureAdopted = (value: string) => {
+    setSignature(value);
+
+    const fieldsToSign = getFieldsToSignWithAdoptedSignature(recipientFields);
+
+    if (!insertAdoptedSignature || !value || fieldsToSign.length === 0) {
+      return;
+    }
+
+    void executeActionAuthProcedure({
+      actionTarget: FieldType.SIGNATURE,
+      onReauthFormSubmit: async (authOptions?: TRecipientActionAuth) => {
+        // A passkey response is single-use, so it covers one field. The rest
+        // take the saved signature on tap.
+        const targets = authOptions?.type === DocumentAuth.PASSKEY ? fieldsToSign.slice(0, 1) : fieldsToSign;
+
+        try {
+          for (const field of targets) {
+            await signField(field.id, { type: FieldType.SIGNATURE, value }, authOptions);
+
+            // Same payload shape as a field tap (EnvelopeSignerPageRenderer).
+            const embedValue = JSON.stringify(value);
+            onFieldSigned?.({ fieldId: field.id, value: embedValue, isBase64: isBase64Image(embedValue) });
+          }
+        } catch (err) {
+          console.error(err);
+
+          toast({
+            title: t`Error`,
+            description: t`An error occurred while signing the field.`,
+            variant: 'destructive',
+          });
+
+          throw err;
+        }
+      },
+    });
+  };
 
   if (recipient.role === RecipientRole.VIEWER) {
     return null;
@@ -117,7 +179,7 @@ export default function EnvelopeSignerForm() {
               disabled={isSubmitting}
               fullName={fullName}
               value={signature ?? ''}
-              onChange={(v) => setSignature(v ?? '')}
+              onChange={(v) => onSignatureAdopted(v ?? '')}
               typedSignatureEnabled={envelope.documentMeta.typedSignatureEnabled}
               uploadSignatureEnabled={envelope.documentMeta.uploadSignatureEnabled}
               drawSignatureEnabled={envelope.documentMeta.drawSignatureEnabled}
