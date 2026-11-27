@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import {
   getReeveAdminSystemUser,
   isReeveAdminSystemUserEmail,
@@ -8,9 +9,10 @@ import {
   REEVE_PROVISIONING_TOKEN_NAME,
 } from './get-reeve-admin-system-user';
 
-const { apiTokenFindFirstMock, getUserByEmailMock, userFindFirstMock } = vi.hoisted(() => ({
+const { apiTokenFindFirstMock, getUserByEmailMock, organisationFindFirstMock, userFindFirstMock } = vi.hoisted(() => ({
   apiTokenFindFirstMock: vi.fn(),
   getUserByEmailMock: vi.fn(),
+  organisationFindFirstMock: vi.fn(),
   userFindFirstMock: vi.fn(),
 }));
 
@@ -19,7 +21,11 @@ vi.mock('../user/get-user-by-email', () => ({
 }));
 
 vi.mock('@documenso/prisma', () => ({
-  prisma: { user: { findFirst: userFindFirstMock }, apiToken: { findFirst: apiTokenFindFirstMock } },
+  prisma: {
+    user: { findFirst: userFindFirstMock },
+    apiToken: { findFirst: apiTokenFindFirstMock },
+    organisation: { findFirst: organisationFindFirstMock },
+  },
 }));
 
 const ENV_KEY = 'REEVE_SIGN_SYSTEM_USER_EMAIL';
@@ -79,6 +85,8 @@ describe('isReeveAdminSystemUserId', () => {
     userFindFirstMock.mockReset();
     apiTokenFindFirstMock.mockReset();
     apiTokenFindFirstMock.mockResolvedValue(null);
+    organisationFindFirstMock.mockReset();
+    organisationFindFirstMock.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -177,6 +185,21 @@ describe('isReeveAdminSystemUserId', () => {
     });
   });
 
+  it('keeps the previous system user bound after its provisioning tokens are deleted, via its PLATFORM orgs', async () => {
+    process.env[ENV_KEY] = 'next-system@reeve.test';
+    userFindFirstMock.mockResolvedValue({ id: 2 });
+    organisationFindFirstMock.mockImplementation(async ({ where }: { where: { ownerUserId: number } }) =>
+      where.ownerUserId === 1 ? { id: 'org_reeve' } : null,
+    );
+
+    expect(await isReeveAdminSystemUserId(1)).toBe(true);
+    expect(await isReeveAdminSystemUserId(7)).toBe(false);
+    expect(organisationFindFirstMock).toHaveBeenCalledWith({
+      where: { ownerUserId: 1, organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
+      select: { id: true },
+    });
+  });
+
   it('looks the id up again once the memo expires, so a moved email takes effect', async () => {
     vi.useFakeTimers();
 
@@ -222,6 +245,8 @@ describe('isReeveAdminSystemUserEmail', () => {
     });
     apiTokenFindFirstMock.mockReset();
     apiTokenFindFirstMock.mockResolvedValue(null);
+    organisationFindFirstMock.mockReset();
+    organisationFindFirstMock.mockResolvedValue(null);
   });
 
   afterEach(() => {

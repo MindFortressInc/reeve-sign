@@ -29,6 +29,7 @@ import { EnvelopeType, OrganisationMemberRole } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import { deleteDocument } from '../document/delete-document';
 import { REEVE_PROVISIONING_TOKEN_NAME } from '../reeve-admin/get-reeve-admin-system-user';
 import { getEnvelopeById } from './get-envelope-by-id';
@@ -216,6 +217,61 @@ describe("Reeve system user's by-id access is bound to the token's team (real Po
       data: {
         name: REEVE_PROVISIONING_TOKEN_NAME,
         token: `integration-${systemUser.id}-${Date.now()}`,
+        userId: systemUser.id,
+        teamId: orgATeam.id,
+      },
+    });
+
+    process.env[ENV_KEY] = orgBOwner.email;
+
+    try {
+      const rows = await getEnvelopesByIds({
+        ids: { type: 'envelopeId', ids: [orgBEnvelope.id] },
+        userId: systemUser.id,
+        teamId: orgATeam.id,
+        type: EnvelopeType.DOCUMENT,
+      });
+
+      expect(rows).toEqual([]);
+
+      await expect(
+        getEnvelopeById({
+          id: { type: 'envelopeId', id: orgBEnvelope.id },
+          userId: systemUser.id,
+          teamId: orgATeam.id,
+          type: EnvelopeType.DOCUMENT,
+        }),
+      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+
+      await expect(
+        deleteDocument({
+          id: { type: 'envelopeId', id: orgBEnvelope.id },
+          userId: systemUser.id,
+          teamId: orgATeam.id,
+          requestMetadata: { requestMetadata: {}, source: 'apiV2', auth: 'api' },
+        }),
+      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+    } finally {
+      process.env[ENV_KEY] = systemUser.email;
+    }
+  });
+  it('a previous system user stays bound after the email moves and its provisioning tokens are deleted', async () => {
+    const orgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    // Production shape: provisioning stamps the PLATFORM claim on every org it
+    // creates for the system user.
+    await prisma.organisationClaim.updateMany({
+      where: { organisation: { teams: { some: { id: orgATeam.id } } } },
+      data: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
+    });
+
+    await prisma.apiToken.deleteMany({ where: { userId: systemUser.id, name: REEVE_PROVISIONING_TOKEN_NAME } });
+
+    // The ordinary token the system user still holds for org A.
+    await prisma.apiToken.create({
+      data: {
+        name: 'ops token',
+        token: `integration-ops-${systemUser.id}-${Date.now()}`,
         userId: systemUser.id,
         teamId: orgATeam.id,
       },

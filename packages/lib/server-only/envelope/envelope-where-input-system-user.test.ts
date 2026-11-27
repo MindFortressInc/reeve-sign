@@ -16,7 +16,11 @@ const { apiTokenFindFirstMock, getTeamByIdMock, userFindFirstMock } = vi.hoisted
 
 vi.mock('../team/get-team', () => ({ getTeamById: getTeamByIdMock }));
 vi.mock('@documenso/prisma', () => ({
-  prisma: { user: { findFirst: userFindFirstMock }, apiToken: { findFirst: apiTokenFindFirstMock } },
+  prisma: {
+    user: { findFirst: userFindFirstMock },
+    apiToken: { findFirst: apiTokenFindFirstMock },
+    organisation: { findFirst: vi.fn() },
+  },
 }));
 
 const ENV_KEY = 'REEVE_SIGN_SYSTEM_USER_EMAIL';

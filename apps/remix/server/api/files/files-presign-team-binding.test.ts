@@ -39,6 +39,7 @@ vi.mock('@documenso/prisma', () => ({
   prisma: {
     user: { findFirst: vi.fn() },
     apiToken: { findFirst: vi.fn() },
+    organisation: { findFirst: vi.fn() },
     envelope: { findFirst: vi.fn() },
     envelopeItem: { findFirst: vi.fn() },
   },

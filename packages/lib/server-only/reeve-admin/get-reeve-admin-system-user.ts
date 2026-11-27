@@ -1,6 +1,7 @@
 import { prisma } from '@documenso/prisma';
 
 import { AppError, AppErrorCode } from '../../errors/app-error';
+import { INTERNAL_CLAIM_ID } from '../../types/subscription';
 import { env } from '../../utils/env';
 import { getUserByEmail } from '../user/get-user-by-email';
 
@@ -29,18 +30,21 @@ export const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
  *
  * That is the account `REEVE_SIGN_SYSTEM_USER_EMAIL` names now (the one
  * `getReeveAdminSystemUser` resolves for provisioning: the lowercased email,
- * matched exactly, as `getUserByEmail` does), or any user that holds a token
- * provisioning minted. The second half is the persistent identity: moving the
+ * matched exactly, as `getUserByEmail` does), or any user with a persistent
+ * system-user mark: it holds a token provisioning minted, or it owns an
+ * organisation carrying the PLATFORM claim provisioning stamps. Moving the
  * email to another account leaves the previous system user's tokens valid,
- * and its envelopes owned by it, so those tokens must stay bound to their team.
+ * and its envelopes owned by it, so those tokens must stay bound to their
+ * team, even after its provisioning tokens are deleted. Only admin flows edit
+ * claims or org ownership. A human who bought the PLATFORM plan is bound too,
+ * which only narrows that user's owner arm to the requested team.
  *
- * An unset email leaves only the persistent identity: a user holding a
- * provisioning token stays bound, so a Reeve deployment that drops the setting
- * keeps its tokens team-bound, and upstream Documenso deployments (which mint
- * no such token) are unchanged. The unset setting is logged once. A configured email
- * that matches no user throws NOT_SETUP, like `getReeveAdminSystemUser`, so
- * the caller fails closed instead of treating a renamed system user (whose
- * tokens still carry its id) as a human. A database error also throws. The
+ * An unset email leaves only the persistent identity, so a Reeve deployment
+ * that drops the setting keeps its tokens team-bound. The unset setting is
+ * logged once. A configured email that matches no user throws NOT_SETUP, like
+ * `getReeveAdminSystemUser`, so the caller fails closed instead of treating a
+ * renamed system user (whose tokens still carry its id) as a human. A
+ * database error also throws. The
  * resolved id is memoized per configured email for `SYSTEM_USER_MEMO_TTL_MS`;
  * a miss is not memoized.
  */
@@ -55,7 +59,7 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
       );
     }
 
-    return await holdsProvisioningToken(userId);
+    return await hasSystemUserMark(userId);
   }
 
   if (memoizedSystemUser?.email !== email || memoizedSystemUser.expiresAt <= Date.now()) {
@@ -77,16 +81,22 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
     return true;
   }
 
-  return await holdsProvisioningToken(userId);
+  return await hasSystemUserMark(userId);
 };
 
-const holdsProvisioningToken = async (userId: number) => {
-  const provisioningToken = await prisma.apiToken.findFirst({
-    where: { userId, name: REEVE_PROVISIONING_TOKEN_NAME },
-    select: { id: true },
-  });
+const hasSystemUserMark = async (userId: number) => {
+  const [provisioningToken, platformOrganisation] = await Promise.all([
+    prisma.apiToken.findFirst({
+      where: { userId, name: REEVE_PROVISIONING_TOKEN_NAME },
+      select: { id: true },
+    }),
+    prisma.organisation.findFirst({
+      where: { ownerUserId: userId, organisationClaim: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM } },
+      select: { id: true },
+    }),
+  ]);
 
-  return Boolean(provisioningToken);
+  return Boolean(provisioningToken || platformOrganisation);
 };
 
 /**
