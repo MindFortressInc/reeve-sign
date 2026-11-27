@@ -1,5 +1,5 @@
 import { unsafe_useEffectOnce } from '@documenso/lib/client-only/hooks/use-effect-once';
-import { AUTO_SIGNABLE_FIELD_TYPES } from '@documenso/lib/constants/autosign';
+import { AUTO_SIGNABLE_FIELD_TYPES, NON_AUTO_SIGNABLE_ACTION_AUTH_TYPES } from '@documenso/lib/constants/autosign';
 import { DocumentAuth } from '@documenso/lib/types/document-auth';
 import { extractInitials } from '@documenso/lib/utils/recipient-formatter';
 import { trpc } from '@documenso/trpc/react';
@@ -22,17 +22,6 @@ import { DocumentSigningDisclosure } from '~/components/general/document-signing
 
 import { useRequiredDocumentSigningAuthContext } from './document-signing-auth-provider';
 import { useRequiredDocumentSigningContext } from './document-signing-provider';
-
-// The action auth types that are not allowed to be auto signed
-//
-// Reasoning: If the action auth is a passkey or 2FA, it's likely that the owner of the document
-// intends on having the user manually sign due to the additional security measures employed for
-// other field types.
-const NON_AUTO_SIGNABLE_ACTION_AUTH_TYPES: string[] = [
-  DocumentAuth.PASSKEY,
-  DocumentAuth.PASSWORD,
-  DocumentAuth.TWO_FACTOR_AUTH,
-];
 
 // The threshold for the number of fields that could be autosigned before displaying the dialog
 //

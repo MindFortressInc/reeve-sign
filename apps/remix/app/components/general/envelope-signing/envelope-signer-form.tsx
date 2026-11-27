@@ -11,7 +11,17 @@ import { useEmbedSigningContext } from '~/components/embed/embed-signing-context
 
 import { useRequiredEnvelopeSigningContext } from '../document-signing/envelope-signing-provider';
 
-export default function EnvelopeSignerForm() {
+export type EnvelopeSignerFormProps = {
+  /**
+   * Called after the signer adopts a signature in the Signature box. The
+   * mobile bar uses it to sign the document (DEV-20648); without it the
+   * signature is only the default for a later field tap.
+   */
+  onSignatureAdopted?: (_value: string) => void;
+  isSubmitting?: boolean;
+};
+
+export default function EnvelopeSignerForm({ onSignatureAdopted, isSubmitting = false }: EnvelopeSignerFormProps) {
   const {
     fullName,
     signature,
@@ -31,8 +41,6 @@ export default function EnvelopeSignerForm() {
   const hasSignatureField = useMemo(() => {
     return recipientFields.some((field) => isSignatureFieldType(field.type));
   }, [recipientFields]);
-
-  const isSubmitting = false;
 
   if (recipient.role === RecipientRole.VIEWER) {
     return null;
@@ -117,7 +125,10 @@ export default function EnvelopeSignerForm() {
               disabled={isSubmitting}
               fullName={fullName}
               value={signature ?? ''}
-              onChange={(v) => setSignature(v ?? '')}
+              onChange={(v) => {
+                setSignature(v ?? '');
+                onSignatureAdopted?.(v ?? '');
+              }}
               typedSignatureEnabled={envelope.documentMeta.typedSignatureEnabled}
               uploadSignatureEnabled={envelope.documentMeta.uploadSignatureEnabled}
               drawSignatureEnabled={envelope.documentMeta.drawSignatureEnabled}
