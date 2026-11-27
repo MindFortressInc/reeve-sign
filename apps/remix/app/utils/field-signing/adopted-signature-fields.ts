@@ -28,3 +28,16 @@ export const getFieldsToSignWithAdoptedSignature = <T extends AdoptableField>(
 
   return requiresReauthPerSignature ? fieldsToSign.slice(0, 1) : fieldsToSign;
 };
+
+/**
+ * Whether a field picked for the adopted signature can still be signed, read
+ * against the CURRENT visibility-filtered fields right before its request. A
+ * checkbox change while an earlier request is pending can hide a picked field;
+ * the server rejects a hidden field, which would stop the batch, so it is
+ * skipped instead and the remaining fields still get signed.
+ */
+export const isFieldStillSignable = (fieldId: number, currentFields: { id: number; inserted: boolean }[]) => {
+  const field = currentFields.find((f) => f.id === fieldId);
+
+  return field !== undefined && !field.inserted;
+};

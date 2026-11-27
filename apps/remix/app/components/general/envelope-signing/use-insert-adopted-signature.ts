@@ -1,8 +1,11 @@
 import type { TRecipientActionAuth } from '@documenso/lib/types/document-auth';
 import { FieldType } from '@prisma/client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
-import { getFieldsToSignWithAdoptedSignature } from '~/utils/field-signing/adopted-signature-fields';
+import {
+  getFieldsToSignWithAdoptedSignature,
+  isFieldStillSignable,
+} from '~/utils/field-signing/adopted-signature-fields';
 
 import { useRequiredDocumentSigningAuthContext } from '../document-signing/document-signing-auth-provider';
 import { useRequiredEnvelopeSigningContext } from '../document-signing/envelope-signing-provider';
@@ -16,6 +19,11 @@ import { useSignEnvelopeField } from './use-sign-envelope-field';
 export const useInsertAdoptedSignature = () => {
   const { recipientFields } = useRequiredEnvelopeSigningContext();
   const { executeActionAuthProcedure, derivedRecipientActionAuth } = useRequiredDocumentSigningAuthContext();
+
+  // The batch runs across several awaits; read the latest visible fields
+  // before each request, not the ones captured when the signer adopted.
+  const recipientFieldsRef = useRef(recipientFields);
+  recipientFieldsRef.current = recipientFields;
 
   const signField = useSignEnvelopeField();
 
@@ -39,7 +47,7 @@ export const useInsertAdoptedSignature = () => {
 
         try {
           for (const field of fieldsToSign) {
-            if (signedFieldIds.has(field.id)) {
+            if (signedFieldIds.has(field.id) || !isFieldStillSignable(field.id, recipientFieldsRef.current)) {
               continue;
             }
 

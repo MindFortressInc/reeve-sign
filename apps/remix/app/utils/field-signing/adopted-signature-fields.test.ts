@@ -2,7 +2,7 @@ import { DocumentAuth } from '@documenso/lib/types/document-auth';
 import { FieldType } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
-import { getFieldsToSignWithAdoptedSignature } from './adopted-signature-fields';
+import { getFieldsToSignWithAdoptedSignature, isFieldStillSignable } from './adopted-signature-fields';
 
 const field = (id: number, type: FieldType, inserted = false, readOnly = false) => ({
   id,
@@ -53,5 +53,19 @@ describe('getFieldsToSignWithAdoptedSignature (DEV-20648)', () => {
     const fields = [field(1, FieldType.SIGNATURE), field(2, FieldType.SIGNATURE)];
 
     expect(ids(getFieldsToSignWithAdoptedSignature(fields, [authType]))).toEqual([1]);
+  });
+});
+
+describe('isFieldStillSignable (DEV-20648)', () => {
+  it('is true for a field that is still visible and unsigned', () => {
+    expect(isFieldStillSignable(2, [field(1, FieldType.SIGNATURE), field(2, FieldType.SIGNATURE)])).toBe(true);
+  });
+
+  it('is false for a field that is no longer in the visible list', () => {
+    expect(isFieldStillSignable(2, [field(1, FieldType.SIGNATURE)])).toBe(false);
+  });
+
+  it('is false for a field that has been signed since it was picked', () => {
+    expect(isFieldStillSignable(2, [field(2, FieldType.SIGNATURE, true)])).toBe(false);
   });
 });
