@@ -22,7 +22,7 @@ export const useInsertAdoptedSignature = () => {
   const [isInserting, setIsInserting] = useState(false);
 
   const insertAdoptedSignature = (value: string) => {
-    const fieldsToSign = getFieldsToSignWithAdoptedSignature(recipientFields, derivedRecipientActionAuth ?? []);
+    const fieldsToSign = getFieldsToSignWithAdoptedSignature(recipientFields, derivedRecipientActionAuth);
 
     if (!value || fieldsToSign.length === 0) {
       return;
