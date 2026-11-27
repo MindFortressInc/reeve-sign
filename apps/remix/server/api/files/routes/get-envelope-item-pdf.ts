@@ -40,6 +40,7 @@ route.get(
     const session = await getOptionalSession(c);
 
     let userId = session.user?.id;
+    let presignTokenTeamId: number | undefined;
 
     // Check presignToken if provided
     if (presignToken) {
@@ -48,6 +49,7 @@ route.get(
       }).catch(() => undefined);
 
       userId = verifiedToken?.userId;
+      presignTokenTeamId = verifiedToken?.teamId;
     }
 
     if (!userId) {
@@ -84,6 +86,7 @@ route.get(
       teamId: envelopeItem.envelope.teamId,
       envelopeType: envelopeItem.envelope.type,
       templateType: envelopeItem.envelope.templateType,
+      presignTokenTeamId,
     });
 
     if (!hasAccess) {

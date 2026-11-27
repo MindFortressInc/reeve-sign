@@ -35,6 +35,7 @@ export const updateEmbeddingDocumentRoute = procedure
       const apiToken = await verifyEmbeddingPresignToken({
         token: presignToken,
         scope: `documentId:${input.documentId}`,
+        requireScope: true,
       });
 
       const { documentId, title, externalId, recipients, meta } = input;

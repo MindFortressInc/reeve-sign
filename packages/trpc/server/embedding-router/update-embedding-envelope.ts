@@ -50,6 +50,7 @@ export const updateEmbeddingEnvelopeRoute = procedure
     const apiToken = await verifyEmbeddingPresignToken({
       token: presignToken,
       scope: `envelopeId:${envelopeId}`,
+      requireScope: true,
     });
 
     const { envelopeWhereInput } = await getEnvelopeWhereInput({

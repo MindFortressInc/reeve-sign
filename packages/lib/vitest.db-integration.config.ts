@@ -20,6 +20,7 @@ export default defineConfig({
       '**/server-only/template/presign-direct-template-field-file-upload.integration.test.ts',
       '**/server-only/envelope/duplicate-envelope.integration.test.ts',
       '**/server-only/recipient/get-handoff-eligibility.integration.test.ts',
+      '**/server-only/envelope/system-user-team-binding.integration.test.ts',
     ],
   },
 });

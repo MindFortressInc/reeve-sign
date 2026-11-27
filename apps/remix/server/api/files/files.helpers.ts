@@ -1,5 +1,6 @@
 import { AppError, AppErrorCode } from '@documenso/lib/errors/app-error';
 import { generatePartialSignedPdf } from '@documenso/lib/server-only/pdf/generate-partial-signed-pdf';
+import { isReeveAdminSystemUserId } from '@documenso/lib/server-only/reeve-admin/get-reeve-admin-system-user';
 import { getTeamById } from '@documenso/lib/server-only/team/get-team';
 import { sha256 } from '@documenso/lib/universal/crypto';
 import { getFileServerSide } from '@documenso/lib/universal/upload/get-file.server';
@@ -239,6 +240,11 @@ type CheckEnvelopeFileAccessOptions = {
   teamId: number;
   envelopeType: EnvelopeType;
   templateType: TemplateType;
+
+  /**
+   * The team of the presign token that authenticated the caller, when one did.
+   */
+  presignTokenTeamId?: number;
 };
 
 /**
@@ -253,7 +259,14 @@ export const checkEnvelopeFileAccess = async ({
   teamId,
   envelopeType,
   templateType,
+  presignTokenTeamId,
 }: CheckEnvelopeFileAccessOptions): Promise<boolean> => {
+  // DEV-20496: the Reeve system user belongs to every Reeve-provisioned team,
+  // so its presign tokens only reach envelopes in the token's own team.
+  if (presignTokenTeamId !== undefined && presignTokenTeamId !== teamId && (await isReeveAdminSystemUserId(userId))) {
+    return false;
+  }
+
   const team = await getTeamById({ userId, teamId }).catch(() => null);
 
   if (team) {

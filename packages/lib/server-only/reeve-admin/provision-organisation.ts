@@ -9,7 +9,7 @@ import { createOrganisation } from '../organisation/create-organisation';
 import { createApiToken } from '../public-api/create-api-token';
 import { createTeam } from '../team/create-team';
 import { deriveOrganisationUrlFromExternalReference } from './derive-organisation-url';
-import { getReeveAdminSystemUser } from './get-reeve-admin-system-user';
+import { getReeveAdminSystemUser, REEVE_PROVISIONING_TOKEN_NAME } from './get-reeve-admin-system-user';
 
 export type ProvisionOrganisationInput = {
   name: string;
@@ -24,8 +24,6 @@ export type ProvisionOrganisationResult = {
   apiToken: string | null;
   created: boolean;
 };
-
-const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
 
 /**
  * An org matched by the derived `reeve-ext-` url is only ours if the system

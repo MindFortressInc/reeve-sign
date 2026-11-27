@@ -19,6 +19,7 @@ import { type EnvelopeIdOptions, unsafeBuildEnvelopeIdQuery } from '../../utils/
 import { isRecipientEmailValidForSending } from '../../utils/recipients';
 import { renderEmailWithI18N } from '../../utils/render-email-with-i18n';
 import { getEmailContext } from '../email/get-email-context';
+import { isReeveAdminSystemUserId } from '../reeve-admin/get-reeve-admin-system-user';
 import { getMemberRoles } from '../team/get-member-roles';
 import { triggerWebhook } from '../webhooks/trigger/trigger-webhook';
 
@@ -53,6 +54,15 @@ export const deleteDocument = async ({ id, userId, teamId, requestMetadata }: De
   });
 
   if (!envelope) {
+    throw new AppError(AppErrorCode.NOT_FOUND, {
+      message: 'Document not found',
+    });
+  }
+
+  // DEV-20496: the Reeve system user owns, and is a member of, every
+  // Reeve-provisioned organisation, so the owner and team-member checks below
+  // would pass for any of them. Bind it to the token's team.
+  if (envelope.teamId !== teamId && (await isReeveAdminSystemUserId(userId))) {
     throw new AppError(AppErrorCode.NOT_FOUND, {
       message: 'Document not found',
     });

@@ -5,6 +5,7 @@ import { TEAM_DOCUMENT_VISIBILITY_MAP } from '../../constants/teams';
 import { AppError, AppErrorCode } from '../../errors/app-error';
 import type { EnvelopeIdOptions } from '../../utils/envelope';
 import { unsafeBuildEnvelopeIdQuery } from '../../utils/envelope';
+import { isReeveAdminSystemUserEmail, isReeveAdminSystemUserId } from '../reeve-admin/get-reeve-admin-system-user';
 import { getTeamById } from '../team/get-team';
 
 export type GetEnvelopeByIdOptions = {
@@ -138,11 +139,21 @@ export const getEnvelopeWhereInput = async ({ id, userId, teamId, type }: GetEnv
   // Validate that the user belongs to the team provided.
   const team = await getTeamById({ teamId, userId });
 
+  // DEV-20496: every Reeve-provisioned organisation and its API tokens belong to
+  // the one Reeve system user, so its owner arm is bound to the token's team.
+  // Otherwise org A's token would reach org B's envelopes by id.
+  const isReeveSystemUser = await isReeveAdminSystemUserId(userId);
+
   const envelopeOrInput: Prisma.EnvelopeWhereInput[] = [
     // Allow access if they own the document.
-    {
-      userId,
-    },
+    isReeveSystemUser
+      ? {
+          userId,
+          teamId: team.id,
+        }
+      : {
+          userId,
+        },
     // Or, if they belong to the team that the document is associated with.
     {
       visibility: {
@@ -154,11 +165,24 @@ export const getEnvelopeWhereInput = async ({ id, userId, teamId, type }: GetEnv
 
   // Allow access to documents sent from the team email.
   if (team.teamEmail) {
-    envelopeOrInput.push({
-      user: {
-        email: team.teamEmail.email,
-      },
-    });
+    // DEV-20496: a team email that is the system user's address must not reach
+    // the system user's envelopes in other teams.
+    const isTeamEmailReeveSystemUser = await isReeveAdminSystemUserEmail(team.teamEmail.email);
+
+    envelopeOrInput.push(
+      isTeamEmailReeveSystemUser
+        ? {
+            user: {
+              email: team.teamEmail.email,
+            },
+            teamId: team.id,
+          }
+        : {
+            user: {
+              email: team.teamEmail.email,
+            },
+          },
+    );
   }
 
   // @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
