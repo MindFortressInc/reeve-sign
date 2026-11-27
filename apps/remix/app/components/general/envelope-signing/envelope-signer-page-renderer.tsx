@@ -5,8 +5,6 @@ import {
 } from '@documenso/lib/client-only/providers/envelope-render-provider';
 import { useOptionalSession } from '@documenso/lib/client-only/providers/session';
 import { DIRECT_TEMPLATE_RECIPIENT_EMAIL } from '@documenso/lib/constants/direct-templates';
-import { isBase64Image } from '@documenso/lib/constants/signatures';
-import type { TRecipientActionAuth } from '@documenso/lib/types/document-auth';
 import type { TEnvelope } from '@documenso/lib/types/envelope';
 import { ZFullFieldSchema } from '@documenso/lib/types/field';
 import { createSpinner } from '@documenso/lib/universal/field-renderer/field-generic-items';
@@ -15,10 +13,8 @@ import { isFieldUnsignedAndRequired } from '@documenso/lib/utils/advanced-fields
 import { isFieldVisible } from '@documenso/lib/utils/field-conditions';
 import { getClientSideFieldTranslations } from '@documenso/lib/utils/fields';
 import { extractInitials } from '@documenso/lib/utils/recipient-formatter';
-import type { TSignEnvelopeFieldValue } from '@documenso/trpc/server/envelope-router/sign-envelope-field.types';
 import { EnvelopeRecipientFieldTooltip } from '@documenso/ui/components/document/envelope-recipient-field-tooltip';
 import { EnvelopeFieldToolTip } from '@documenso/ui/components/field/envelope-field-tooltip';
-import { useToast } from '@documenso/ui/primitives/use-toast';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { type Field, FieldType, type Recipient, RecipientRole, type Signature, SigningStatus } from '@prisma/client';
 import type Konva from 'konva';
@@ -26,7 +22,6 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { useEffect, useMemo } from 'react';
 import { match } from 'ts-pattern';
 
-import { useEmbedSigningContext } from '~/components/embed/embed-signing-context';
 import { handleCheckboxFieldClick } from '~/utils/field-signing/checkbox-field';
 import { handleDropdownFieldClick } from '~/utils/field-signing/dropdown-field';
 import { handleEmailFieldClick } from '~/utils/field-signing/email-field';
@@ -39,18 +34,18 @@ import { handleTextFieldClick } from '~/utils/field-signing/text-field';
 
 import { useRequiredDocumentSigningAuthContext } from '../document-signing/document-signing-auth-provider';
 import { useRequiredEnvelopeSigningContext } from '../document-signing/envelope-signing-provider';
+import { useSignEnvelopeField } from './use-sign-envelope-field';
 
 type GenericLocalField = TEnvelope['fields'][number] & {
   recipient: Pick<Recipient, 'id' | 'name' | 'email' | 'signingStatus'>;
 };
 
 export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderData }) => {
-  const { t, i18n } = useLingui();
+  const { i18n } = useLingui();
   const { currentEnvelopeItem, setRenderError } = useCurrentEnvelopeRender();
   const { sessionData } = useOptionalSession();
 
   const { executeActionAuthProcedure } = useRequiredDocumentSigningAuthContext();
-  const { toast } = useToast();
 
   const {
     envelopeData,
@@ -58,7 +53,6 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
     recipientFields,
     recipientFieldsRemaining,
     showPendingFieldTooltip,
-    signField: signFieldInternal,
     email,
     setEmail,
     fullName,
@@ -70,7 +64,7 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
     isDirectTemplate,
   } = useRequiredEnvelopeSigningContext();
 
-  const { onFieldSigned, onFieldUnsigned } = useEmbedSigningContext() || {};
+  const signField = useSignEnvelopeField();
 
   const { stage, pageLayer, konvaContainer, unscaledViewport } = usePageRenderer(
     ({ stage, pageLayer }) => createPageCanvas(stage, pageLayer),
@@ -467,34 +461,6 @@ export const EnvelopeSignerPageRenderer = ({ pageData }: { pageData: PageRenderD
         console.error('Unable to render one or more fields belonging to other recipients.');
         console.error(err);
       }
-    }
-  };
-
-  const signField = async (fieldId: number, payload: TSignEnvelopeFieldValue, authOptions?: TRecipientActionAuth) => {
-    try {
-      const { inserted } = await signFieldInternal(fieldId, payload, authOptions);
-
-      // ?: The two callbacks below are used within the embedding context
-      if (inserted && onFieldSigned) {
-        const value = payload.value ? JSON.stringify(payload.value) : undefined;
-        const isBase64 = value ? isBase64Image(value) : undefined;
-
-        onFieldSigned({ fieldId, value, isBase64 });
-      }
-
-      if (!inserted && onFieldUnsigned) {
-        onFieldUnsigned({ fieldId });
-      }
-    } catch (err) {
-      console.error(err);
-
-      toast({
-        title: t`Error`,
-        description: t`An error occurred while signing the field.`,
-        variant: 'destructive',
-      });
-
-      throw err;
     }
   };
 

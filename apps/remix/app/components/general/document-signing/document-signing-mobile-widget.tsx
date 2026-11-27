@@ -12,6 +12,7 @@ import { useEmbedSigningContext } from '~/components/embed/embed-signing-context
 import { BrandingLogo } from '../branding-logo';
 import EnvelopeSignerForm from '../envelope-signing/envelope-signer-form';
 import { EnvelopeSignerCompleteDialog } from '../envelope-signing/envelope-signing-complete-dialog';
+import { useInsertAdoptedSignature } from '../envelope-signing/use-insert-adopted-signature';
 import { useRequiredEnvelopeSigningContext } from './envelope-signing-provider';
 
 export const DocumentSigningMobileWidget = () => {
@@ -20,6 +21,8 @@ export const DocumentSigningMobileWidget = () => {
   const { hidePoweredBy = true } = useEmbedSigningContext() || {};
 
   const { recipientFieldsRemaining, recipient, requiredRecipientFields } = useRequiredEnvelopeSigningContext();
+
+  const { insertAdoptedSignature, isInserting } = useInsertAdoptedSignature();
 
   /**
    * Pre open the widget for assistants to let them know it's there.
@@ -107,7 +110,7 @@ export const DocumentSigningMobileWidget = () => {
           {/* Expandable Content */}
           {isExpanded && (
             <div className="slide-in-from-bottom-2 animate-in border-border border-t p-4 duration-200">
-              <EnvelopeSignerForm insertAdoptedSignature />
+              <EnvelopeSignerForm onSignatureAdopted={insertAdoptedSignature} isSubmitting={isInserting} />
 
               {!hidePoweredBy && (
                 <div className="mt-2 inline-block rounded bg-primary px-2 py-1 font-medium text-primary-foreground text-xs opacity-60 hover:opacity-100 lg:hidden">
