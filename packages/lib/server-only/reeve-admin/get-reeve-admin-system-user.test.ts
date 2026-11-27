@@ -116,17 +116,38 @@ describe('isReeveAdminSystemUserId', () => {
     });
   });
 
-  it('fails closed (NOT_SETUP) when the configured email matches no user, and does not memoize the miss', async () => {
-    process.env[ENV_KEY] = 'missing-system@reeve.test';
-    userFindFirstMock.mockResolvedValue(null);
+  it('a configured email that matches no user falls back to the mark, logging the miss once per memo window', async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await expect(isReeveAdminSystemUserId(42)).rejects.toMatchObject({ code: AppErrorCode.NOT_SETUP });
-    await expect(isReeveAdminSystemUserId(42)).rejects.toMatchObject({ code: AppErrorCode.NOT_SETUP });
-    expect(userFindFirstMock).toHaveBeenCalledTimes(2);
+    try {
+      process.env[ENV_KEY] = 'missing-system@reeve.test';
+      userFindFirstMock.mockResolvedValue(null);
+      apiTokenFindFirstMock.mockImplementation(async ({ where }: { where: { userId: number } }) =>
+        where.userId === 1 ? { id: 5 } : null,
+      );
+
+      // A human's by-id read must not depend on the ops setting.
+      expect(await isReeveAdminSystemUserId(42)).toBe(false);
+      // A marked (former) system user stays team-bound.
+      expect(await isReeveAdminSystemUserId(1)).toBe(true);
+      expect(userFindFirstMock).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0][0]).toContain('missing-system@reeve.test');
+
+      vi.advanceTimersByTime(61_000);
+      expect(await isReeveAdminSystemUserId(42)).toBe(false);
+      expect(userFindFirstMock).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
-  it('a renamed system user fails closed once the memo expires', async () => {
+  it('a renamed system user stays bound through its mark once the memo expires', async () => {
     vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
       process.env[ENV_KEY] = 'renamed-system@reeve.test';
@@ -134,9 +155,14 @@ describe('isReeveAdminSystemUserId', () => {
       expect(await isReeveAdminSystemUserId(3)).toBe(true);
 
       userFindFirstMock.mockResolvedValueOnce(null);
+      organisationFindFirstMock.mockImplementation(async ({ where }: { where: { ownerUserId: number } }) =>
+        where.ownerUserId === 3 ? { id: 'org_reeve' } : null,
+      );
       vi.advanceTimersByTime(61_000);
-      await expect(isReeveAdminSystemUserId(3)).rejects.toMatchObject({ code: AppErrorCode.NOT_SETUP });
+      expect(await isReeveAdminSystemUserId(3)).toBe(true);
+      expect(await isReeveAdminSystemUserId(7)).toBe(false);
     } finally {
+      errorSpy.mockRestore();
       vi.useRealTimers();
     }
   });

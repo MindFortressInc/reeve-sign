@@ -11,7 +11,7 @@ import { getUserByEmail } from '../user/get-user-by-email';
  */
 const SYSTEM_USER_MEMO_TTL_MS = 60_000;
 
-let memoizedSystemUser: { email: string; id: number; expiresAt: number } | null = null;
+let memoizedSystemUser: { email: string; id: number | null; expiresAt: number } | null = null;
 
 let hasWarnedUnset = false;
 
@@ -41,12 +41,14 @@ export const REEVE_PROVISIONING_TOKEN_NAME = 'Reeve provisioning token';
  *
  * An unset email leaves only the persistent identity, so a Reeve deployment
  * that drops the setting keeps its tokens team-bound. The unset setting is
- * logged once. A configured email that matches no user throws NOT_SETUP, like
- * `getReeveAdminSystemUser`, so the caller fails closed instead of treating a
- * renamed system user (whose tokens still carry its id) as a human. A
- * database error also throws. The
- * resolved id is memoized per configured email for `SYSTEM_USER_MEMO_TTL_MS`;
- * a miss is not memoized.
+ * logged once. A configured email that matches no user (the account was
+ * renamed or deleted) is logged once per memo window and also leaves only the
+ * persistent identity: every caller of the by-id reads asks this, so a stale
+ * setting must not fail a human's reads, and a renamed system user still
+ * holds its mark. Provisioning itself still fails loud on it
+ * (`getReeveAdminSystemUser`). A database error throws, so callers fail
+ * closed. The lookup, hit or miss, is memoized per configured email for
+ * `SYSTEM_USER_MEMO_TTL_MS`.
  */
 export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean> => {
   const email = env('REEVE_SIGN_SYSTEM_USER_EMAIL')?.trim().toLowerCase();
@@ -69,12 +71,12 @@ export const isReeveAdminSystemUserId = async (userId: number): Promise<boolean>
     });
 
     if (!user) {
-      throw new AppError(AppErrorCode.NOT_SETUP, {
-        message: `REEVE_SIGN_SYSTEM_USER_EMAIL is set to "${email}" but no matching Documenso user exists.`,
-      });
+      console.error(
+        `[reeve-admin] REEVE_SIGN_SYSTEM_USER_EMAIL is set to "${email}" but no matching Documenso user exists; only provisioning-token holders and PLATFORM org owners stay team-bound`,
+      );
     }
 
-    memoizedSystemUser = { email, id: user.id, expiresAt: Date.now() + SYSTEM_USER_MEMO_TTL_MS };
+    memoizedSystemUser = { email, id: user?.id ?? null, expiresAt: Date.now() + SYSTEM_USER_MEMO_TTL_MS };
   }
 
   if (memoizedSystemUser.id === userId) {

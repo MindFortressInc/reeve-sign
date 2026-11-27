@@ -310,4 +310,59 @@ describe("Reeve system user's by-id access is bound to the token's team (real Po
       process.env[ENV_KEY] = systemUser.email;
     }
   });
+
+  it("an email that matches no user leaves a human's by-id reads working and a marked system user bound", async () => {
+    const humanOrgBEnvelope = await seedBlankDocument(human, orgBTeam.id);
+    const systemOrgBEnvelope = await seedBlankDocument(systemUser, orgBTeam.id);
+
+    await prisma.organisationClaim.updateMany({
+      where: { organisation: { teams: { some: { id: orgATeam.id } } } },
+      data: { originalSubscriptionClaimId: INTERNAL_CLAIM_ID.PLATFORM },
+    });
+
+    // The configured account was renamed or deleted.
+    process.env[ENV_KEY] = `stale-system-${Date.now()}@reeve.test`;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const envelope = await getEnvelopeById({
+        id: { type: 'envelopeId', id: humanOrgBEnvelope.id },
+        userId: human.id,
+        teamId: orgATeam.id,
+        type: EnvelopeType.DOCUMENT,
+      });
+
+      expect(envelope.id).toBe(humanOrgBEnvelope.id);
+
+      const humanRows = await getEnvelopesByIds({
+        ids: { type: 'envelopeId', ids: [humanOrgBEnvelope.id] },
+        userId: human.id,
+        teamId: orgATeam.id,
+        type: EnvelopeType.DOCUMENT,
+      });
+
+      expect(humanRows.map((row) => row.id)).toEqual([humanOrgBEnvelope.id]);
+
+      const systemRows = await getEnvelopesByIds({
+        ids: { type: 'envelopeId', ids: [systemOrgBEnvelope.id] },
+        userId: systemUser.id,
+        teamId: orgATeam.id,
+        type: EnvelopeType.DOCUMENT,
+      });
+
+      expect(systemRows).toEqual([]);
+
+      await expect(
+        getEnvelopeById({
+          id: { type: 'envelopeId', id: systemOrgBEnvelope.id },
+          userId: systemUser.id,
+          teamId: orgATeam.id,
+          type: EnvelopeType.DOCUMENT,
+        }),
+      ).rejects.toMatchObject({ code: AppErrorCode.NOT_FOUND });
+    } finally {
+      errorSpy.mockRestore();
+      process.env[ENV_KEY] = systemUser.email;
+    }
+  });
 });
